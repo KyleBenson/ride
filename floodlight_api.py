@@ -29,6 +29,10 @@ class RestApi(object):
         self.server = server
         self.port = port
 
+    def push_flow_rule(self, rule):
+        path = '/wm/staticentrypusher/json'
+        return self.set(path, rule)
+
     def get(self, path):
         ret = self.rest_call(path, {}, 'GET')
         return ret[2]

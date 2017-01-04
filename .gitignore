@@ -1,6 +1,9 @@
 # PyCharm
 .idea/
 
+# Workspace files
+networkx
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
