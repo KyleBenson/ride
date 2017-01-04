@@ -152,9 +152,12 @@ class SdnTopology(object):
         """
 
         bucket = {'bucket_id': bucket_id,
-                  'actions': actions
+                  'bucket_actions': actions,
+                  # HACK: this is necessary due to a bug in Floodlight that
+                  # sets the value to "any" when unspecified, causing an error
+                  "bucket_watch_group": "any"
                   }
-        # TODO: handle bucket_weight, bucket_watch_group, bucket_watch_port
+        # TODO: handle bucket_weight, bucket_watch_group, bucket_watch_port variables
         return bucket
 
     def get_group_flow_rule(self, switch, buckets, group_id='1', group_type='all', **kwargs):
@@ -189,7 +192,7 @@ class SdnTopology(object):
         return rule
 
     def install_flow_rule(self, rule):
-        self.rest_api.push_flow_rule(rule)
+        return self.rest_api.push_flow_rule(rule)
 
     def get_flow_rules_from_path(self, path):
         """Converts a simple path to a list of flow rules that can then
@@ -288,8 +291,8 @@ def test_group_flow(st):
     gflow = st.get_group_flow_rule(switch, buckets)
     # print flow
     # print gflow
-    st.install_flow_rule(flow)
     st.install_flow_rule(gflow)
+    st.install_flow_rule(flow)
 
     #TODO: some API for doing both of the flows in one go
 
