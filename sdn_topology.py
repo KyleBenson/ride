@@ -90,7 +90,7 @@ class SdnTopology(object):
                                # for some reason, REST API gives us port# as a str
                                port2={'dpid': switch['switch'], 'port_num': int(switch['port'])})
 
-        log.info("Final %d nodes: %s" % (self.topo.number_of_nodes(), list(self.topo.nodes())))
+        log.info("Final %d nodes: %s" % (self.topo.number_of_nodes(), list(self.topo.nodes(data=True))))
         log.info("Final %d edges: %s" % (self.topo.number_of_edges(), list(self.topo.edges(data=True))))
 
     # Utility helper functions
@@ -106,6 +106,27 @@ class SdnTopology(object):
             return False
         else:
             return True
+
+    def get_ip_address(self, host):
+        """Gets the IP address associated with the given host in the topology."""
+        ip = self.topo.node[host]['ipv4']
+        if ip is None:
+            raise AttributeError("Host %s has no IPv4 address!  Did you 'pingall 10' in Mininet?" % self.topo.node[host])
+        return ip
+
+    def get_ports_for_nodes(self, n1, n2):
+        """Returns a pair of port numbers corresponding with the link
+        connecting the two specified nodes respectively."""
+
+        edge = self.topo[n1][n2]
+        if edge['port1']['dpid'] == n1:
+            port1 = edge['port1']['port_num']
+            port2 = edge['port2']['port_num']
+        else:
+            port1 = edge['port2']['port_num']
+            port2 = edge['port1']['port_num']
+
+        return port1, port2
 
     def get_multicast_tree(self, source, destinations):
         """Uses networkx algorithms to build a multicast tree for the given source node and
@@ -125,6 +146,8 @@ class SdnTopology(object):
         @:return a sequence of nodes representing the shortest path"""
 
         return nx.shortest_path(self.topo, source=source, target=destination)
+
+    # Flow rule helper functions
 
     def get_flow_rule(self, switch, matches, actions, **kwargs):
         """Builds a flow rule that can be installed on the corresponding switch via the RestApi.
@@ -207,18 +230,8 @@ class SdnTopology(object):
         for src, switch, dst in zip(path[:-2], path[1:-1], path[2:]):
             # Since the edges in the topology are non-directional, we
             # need to determine which side of the links the src/dst are
-            in_edge = self.topo[src][switch]
-
-            if in_edge['port1']['dpid'] == src:
-                in_port = in_edge['port2']['port_num']
-            else:
-                in_port = in_edge['port1']['port_num']
-
-            out_edge = self.topo[switch][dst]
-            if out_edge['port1']['dpid'] == dst:
-                out_port = out_edge['port2']['port_num']
-            else:
-                out_port = out_edge['port1']['port_num']
+            in_port, _ = self.get_ports_for_nodes(switch, src)
+            out_port, _ = self.get_ports_for_nodes(switch, dst)
 
             actions = "output=%d" % out_port
             matches = {"in_port": str(in_port)}
@@ -226,21 +239,64 @@ class SdnTopology(object):
             rules.append(self.get_flow_rule(switch, matches, actions))
         return rules
 
-    def get_flow_rules_from_multicast_tree(self, tree, source=None):
+    def get_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1'):
         """Converts a multicast tree to a list of flow rules that can then
-        be installed in the corresponding switches.
+        be installed in the corresponding switches.  They will be ordered
+        with group flows first so iterating over the list to install them
+        should not cause BAD_OUT_GROUP errors.
 
         @:param tree - a networkx Graph-like object representing the multicast tree
-        @:param source - source node/switch from which to start the search (optional)"""
+        @:param source - source node/switch from which to start the search
+        @:param matches - match rules to be used for matching multicast packets
+        @:param group_id - group_id to assign this group rule to on all switches
 
-        # NOTE: can't just iterate over the edges in the tree as each
-        # switch requires a group entry to be made as well
+        @:param flows - list of all flow rules to accomplish the multicast tree"""
 
-        # for multicast, we could probably get away with splitting up the group table entry (sources/switch)
-        # from the buckets (switch/destinations)
+        group_flows = []
+        flows = []
 
-        # can use get_flow_rule_for_link whenever it doesn't branch
-        pass
+        # Since we assume this is a directed multicast tree from the source,
+        # we should traverse the tree in a specific order from that source.
+        # Starting from the source host's switch (the host doesn't get flow rules),
+        # look at each next node the tree reaches and install the proper flow rules for it.
+
+        # When we encounter a leaf of the tree (i.e. a host receiving the multicast packet),
+        # we convert the destination IP/MAC addresses to the final host's actual
+        # IP/MAC address in order to avoid having to manage multicast addresses
+        # being listened to on that host (MAC is necessary or it will drop packet).
+        def __get_action(_node, _succ):
+            _action = ""
+            if self.is_host(_succ):
+                # Assuming we're using OpenFlow 1.2+, we need to use the 'set_field' action
+                _action += "set_field=ipv4_dst->%s,set_field=eth_dst->%s," % \
+                           (self.get_ip_address(_succ), "ff:ff:ff:ff:ff:ff")
+            _action += "output=%d" % self.get_ports_for_nodes(_node, _succ)[0]
+            return _action
+
+        bfs = nx.bfs_successors(tree, source)
+        bfs.next()  # skip source host
+        for node, successors in bfs:
+            # if only one successor, we don't need a group flow
+            use_group_flow = len(successors) != 1
+            if use_group_flow:
+                # ENHANCE: could move this to a helper function
+                buckets = []
+                for i, succ in enumerate(successors):
+                    action = __get_action(node, succ)
+                    buckets.append(self.get_bucket(i, action))
+                group_flows.append(self.get_group_flow_rule(node, buckets, group_id, 'all'))
+                action = "group=%s" % group_id
+            else:
+                action = __get_action(node, successors[0])
+
+            # TODO: update matches with the src port/IP?
+
+            flows.append(self.get_flow_rule(node, matches, action))
+
+            # print node, successors
+
+        group_flows.extend(flows)
+        return group_flows
 
 
 #### Helper functions for tests
@@ -253,6 +309,9 @@ def mac_for_host(host_num):
     num = format(host_num, 'x').rjust(12, '0')
     num = ':'.join(s.encode('hex') for s in num.decode('hex'))
     return num
+
+
+id_for_host = mac_for_host
 
 
 def dpid_for_switch(switch_num):
@@ -300,16 +359,36 @@ def test_group_flow(st):
 def test_mcast_flows(st):
     # mcast_tree = st.get_multicast_tree("10.0.0.1", ["10.0.0.2", "10.0.0.11", "10.0.0.16"])
     mcast_tree = st.get_multicast_tree(mac_for_host(1), [mac_for_host(2), mac_for_host(11), mac_for_host(16)])
-    print list(mcast_tree.nodes())
+    # print list(mcast_tree.nodes())
+    matches = {"ipv4_src": "10.0.0.1",
+               # "ipv4_dst": "224.0.0.1",
+               'eth_type': '0x0800'  # protocol is IP
+               }
+    flows = st.get_flow_rules_from_multicast_tree(mcast_tree, mac_for_host(1), matches)
+    print flows
+    for flow in flows:
+        st.install_flow_rule(flow)
 
-    pass
 
+def test_utils(st):
+    print st.get_ip_address(id_for_host(1)), "should be 10.0.0.1"
+
+    print st.get_ports_for_nodes(id_for_host(1), dpid_for_switch(2)), "should be 0,1"
+    print st.get_ports_for_nodes(dpid_for_switch(1), dpid_for_switch(2)), "should be 1,5"
 
 if __name__ == '__main__':
+    # These tests assume running mininet locally in the following way
+    # AFTER starting Floodlight:
+    # sudo mn --controller remote --mac --topo=tree,2,4
+    #
+    # THEN run 'pingall 10' in Mininet to populate the
+    # hosts' IP addresses in Floodlight
+
     st = SdnTopology()
+    # test_utils(st)
 
     # test_path_flow(st)
     # FIXME: we'll probably have to do the simple flows better (IP address too) in order to avoid conflicts
 
-    test_group_flow(st)
-    #test_mcast_flows(st)
+    # test_group_flow(st)
+    test_mcast_flows(st)
