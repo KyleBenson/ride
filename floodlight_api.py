@@ -6,6 +6,7 @@ import sys
 import argparse
 import json
 import httplib
+from base_rest_api import BaseRestApi
 # import urllib2
 
 usage_desc = """
@@ -22,7 +23,7 @@ Command descriptions:
 """
 
 
-class RestApi(object):
+class FloodlightRestApi(BaseRestApi):
     """REST API helper object for the Floodlight controller."""
 
     def __init__(self, server, port):
@@ -62,8 +63,14 @@ class RestApi(object):
         # print str(ret[2])
         return ret
 
+    def run_command(self, cmd, other_args):
+        """Only supports GET commands"""
+        path = self.lookup_path(cmd, other_args)
+        return self.get(path)
+
     @staticmethod
     def lookup_path(cmd, other_args):
+        # TODO: refactor this to defer to common method calls.
         path = ''
 
         numargs = len(other_args)
@@ -120,10 +127,8 @@ def main(argv):
     parser.add_argument('otherargs', nargs='*')
     args = parser.parse_args(argv)
 
-    rest = RestApi(args.ip, args.port)
-    path = rest.lookup_path(args.cmd, args.otherargs)
-    out = rest.get(path)
-    return out
+    rest = FloodlightRestApi(args.ip, args.port)
+    return rest.run_command(args.cmd, args.otherargs)
 
 if __name__ == '__main__':
     args = sys.argv[1:]
@@ -132,5 +137,5 @@ if __name__ == '__main__':
     out = main(args)
 
     # TODO: jsonify sooner?
-    print json.dumps(json.loads(out), sort_keys=True, indent=4)
+    print BaseRestApi.pretty_format_parsed_response(out)
     # print "Number of items: " + str(len(out))
