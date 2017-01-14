@@ -2,21 +2,18 @@
 
 # Based on cli.py from Floodlight's GitHub repo @ https://github.com/floodlight/floodlight/blob/master/example/cli.py
 
+from base_rest_api import BaseRestApi
 import sys
 import argparse
-import json
-import httplib
-from base_rest_api import BaseRestApi
-# import urllib2
 
 usage_desc = """
 Command descriptions:
 
-    host [debug]
-    link [tunnellinks]
+    hosts [debug]
+    links [tunnellinks]
     port <blocked | broadcast>
     memory
-    switch
+    switches
     switchclusters
     counter [DPID] <name>
     switch_stats [DPID] <port | queue | flow | aggregate | desc | table | features | host>
@@ -27,43 +24,52 @@ class FloodlightRestApi(BaseRestApi):
     """REST API helper object for the Floodlight controller."""
 
     def __init__(self, server, port):
-        self.server = server
-        self.port = port
+        super(FloodlightRestApi, self).__init__(server, port)
 
-    def push_flow_rule(self, rule):
+    def get_links(self, link_id=[]):
+        """Get all links or a specific one if specified."""
+        return self.run_command('links', link_id)
+
+    def get_hosts(self):
+        """Get all hosts. Note that we cut off the extraneous 'devices'
+        top-most element that Floodlight includes for some reason."""
+        path = '/wm/device/'
+        return self.get(path)['devices']
+
+    def get_switches(self, switch_id=None):
+        """Get all switches (a.k.a. devices)."""
+        if switch_id is not None:
+            raise NotImplementedError
+        return self.run_command('switches')
+
+    # TODO: implement this after figuring out what to do with arg
+    # def get_ports(self, ????):
+    #     return self.run_command('ports')
+
+    def push_flow_rule(self, rule, switch_id):
+        """Push the specified static flow rule to the controller for the specified switch."""
         path = '/wm/staticentrypusher/json'
+        # Floodlight reads the switch_id from the JSON object so verify it's present
+        if 'switch' not in rule:
+            rule['switch'] = switch_id
         return self.set(path, rule)
 
-    def get(self, path):
-        ret = self.rest_call(path, {}, 'GET')
-        return ret[2]
-        # f = urllib2.urlopen('http://'+self.server+':'+str(self.port)+path)
-        # ret = f.read()
-        # return json.loads(ret)
+    def get_flow_rules(self, switch_id):
+        """Get all static flow rules or a specific switch's if specified."""
+        path = '/wm/staticflowpusher/list/%s/json' % switch_id
+        return self.get(path)
 
-    def set(self, path, data):
-        ret = self.rest_call(path, data, 'POST')
-        return ret[0] == 200
+    def push_group(self, group, switch_id):
+        """Push the specified group to the controller for the specified switch."""
+        # Floodlight REST API treats groups as a special case of flow rules
+        return self.push_flow_rule(group, switch_id)
 
-    def remove(self, objtype, data):
-        ret = self.rest_call(data, 'DELETE')
-        return ret[0] == 200
+    def get_groups(self, switch_id):
+        """Get all groups or a specific switch's if specified."""
+        # Floodlight REST API treats groups as a special case of flow rules
+        return self.get_flow_rules(switch_id)
 
-    def rest_call(self, path, data, action):
-        headers = {
-            'Content-type': 'application/json',
-            'Accept': 'application/json',
-            }
-        body = json.dumps(data)
-        conn = httplib.HTTPConnection(self.server, self.port)
-        conn.request(action, path, body, headers)
-        response = conn.getresponse()
-        ret = (response.status, response.reason, response.read())
-        conn.close()
-        # print str(ret[2])
-        return ret
-
-    def run_command(self, cmd, other_args):
+    def run_command(self, cmd, other_args=[]):
         """Only supports GET commands"""
         path = self.lookup_path(cmd, other_args)
         return self.get(path)
@@ -93,7 +99,7 @@ class FloodlightRestApi(BaseRestApi):
         elif cmd == 'memory':
             path = '/wm/core/memory/json'
 
-        elif cmd == 'link':
+        elif cmd == 'links':
             if numargs == 0:
                 path = '/wm/topology/links/json'
             elif numargs == 1:
@@ -114,8 +120,7 @@ class FloodlightRestApi(BaseRestApi):
                 path = '/wm/device/debug'
         else:
             print usage_desc
-            path = ''
-            exit(0)
+            raise NotImplementedError
         return path
 
 
@@ -136,6 +141,4 @@ if __name__ == '__main__':
         args.append("switches")
     out = main(args)
 
-    # TODO: jsonify sooner?
     print BaseRestApi.pretty_format_parsed_response(out)
-    # print "Number of items: " + str(len(out))

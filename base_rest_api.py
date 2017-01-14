@@ -79,7 +79,7 @@ class BaseRestApi(object):
         """Get all flow rules or a specific switch's if specified."""
         raise NotImplementedError
         path = 'path/to/flow/request/here'
-        return self.get(path, rule)
+        return self.get(path)
 
     def push_group(self, group, switch_id):
         """Push the specified group to the controller for the specified switch."""
@@ -91,7 +91,7 @@ class BaseRestApi(object):
         """Get all groups or a specific switch's if specified."""
         raise NotImplementedError
         path = 'path/to/group/request/here'
-        return self.get(path, rule)
+        return self.get(path)
 
     def run_command(self, cmd, other_args):
         """Execute the requested command.  For use with CLI args.
@@ -109,13 +109,16 @@ class BaseRestApi(object):
         ret = self.rest_call(path, data, 'POST')
         return ret.status_code == 200
 
-    def remove(self, objtype, data):
-        ret = self.rest_call(data, 'DELETE')
+    def remove(self, path, data):
+        ret = self.rest_call(path, data, 'DELETE')
         return ret.status_code == 200
 
     def rest_call(self, path, data, action):
+        # NOTE: we need to do json.dumps(data) as otherwise requests
+        # puts the dicts in single-quoted strings, which Floodlight
+        # cannot handle.
         req = requests.Request(action, 'http://%s:%s%s' % (self.server, self.port, path),
-                               data=data, auth=self.session.auth)
+                               data=json.dumps(data), auth=self.session.auth)
         resp = self.session.send(req.prepare())
         resp.raise_for_status()  # only raises if error
         return resp
