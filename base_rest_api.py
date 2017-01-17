@@ -107,11 +107,11 @@ class BaseRestApi(object):
 
     def set(self, path, data):
         ret = self.rest_call(path, data, 'POST')
-        return ret.status_code == 200
+        return 200 <= ret.status_code < 300
 
     def remove(self, path, data):
         ret = self.rest_call(path, data, 'DELETE')
-        return ret.status_code == 200
+        return 200 <= ret.status_code < 300
 
     def rest_call(self, path, data, action):
         # NOTE: we need to do json.dumps(data) as otherwise requests

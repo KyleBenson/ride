@@ -39,7 +39,7 @@ class OnosRestApi(BaseRestApi):
         if link_id is not None:
             raise NotImplementedError
         path = self.base_path + '/links'
-        return self.get(path)
+        return self.get(path)['links']
 
     # TODO: verify this ovveriding works properly
     def get_hosts(self, host_id=None):
@@ -47,22 +47,36 @@ class OnosRestApi(BaseRestApi):
         path = self.base_path + '/hosts'
         if host_id is not None:
             path += '/%s' % host_id
-        return self.get(path)
+        return self.get(path)['hosts']
 
     def get_switches(self, switch_id=None):
         """Get all switches (a.k.a. devices) or a specific one if specified."""
         path = self.base_path + '/devices'
         if switch_id is not None:
             path += '/%s' % switch_id
-        return self.get(path)
+        return self.get(path)['devices']
 
     def get_ports(self, switch_id):
         """Get all ports for the specified switch device."""
         path = '%s/devices/%s/ports' % (self.base_path, switch_id)
         return self.get(path)
 
-    def push_flow_rule(self, rule, switch_id):
-        """Push the specified flow rule to the controller for the specified switch."""
+    def push_flow_rule(self, rule, switch_id=None):
+        """Push the specified flow rule to the controller for the specified switch.
+        see the following links for documentation about flow rules:
+        https://wiki.onosproject.org/display/ONOS/Flow+Rule+Instructions
+        https://wiki.onosproject.org/display/ONOS/Flow+Rule+Criteria
+        empty 'treatment' drops packets
+        priority and isPermanent are only truly required fields"""
+
+        # First, verify we set switch_id and/or the deviceId field in the rule correctly
+        # We at least need to build the URL path correctly,
+        # but don't NEED to include the deviceId in the JSON
+        if switch_id is None:
+            if 'deviceId' not in rule:
+                raise ValueError('Must specify switch id for fow rule %s' % rule)
+            switch_id = rule['deviceId']
+
         path = '%s/flows/%s' % (self.base_path, switch_id)
         return self.set(path, rule)
 
@@ -74,8 +88,16 @@ class OnosRestApi(BaseRestApi):
         # ENHANCE: optionally add specific flow rule?  Maybe that gives statistics?
         return self.get(path)
 
-    def push_group(self, group, switch_id):
+    def push_group(self, group, switch_id=None):
         """Push the specified group to the controller for the specified switch."""
+        # First, verify we set switch_id and/or the deviceId field in the rule correctly
+        # We at least need to build the URL path correctly,
+        # but don't NEED to include the deviceId in the JSON
+        if switch_id is None:
+            if 'deviceId' not in group:
+                raise ValueError('Must specify switch id for fow rule %s' % group)
+            switch_id = group['deviceId']
+
         path = '%s/groups/%s' % (self.base_path, switch_id)
         return self.set(path, group)
 

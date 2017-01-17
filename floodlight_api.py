@@ -46,11 +46,13 @@ class FloodlightRestApi(BaseRestApi):
     # def get_ports(self, ????):
     #     return self.run_command('ports')
 
-    def push_flow_rule(self, rule, switch_id):
+    def push_flow_rule(self, rule, switch_id=None):
         """Push the specified static flow rule to the controller for the specified switch."""
         path = '/wm/staticentrypusher/json'
         # Floodlight reads the switch_id from the JSON object so verify it's present
         if 'switch' not in rule:
+            if switch_id is None:
+                raise ValueError('Must specify switch id for fow rule %s' % rule)
             rule['switch'] = switch_id
         return self.set(path, rule)
 
@@ -59,7 +61,7 @@ class FloodlightRestApi(BaseRestApi):
         path = '/wm/staticflowpusher/list/%s/json' % switch_id
         return self.get(path)
 
-    def push_group(self, group, switch_id):
+    def push_group(self, group, switch_id=None):
         """Push the specified group to the controller for the specified switch."""
         # Floodlight REST API treats groups as a special case of flow rules
         return self.push_flow_rule(group, switch_id)

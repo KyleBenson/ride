@@ -1,132 +1,50 @@
 import logging as log
-log.basicConfig(format='%(levelname)s:%(message)s', level=log.INFO)
+log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
-from floodlight_api import RestApi
 import json
 import networkx as nx
 
-# Otherwise, identify by ipv4
-IDENTIFY_HOSTS_BY_MAC = True
-
 
 class SdnTopology(object):
-    """Generates a networkx topology from information gleaned from an SDN Controller.
+    """Generates a networkx topology (undirected graph) from information
+    gleaned from an SDN Controller.
     Supports various functions such as finding multicast spanning trees and
-    installing flow rules."""
+    installing flow rules.
 
-    def __init__(self, ip='localhost', port='8080'):
+    The inheritance hierarchy works like this: the base class implements
+    most of the interesting algorithms by using various helper functions.
+    The derived classes implement those helper functions in order to adapt
+    a particular data model and API (e.g. SDN controller, generic graph, etc.)
+    to the SdnTopology tool."""
+
+    def __init__(self):
         super(SdnTopology, self).__init__()
-
-        self.rest_api = RestApi(ip, port)
         self.topo = nx.Graph()
-        self.unique_counter = 0  # used for e.g. flow entry names
-
-        self.build_topology()
 
     def build_topology(self):
-
-        # TODO: move these into actual RestApi function calls
-        cmd = 'switches'
-        args = []
-
-        path = self.rest_api.lookup_path(cmd, args)
-        switches = json.loads(self.rest_api.get(path))
-
+        switches = self.rest_api.get_switches()
         log.debug("Switches: %s" % json.dumps(switches, sort_keys=True, indent=4))
-
         for s in switches:
-            self.topo.add_node(s['switchDPID'])
+            self.add_switch(s)
 
         # log.debug(self.topo.nodes())
 
-
-        cmd = 'link'
-        path = self.rest_api.lookup_path(cmd, args)
-        links = json.loads(self.rest_api.get(path))
-
+        links = self.rest_api.get_links()
         log.debug("Links: %s" % json.dumps(links, sort_keys=True, indent=4))
-
         for link in links:
-            self.topo.add_edge(link['src-switch'], link['dst-switch'], latency=link['latency'],
-                               port1={'dpid': link['src-switch'], 'port_num': link['src-port']},
-                               port2={'dpid': link['dst-switch'], 'port_num': link['dst-port']})
+            self.add_link(link)
 
         # log.debug("Topo's edges before hosts: %s " % list(self.topo.edges(data=True)))
 
-        cmd = 'hosts'
-        path = self.rest_api.lookup_path(cmd, args)
-        hosts = json.loads(self.rest_api.get(path))
-
+        hosts = self.rest_api.get_hosts()
         log.debug("Hosts: %s" % json.dumps(hosts, sort_keys=True, indent=4))
-
-        for host in hosts['devices']:
-            # assume hosts only have a single IP address/interface/MAC address/attachment point,
-            # but potentially multiple VLANs
-            mac = ipv4 = None
-
-            try:
-                switch = host['attachmentPoint'][0]
-            except IndexError:
-                log.debug("Skipping host with no attachmentPoint: %s" % host)
-                continue
-
-            try:
-                mac = host['mac'][0]
-                ipv4 = host['ipv4'][0]
-            except IndexError:
-                if mac is None:
-                    log.debug("Skipping host with no MAC or IPv4 addresses: %s" % host)
-                    continue
-
-            if IDENTIFY_HOSTS_BY_MAC:
-                hostid = mac
-            else:
-                hostid = ipv4
-
-            self.topo.add_node(hostid, mac=mac, vlan=host['vlan'], ipv4=ipv4)
-            # TODO: generalize the creation of an edges' attributes? maybe similar for adding a host?
-            self.topo.add_edge(hostid, switch['switch'], latency=0,
-                               port1={'dpid': hostid, 'port_num': 0},
-                               # for some reason, REST API gives us port# as a str
-                               port2={'dpid': switch['switch'], 'port_num': int(switch['port'])})
+        for host in hosts:
+            self.add_host(host)
 
         log.info("Final %d nodes: %s" % (self.topo.number_of_nodes(), list(self.topo.nodes(data=True))))
         log.info("Final %d edges: %s" % (self.topo.number_of_edges(), list(self.topo.edges(data=True))))
 
-    # Utility helper functions
-
-    @staticmethod
-    def is_host(node):
-        """Returns True if the given node is a host, False if it is a switch.
-        Does NOT determine if the node is in the topology."""
-
-        # Switches have more bits in 'MAC address' and
-        # are never identified by IP address
-        if node.count(':') == 7 and node.count('.') == 0:
-            return False
-        else:
-            return True
-
-    def get_ip_address(self, host):
-        """Gets the IP address associated with the given host in the topology."""
-        ip = self.topo.node[host]['ipv4']
-        if ip is None:
-            raise AttributeError("Host %s has no IPv4 address!  Did you 'pingall 10' in Mininet?" % self.topo.node[host])
-        return ip
-
-    def get_ports_for_nodes(self, n1, n2):
-        """Returns a pair of port numbers corresponding with the link
-        connecting the two specified nodes respectively."""
-
-        edge = self.topo[n1][n2]
-        if edge['port1']['dpid'] == n1:
-            port1 = edge['port1']['port_num']
-            port2 = edge['port2']['port_num']
-        else:
-            port1 = edge['port2']['port_num']
-            port2 = edge['port1']['port_num']
-
-        return port1, port2
+    ### Topoology-related generic methods: this is where the algorithms go!
 
     def get_multicast_tree(self, source, destinations):
         """Uses networkx algorithms to build a multicast tree for the given source node and
@@ -137,7 +55,8 @@ class SdnTopology(object):
         except ImportError:
             raise NotImplementedError("Steiner Tree algorithm not found!")
 
-        # we don't care about directionality of the mcast tree here
+        # we don't care about directionality of the mcast tree here,
+        # so we can treat the source as yet another destination
         destinations.append(source)
         return steiner_tree(self.topo, destinations)
 
@@ -147,75 +66,7 @@ class SdnTopology(object):
 
         return nx.shortest_path(self.topo, source=source, target=destination)
 
-    # Flow rule helper functions
-
-    def get_flow_rule(self, switch, matches, actions, **kwargs):
-        """Builds a flow rule that can be installed on the corresponding switch via the RestApi.
-
-        @:param switch - the DPID of the switch this flow rule corresponds with
-        @:param matches - dict<str,str> of matches this flow performs
-        @:param actions - str of OpenFlow actions to be taken e.g. 'strip_vlan,output=3'
-        @:param **kwargs - all remaining kwargs are added to the flow rule dict
-
-        @:return rule - dict representing the flow rule that can be installed on the switch"""
-
-        rule = self.__get_flow_rule(switch, **kwargs)
-        rule['actions'] = actions
-        rule.update(matches)
-
-        return rule
-
-    def get_bucket(self, bucket_id, actions):
-        """Formats a dict-like object to use as a bucket within get_group_flow_rule.
-
-        @:param bucket_id - an integer that uniquely identifies this bucket within the group (used for prioritizing)
-        @:param actions - list of actions to perform
-
-        @:return bucket - dict representing the bucket with all necessary fields filled
-        """
-
-        bucket = {'bucket_id': bucket_id,
-                  'bucket_actions': actions,
-                  # HACK: this is necessary due to a bug in Floodlight that
-                  # sets the value to "any" when unspecified, causing an error
-                  "bucket_watch_group": "any"
-                  }
-        # TODO: handle bucket_weight, bucket_watch_group, bucket_watch_port variables
-        return bucket
-
-    def get_group_flow_rule(self, switch, buckets, group_id='1', group_type='all', **kwargs):
-        """Builds a group flow rule that can be installed on the corresponding switch via the RestApi.
-
-        @:param switch - the DPID of the switch this flow rule corresponds with
-        @:param buckets - list of buckets where each bucket is formatted as returned from get_bucket(...)
-        @:param type - type of group (all, indirect, select, fast_failover); defaults to 'all'
-
-        @:return rule - dict representing the flow rule that can be installed on the switch"""
-
-        rule = self.__get_flow_rule(switch, **kwargs)
-        rule['group_buckets'] = buckets
-        rule['entry_type'] = 'group'
-        rule['group_type'] = group_type
-        rule['group_id'] = group_id
-        return rule
-
-    def __get_flow_rule(self, switch, **kwargs):
-        """Helper function to assemble fields of a flow common between flow entry types.
-        In particular, it assigns a unique name to the flow rule if you did not explicitly."""
-
-        name = kwargs.get('name', None)
-        if name is None:
-            name = "anon_flow_%d" % self.unique_counter
-            self.unique_counter += 1
-
-        rule = {'switch': switch,
-                "name": name,
-                "active": "true",
-                }
-        return rule
-
-    def install_flow_rule(self, rule):
-        return self.rest_api.push_flow_rule(rule)
+    # Generic flow rule generating functions based on the topology
 
     def get_flow_rules_from_path(self, path):
         """Converts a simple path to a list of flow rules that can then
@@ -233,8 +84,8 @@ class SdnTopology(object):
             in_port, _ = self.get_ports_for_nodes(switch, src)
             out_port, _ = self.get_ports_for_nodes(switch, dst)
 
-            actions = "output=%d" % out_port
-            matches = {"in_port": str(in_port)}
+            actions = self.get_actions(("output", out_port))
+            matches = self.get_matches(in_port=in_port)
 
             rules.append(self.get_flow_rule(switch, matches, actions))
         return rules
@@ -265,12 +116,13 @@ class SdnTopology(object):
         # IP/MAC address in order to avoid having to manage multicast addresses
         # being listened to on that host (MAC is necessary or it will drop packet).
         def __get_action(_node, _succ):
-            _action = ""
+            port = self.get_ports_for_nodes(_node, _succ)[0]
             if self.is_host(_succ):
-                # Assuming we're using OpenFlow 1.2+, we need to use the 'set_field' action
-                _action += "set_field=ipv4_dst->%s,set_field=eth_dst->%s," % \
-                           (self.get_ip_address(_succ), "ff:ff:ff:ff:ff:ff")
-            _action += "output=%d" % self.get_ports_for_nodes(_node, _succ)[0]
+                _action = self.get_actions(("set_ipv4_dst", self.get_ip_address(_succ)),
+                                           ("set_eth_dst", "ff:ff:ff:ff:ff:ff"),
+                                           ("output", port))
+            else:
+                _action = self.get_actions(("output", port))
             return _action
 
         bfs = nx.bfs_successors(tree, source)
@@ -279,13 +131,13 @@ class SdnTopology(object):
             # if only one successor, we don't need a group flow
             use_group_flow = len(successors) != 1
             if use_group_flow:
-                # ENHANCE: could move this to a helper function
+                # TODO: could move this to a helper function
                 buckets = []
                 for i, succ in enumerate(successors):
                     action = __get_action(node, succ)
-                    buckets.append(self.get_bucket(i, action))
+                    buckets.append(self.get_bucket(action))
                 group_flows.append(self.get_group_flow_rule(node, buckets, group_id, 'all'))
-                action = "group=%s" % group_id
+                action = self.get_actions(("group", group_id))
             else:
                 action = __get_action(node, successors[0])
 
@@ -298,97 +150,140 @@ class SdnTopology(object):
         group_flows.extend(flows)
         return group_flows
 
+    ### Utility helper functions that must be implemented by base classes
 
-#### Helper functions for tests
+    # Topology-related helper functions
+    def add_link(self, link):
+        """Adds the given link, in its raw input format, to the topology."""
+        raise NotImplementedError
+        # Implementation note: because of the undirected graph, ports need to
+        # include the DPID (data plane ID) of the node like this:
+        # self.topo.add_edge(link['src-switch'], link['dst-switch'], latency=link['latency'],
+        #                    port1={'dpid': link['src-switch'], 'port_num': link['src-port']},
+        #                    port2={'dpid': link['dst-switch'], 'port_num': link['dst-port']})
 
-def mac_for_host(host_num):
-    """Assuming you started mininet with --mac option, this returns a
-    mac address for host h<host_num> e.g. for h1 do mac_for_host(1) --> 00:00:00:00:00:01"""
+    def add_switch(self, switch):
+        """Adds the given switch, in its raw input format, to the topology."""
+        raise NotImplementedError
+        # Usually pretty straightforward and just requires the node name:
+        # self.topo.add_node(switch['id'])
 
-    # format int as hex with proper number of octets, then add :'s using some pymagic
-    num = format(host_num, 'x').rjust(12, '0')
-    num = ':'.join(s.encode('hex') for s in num.decode('hex'))
-    return num
+    def add_host(self, host):
+        """Adds the given host, in its raw input format, to the topology."""
+        raise NotImplementedError
 
+    def is_host(self, node):
+        """Returns True if the given node is a host, False if it is a switch."""
+        raise NotImplementedError
 
-id_for_host = mac_for_host
+    def get_ip_address(self, host):
+        """Gets the IP address associated with the given host in the topology."""
+        ip = self.topo.node[host]['ip']
+        if ip is None:
+            raise AttributeError("Host %s has no IPv4 address!  Did you 'pingall 10' in Mininet?  Or maybe you need to override this method?" % self.topo.node[host])
+        return ip
 
+    def get_ports_for_nodes(self, n1, n2):
+        """Returns a pair of port numbers (or IDs) corresponding with the link
+        connecting the two specified nodes respectively.  More than one link
+        connecting the nodes is undefined behavior."""
 
-def dpid_for_switch(switch_num):
-    """This returns a DPID for switch s<switch_num>
-    e.g. for s1 do dpid_for_switch(1) --> 00:00:00:00:00:00:00:01"""
+        # Because of the undirected graph model, we have to disambiguate
+        # the directionality of the request in order to properly order
+        # the return values.
 
-    # Assume we won't have enough switches to ever break this...
-    return "00:00:%s" % mac_for_host(switch_num)
+        edge = self.topo[n1][n2]
+        if edge['port1']['dpid'] == n1:
+            port1 = edge['port1']['port_num']
+            port2 = edge['port2']['port_num']
+        else:
+            port1 = edge['port2']['port_num']
+            port2 = edge['port1']['port_num']
 
+        return port1, port2
 
-#### Tests
+    # Flow rule helper functions
 
+    def install_flow_rule(self, rule):
+        """Helper function that assumes the data plane device (switch)
+        to which this rule will be pushed is included in the rule object."""
+        log.debug("Installing flow %s" % rule)
+        return self.rest_api.push_flow_rule(rule)
 
-def test_path_flow(st):
-    """Test simple static flow entries for a basic path between h1 and h16"""
+    def install_group(self, group):
+        """Helper function that assumes the data plane device (switch)
+        to which this rule will be pushed is included in the rule object."""
+        log.debug("Installing group %s" % group)
+        return self.rest_api.push_group(group)
 
-    # path = st.get_path("10.0.0.1", "10.0.0.16")
-    path = st.get_path(mac_for_host(1), mac_for_host(16))
-    # print "Path:", path
-    rules = st.get_flow_rules_from_path(path)
-    rules.extend(st.get_flow_rules_from_path(list(reversed(path))))
-    log.debug("Rules: %s" % rules)
-    for rule in rules:
-        st.install_flow_rule(rule)
+    def get_flow_rule(self, switch, matches, actions, **kwargs):
+        """Builds a flow rule that can be installed on the corresponding switch via the RestApi.
 
+        @:param switch - the DPID of the switch this flow rule corresponds with
+        @:param matches - dict<str,str> of matches this flow performs as formatted by get_matches(...)
+        @:param actions - str of OpenFlow actions to be taken as formatted by get_actions(...)
+        @:param **kwargs - all remaining kwargs are added to the flow rule dict using rule.update()
 
-def test_group_flow(st):
-    switch = dpid_for_switch(1)
-    matches = {'ipv4_src': '10.0.0.1',
-               'eth_type': '0x0800'
-               }
-    actions = "group=1"
+        @:return rule - dict representing the flow rule that can be installed on the switch"""
+        raise NotImplementedError
 
-    flow = st.get_flow_rule(switch, matches, actions, priority=500)
-    buckets = [st.get_bucket(1, 'output=3')]
-    gflow = st.get_group_flow_rule(switch, buckets)
-    # print flow
-    # print gflow
-    st.install_flow_rule(gflow)
-    st.install_flow_rule(flow)
+    def get_matches(self, **kwargs):
+        """Properly format (for the particular controller) OpenFlow
+        packet matching criteria and return the result.
 
-    #TODO: some API for doing both of the flows in one go
+        @:param **kwargs - common OpenFlow matches including, at a minimum,
+         in_port, eth_type, ip_proto, <eth|ipv4|ipv6|tcp|udp>_<src|dst>,
+         (use these exact spellings as a user, but be prepared to convert
+         them to your controller's proper spelling if deriving this class)
+        @:return matches - object representing matching criteria
+        that can be passed to get_flow_rule(...) in order to format it
+        properly for REST API
 
+        NOTE: default implementation assumes we can simply return kwargs
+        """
+        return kwargs
 
-def test_mcast_flows(st):
-    # mcast_tree = st.get_multicast_tree("10.0.0.1", ["10.0.0.2", "10.0.0.11", "10.0.0.16"])
-    mcast_tree = st.get_multicast_tree(mac_for_host(1), [mac_for_host(2), mac_for_host(11), mac_for_host(16)])
-    # print list(mcast_tree.nodes())
-    matches = {"ipv4_src": "10.0.0.1",
-               # "ipv4_dst": "224.0.0.1",
-               'eth_type': '0x0800'  # protocol is IP
-               }
-    flows = st.get_flow_rules_from_multicast_tree(mcast_tree, mac_for_host(1), matches)
-    print flows
-    for flow in flows:
-        st.install_flow_rule(flow)
+    def get_actions(self, *args):
+        """Properly format (for the particular controller) OpenFlow
+        packet actions and return the result.
 
+        @:param *args - ordered list of common OpenFlow actions in the form of either
+         strings (actions with no arguments) or tuples
+         where the first element is the action and the remaining elements are arguments.
+         You should support, at a minimum, output, group, set_<eth|ipv4|ipv6>_<src|dst>
+         (use these exact spellings as a user, but be prepared to convert
+         them to your controller's proper spelling if deriving this class)
+        """
+        raise NotImplementedError
 
-def test_utils(st):
-    print st.get_ip_address(id_for_host(1)), "should be 10.0.0.1"
+    def get_group_flow_rule(self, switch, buckets, group_id='1', group_type='all', **kwargs):
+        """Builds a group flow rule that can be installed on the corresponding switch via the RestApi.
 
-    print st.get_ports_for_nodes(id_for_host(1), dpid_for_switch(2)), "should be 0,1"
-    print st.get_ports_for_nodes(dpid_for_switch(1), dpid_for_switch(2)), "should be 1,5"
+        @:param switch - the DPID of the switch this flow rule corresponds with
+        @:param buckets - list of buckets where each bucket is formatted as returned from get_bucket(...)
+        @:param type - type of group (all, indirect, select, fast_failover); defaults to 'all'
+        @:param **kwargs - all remaining kwargs are added to the flow rule dict using rule.update()
 
-if __name__ == '__main__':
-    # These tests assume running mininet locally in the following way
-    # AFTER starting Floodlight:
-    # sudo mn --controller remote --mac --topo=tree,2,4
-    #
-    # THEN run 'pingall 10' in Mininet to populate the
-    # hosts' IP addresses in Floodlight
+        @:return rule - dict representing the flow rule that can be installed on the switch"""
+        raise NotImplementedError
 
-    st = SdnTopology()
-    # test_utils(st)
+    def get_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
+        """Formats a dict-like object to use as a bucket within get_group_flow_rule.
 
-    # test_path_flow(st)
-    # FIXME: we'll probably have to do the simple flows better (IP address too) in order to avoid conflicts
+        @:param actions - actions to perform
+        @:param weight
+        @:param watch_group
+        @:param watch_port
 
-    # test_group_flow(st)
-    test_mcast_flows(st)
+        @:return bucket - dict representing the bucket with all necessary fields filled
+        """
+        raise NotImplementedError
+
+    def __get_flow_rule(self, switch, **kwargs):
+        """Helper function to assemble fields of a flow common between flow entry types.
+        In particular, it should fill any fields that are REQUIRED by the controller's REST API.
+
+        @:param switch - the DPID of the switch this flow rule corresponds with
+        @:param **kwargs - all remaining kwargs are added to the flow rule dict using rule.update()
+        """
+        raise NotImplementedError
