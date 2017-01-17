@@ -20,10 +20,12 @@ Command descriptions:
     post_flow <device_id> <json_flow_rule>
     groups [device_id [group_key]]
     post_group <device_id> <json_group>
+    del_group <device_id> <group_key>
     paths <src_element_id> <dst_element_id>
     intents [app_id intent_id]
     post_intent <json_intent>
     apps
+    statistics (not yet implemented)
 """
 
 
@@ -109,6 +111,12 @@ class OnosRestApi(BaseRestApi):
         # ENHANCE: add specific group ID?  Maybe needed for more detail?
         return self.get(path)
 
+
+    def delete_group(self, switch_id, group_key):
+        """Get all groups or a specific switch's if specified."""
+        path = '%s/groups/%s/%s' % (self.base_path, switch_id, group_key)
+        return self.remove(path)
+
     # ONOS-specific methods
 
     def get_paths(self, src_device_id, dst_device_id):
@@ -154,6 +162,8 @@ class OnosRestApi(BaseRestApi):
             return self.get_groups(*other_args)
         elif cmd == 'post_group':
             return self.push_group(*other_args)
+        elif cmd == 'del_group':
+            return self.delete_group(*other_args)
         elif cmd == 'paths':
             return self.get_paths(*other_args)
         elif cmd == 'intents':
@@ -162,6 +172,8 @@ class OnosRestApi(BaseRestApi):
             return self.push_intent(*other_args)
         elif cmd == 'apps':
             return self.get_apps(*other_args)
+        elif cmd == 'statistics':
+            raise NotImplementedError("Still need to implement API at https://github.com/opennetworkinglab/onos/blob/master/web/api/src/main/java/org/onosproject/rest/resources/StatisticsWebResource.java")
         else:
             print usage_desc
             exit(0)

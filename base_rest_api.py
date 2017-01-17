@@ -109,7 +109,7 @@ class BaseRestApi(object):
         ret = self.rest_call(path, data, 'POST')
         return 200 <= ret.status_code < 300
 
-    def remove(self, path, data):
+    def remove(self, path, data={}):
         ret = self.rest_call(path, data, 'DELETE')
         return 200 <= ret.status_code < 300
 
