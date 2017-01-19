@@ -173,7 +173,9 @@ class OnosRestApi(BaseRestApi):
         elif cmd == 'apps':
             return self.get_apps(*other_args)
         elif cmd == 'statistics':
-            raise NotImplementedError("Still need to implement API at https://github.com/opennetworkinglab/onos/blob/master/web/api/src/main/java/org/onosproject/rest/resources/StatisticsWebResource.java")
+            raise NotImplementedError("Still need to implement API at "
+                                      "https://github.com/opennetworkinglab/onos/blob/master/web/api/src/main/java/org/onosproject/rest/resources/StatisticsWebResource.java"
+                                      " and https://github.com/opennetworkinglab/onos/blob/master/web/api/src/main/resources/definitions/StatisticsFlowsLink.json")
         else:
             print usage_desc
             exit(0)
