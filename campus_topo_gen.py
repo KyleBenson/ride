@@ -1,5 +1,7 @@
 import math
 import networkx as nx
+from networkx.readwrite import json_graph
+import json
 import random
 
 class CampusTopologyGenerator(object):
@@ -16,9 +18,17 @@ class CampusTopologyGenerator(object):
     Future versions may include additional redundant links, attributes such as
     latency or bandwidth, and shared risk groups."""
 
-    def __init__(self, core_size=4, percent_minor_buildings=0.1, minor_buildings_per_distribution_router=10,
-                 links_per_distribution_router=2, links_per_building=2, nbuildings=400,
-                 add_building_topology=False, building_floors=5, building_switches_per_floor=5, hosts_per_floor_switch=):
+    def __init__(self, core_size=4,
+                 percent_minor_buildings=0.15, # 10-15%
+                 minor_buildings_per_distribution_router=8, # 7-8
+                 links_per_distribution_router=2, links_per_building=2, nbuildings=200,
+                 add_building_topology=False,  # building topo is a tree, so no redundancy or clever routing to be done
+                 building_floors=5,  # estimate for larger buildings, should probably make a distribution
+                 building_switches_per_floor=5,  # 4-6
+                 # TODO: hosts_per_floor_switch=???
+                 # inter_building_links=5-7
+                 # nsrlg_groups=4 # plus two sub-regions per group?
+                 ):
         super(CampusTopologyGenerator, self).__init__()
 
         self.core_size = core_size
@@ -41,6 +51,7 @@ class CampusTopologyGenerator(object):
         """Generates and returns the topology."""
         # Start with core
         self.topo = nx.complete_graph(self.core_size)
+        self.topo.graph['name'] = "Campus Network Topology"
         nx.relabel_nodes(self.topo, {i: "c%d" % i for i in range(self.core_size)}, copy=False)
         self.core_nodes = list(nx.nodes(self.topo))
 
@@ -110,15 +121,22 @@ class CampusTopologyGenerator(object):
             import matplotlib.pyplot as plt
             print 'Node colors: red=core, blue=major-building, green=distribution, yellow=minor-building'
             colormap = {'c': 'r', 'b': 'b', 'd': 'g', 'm': 'y'}
-            node_colors = [colormap[node[0]] for node in g.nodes()]
-            nx.draw(g, node_color=node_colors)
+            node_colors = [colormap[node[0]] for node in self.topo.nodes()]
+            nx.draw(self.topo, node_color=node_colors)
             plt.show()
         except ImportError:
             print "ERROR: couldn't draw graph as matplotlib.pyplot couldn't be imported!"
+
+    def write(self, filename='campus_topo.json'):
+        """Writes the generated network topology to JSON file."""
+        data = json_graph.node_link_data(self.topo)
+        with open(filename, "w") as f:
+            json.dump(data, f, sort_keys=True, indent=4)
 
 
 if __name__ == '__main__':
     t = CampusTopologyGenerator(nbuildings=8)
     g = t.get()
     print nx.info(g)
-    g.draw()
+    t.draw()
+    t.write()

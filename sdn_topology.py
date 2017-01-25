@@ -22,6 +22,7 @@ class SdnTopology(object):
         self.topo = nx.Graph()
 
     def build_topology(self):
+        # TODO: refactor this to enable get_switches, get_hosts, get_links, etc? add_ funcs should return the component
         switches = self.rest_api.get_switches()
         log.debug("Switches: %s" % json.dumps(switches, sort_keys=True, indent=4))
         for s in switches:
