@@ -49,7 +49,8 @@ class SdnTopology(object):
 
     def get_multicast_tree(self, source, destinations):
         """Uses networkx algorithms to build a multicast tree for the given source node and
-        destinations (an iterable).  Can be used to build and install flow rules."""
+        destinations (an iterable).  Can be used to build and install flow rules.
+        Current implementation uses the metric closure-based approximation of a steiner tree."""
 
         try:
             from networkx.algorithms.approximation import steiner_tree
