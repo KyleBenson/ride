@@ -10,11 +10,14 @@ DEFAULT_FPROB = 0.1
 
 class SmartCampusFailureModel(object):
 
-    def __init__(self, model=DEFAULT_MODEL, fprob=DEFAULT_FPROB, **kwargs):
+    def __init__(self, model=DEFAULT_MODEL, fprob=DEFAULT_FPROB,
+                 failure_rand_seed=None, **kwargs):
         # NOTE: kwargs just used for construction via argparse
         super(SmartCampusFailureModel, self).__init__()
         self.model = model
         self.fprob = fprob
+        # TODO: specify this seed
+        self.random = random.Random(failure_rand_seed)
 
     def apply_failure_model(self, topo):
         """Applies the failure model to the topology by choosing failed components.
@@ -28,7 +31,7 @@ class SmartCampusFailureModel(object):
 
     def should_fail(self):
         """Helper method for choosing whether to fail a single component or not."""
-        return random.random() < self.fprob
+        return self.random.random() < self.fprob
 
     def apply_uniform_failure_model(self, topo):
         """Fail each component (link/switch node) at uniformly random rate."""
@@ -80,6 +83,8 @@ class SmartCampusFailureModel(object):
     arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION, add_help=False)
     arg_parser.add_argument('--fprob', '-f', type=float, default=DEFAULT_FPROB,
                         help='''probability of component failure (default=%(default)s)''')
+    arg_parser.add_argument('--failure-rand-seed', type=int, default=None, dest='failure_rand_seed',
+                        help='''random seed for failure model (default=%(default)s)''')
     arg_parser.add_argument('--model', '-m', type=str, default=DEFAULT_MODEL,
                         help='''failure model to apply for choosing component failures (default=%(default)s)''')
 
