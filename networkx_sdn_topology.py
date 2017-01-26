@@ -35,8 +35,22 @@ class NetworkxSdnTopology(SdnTopology):
     def get_servers(self):
         return [n for n in self.topo.node if self.is_server(n)]
 
+    def get_links(self):
+        return self.topo.edges()
+
+    def get_switches(self, building_switches=True):
+        """Returns all switches, optionally excluding those within
+        a building other than the building router."""
+        return [n for n in self.topo.node if self.is_switch(n, building_switches)]
+
     def is_server(self, node):
         return node.startswith('s')
+
+    def is_switch(self, node, include_building_switches=True):
+        if include_building_switches:
+            return node[0] in ('c', 'd', 'b', 'm', 'f', 'r')
+        else:
+            return node[0] in ('c', 'd', 'b', 'm')
 
     # Overridden methods
 
