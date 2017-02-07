@@ -98,7 +98,7 @@ class SmartCampusNetworkxExperiment(object):
                             help='''heuristic algorithm for building multicast trees (default=%(default)s)''')
         # TODO: should this be a percentage? should also warn if too many subs based on model of how many would need mcast support
         parser.add_argument('--nsubscribers', '-s', type=int, default=5,
-                            help='''number of redundant multicast trees to build (default=%(default)s)''')
+                            help='''number of multicast subscribers (terminals) to reach (default=%(default)s)''')
         parser.add_argument('--topo', type=str, default=['networkx'], nargs='+',
                             help='''type of SdnTopology to use and (optionally) its constructor parameters (default=%(default)s)''')
 
@@ -170,14 +170,8 @@ class SmartCampusNetworkxExperiment(object):
     def build_mcast_trees(self, source, subscribers):
         """Build redundant multicast trees over the specified subscribers using
         the requested heuristic algorithm."""
-        # TODO: add more algorithms
-        # TODO: multiple trees? for heuristics that do a single tree, can adopt the approach of
-        # removing traversed nodes or setting their weights higher (to the max of all?) to disincentivize them
 
-        if self.mcast_heuristic == 'closure':
-            trees = [self.topo.get_multicast_tree(source, subscribers)]
-        else:
-            raise ValueError("Unknown multicast tree heuristic algorithm %s" % self.mcast_heuristic)
+        trees = self.topo.get_redundant_multicast_trees(source, subscribers, self.ntrees, self.mcast_heuristic)
 
         # Need to record which heuristic and tree # we used for later
         for tree in trees:
@@ -206,14 +200,21 @@ class SmartCampusNetworkxExperiment(object):
         subscribers = set(subscribers)
         result = {}
 
+        # First, create a copy of whole topology as the 'oracle' heuristic,
+        # which sees what subscribers are even reachable by ANY path.
         topo_copy = self.topo.topo.copy()
         topo_copy.graph['heuristic'] = 'oracle'
-        res = self.get_reachability(failed_nodes, failed_links, server, subscribers, [topo_copy])
+        topos_to_check = [topo_copy]
+        res = self.get_reachability(failed_nodes, failed_links, server, subscribers, topos_to_check)
         result[topo_copy.graph['heuristic']] = res
 
+        # Now check the redundant multicast trees
         res = self.get_reachability(failed_nodes, failed_links, server, subscribers, trees)
-        heuristic = trees[0].graph['heuristic']
+        heuristic = trees[0].graph['heuristic']  # we assume all trees from same heuristic
         result[heuristic] = res
+
+        # TODO: probably want to output some other comparison metrics as well
+        # i.e. best tree, worst tree, avg, hop counts, etc.?
 
         return result
 
