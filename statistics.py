@@ -6,6 +6,7 @@ Also handles printing them in an easily-read format as well as creating plots.''
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.axes as axes
 import argparse
 import sys
 import os
@@ -105,31 +106,30 @@ class SeismicStatistics(object):
         '''Plots the average reachability of subscribers by each heuristic versus the
         specified x-axis parameter, ordered ascending.'''
 
-        # TODO: use these markers
-        # markers = 'x.*+do^s1_|'
-        # plot(..., marker=markers[i%len(markers)])
-
         # First, we need to rotate the dict to group by heuristic in order to plot a curve for each
         new_stats = dict()
-        xvalues = []  # TODO: how to plot these if they're labels not values????
+        xvalues = []
         for (xvalue, group) in self.stats.items():
             reachabilities = self.get_reachability(group)
-            print reachabilities
             xvalues.append(xvalue)
             for heuristic, reachability in reachabilities.items():
                 new_stats.setdefault(heuristic, []).append(reachability)
 
-        print 'x=', xvalues
-        print 'stats:', self.stats
-        print 'new_stats:', new_stats
         # TODO: may need to store these with the xvalue in order to order everything consistently
 
-        # TODO: figure out how to label x-axis properly
+        # If x-axis contains strings (str or unicode), need to request numerics instead
+        if isinstance(xvalues[0], basestring):
+            plt.xticks(range(len(xvalues)), xvalues)
+            xvalues = range(len(xvalues))
+
+        markers = 'x.*+do^s1_|'
+        i = 0
         for (heuristic, yvalues) in new_stats.items():
-            plt.plot(range(len(xvalues)), yvalues, label=heuristic)
+            plt.plot(xvalues, yvalues, label=heuristic, marker=markers[i%len(markers)])
+            i += 1
 
         plt.xlabel(self.x_axis)
-        plt.ylabel("avg % hosts reached")
+        plt.ylabel("avg host reach ratio")
         plt.title('Subscriber hosts reached')
         plt.show()
 
