@@ -116,32 +116,56 @@ class CampusTopologyGenerator(object):
                 self.topo.add_edge(node_name, router_name)
                 self.minor_building_routers.append(node_name)
 
-        # Optionally add in-building topologies
-        if self.add_building_topology:
-            self.hosts = []
-            for b in self.major_building_routers:
-                self.create_building_topology(b)
+        # add in-building topologies and/or just hosts
+        self.hosts = []
+        for b in self.major_building_routers:
+            self.create_building_topology(b)
+
+        for b in self.minor_building_routers:
+            self.create_building_topology(b, False, True)
 
         # TODO: add inter-building links
 
+        print "Added %d hosts" % len(self.hosts)
+
         return self.topo
 
-    def create_building_topology(self, building):
-        """Creates a depth 3 tree topology of switches as a building topology."""
-        # CONSIDER: give each host a unique host #
-        for floor in range(self.building_floors):
-            floor_switch_name = "f%d-%s" % (floor, building)
-            self.topo.add_node(floor_switch_name)
-            self.topo.add_edge(building, floor_switch_name)
-            for rack_switch in range(self.building_switches_per_floor):
-                rack_switch_name = "r%d-%s" % (rack_switch, floor_switch_name)
-                self.topo.add_node(rack_switch_name)
-                self.topo.add_edge(floor_switch_name, rack_switch_name)
-                for host in range(self.hosts_per_floor_switch):
-                    host_name = "h%d-%s" % (host, rack_switch_name)
-                    self.topo.add_node(host_name)
-                    self.topo.add_edge(rack_switch_name, host_name)
-                    self.hosts.append(host_name)
+    def create_building_topology(self, building, add_internal_switches=None, is_minor_building=False):
+        """Creates a depth 3 tree topology of switches as a building topology
+        if self.add_building_topology is True, else it simply creates a bunch
+        of hosts as leaves in this building.  Note that this treatment is also
+        dependent on whether this is a minor building (assumes 1 floor and
+        1 switch that IS the already-placed router)."""
+
+        if add_internal_switches is None:
+            add_internal_switches = self.add_building_topology
+
+        if add_internal_switches and not is_minor_building:
+            # CONSIDER: give each host a unique host #
+            for floor in range(self.building_floors):
+                floor_switch_name = "f%d-%s" % (floor, building)
+                self.topo.add_node(floor_switch_name)
+                self.topo.add_edge(building, floor_switch_name)
+                for rack_switch in range(self.building_switches_per_floor):
+                    rack_switch_name = "r%d-%s" % (rack_switch, floor_switch_name)
+                    self.topo.add_node(rack_switch_name)
+                    self.topo.add_edge(floor_switch_name, rack_switch_name)
+                    for host in range(self.hosts_per_floor_switch):
+                        host_name = "h%d-%s" % (host, rack_switch_name)
+                        self.topo.add_node(host_name)
+                        self.topo.add_edge(rack_switch_name, host_name)
+                        self.hosts.append(host_name)
+        else:
+            if is_minor_building:
+                nhosts = self.hosts_per_floor_switch
+            else:
+                nhosts = self.hosts_per_floor_switch * self.building_switches_per_floor * self.building_floors
+            for host in range(nhosts):
+                host_name = "h%d-%s" % (host, building)
+                self.topo.add_node(host_name)
+                self.topo.add_edge(building, host_name)
+                self.hosts.append(host_name)
+
 
     def get(self):
         if self.topo is not None:
@@ -170,14 +194,17 @@ class CampusTopologyGenerator(object):
 
 
 if __name__ == '__main__':
-    test_run = True
+    test_run = False
 
     if test_run:
         # build smaller topology for visualizing
         t = CampusTopologyGenerator(nbuildings=8, hosts_per_floor_switch=2,
-                                    building_floors=2, building_switches_per_floor=2)
+                                    building_switches_per_floor=1, building_floors=2,
+                                    add_building_topology=False)
     else:
-        t = CampusTopologyGenerator()
+        t = CampusTopologyGenerator(nbuildings=80, hosts_per_floor_switch=4,
+                                    building_switches_per_floor=1, building_floors=2,
+                                    add_building_topology=False)
 
     g = t.get()
     print nx.info(g)

@@ -1,0 +1,345 @@
+{
+    "directed": false, 
+    "graph": {
+        "name": "Campus Network Topology"
+    }, 
+    "links": [
+        {
+            "source": 0, 
+            "target": 2
+        }, 
+        {
+            "source": 1, 
+            "target": 3
+        }, 
+        {
+            "source": 2, 
+            "target": 11
+        }, 
+        {
+            "source": 2, 
+            "target": 41
+        }, 
+        {
+            "source": 2, 
+            "target": 19
+        }, 
+        {
+            "source": 2, 
+            "target": 37
+        }, 
+        {
+            "source": 2, 
+            "target": 38
+        }, 
+        {
+            "source": 3, 
+            "target": 10
+        }, 
+        {
+            "source": 3, 
+            "target": 4
+        }, 
+        {
+            "source": 3, 
+            "target": 18
+        }, 
+        {
+            "source": 3, 
+            "target": 38
+        }, 
+        {
+            "source": 3, 
+            "target": 39
+        }, 
+        {
+            "source": 5, 
+            "target": 29
+        }, 
+        {
+            "source": 5, 
+            "target": 31
+        }, 
+        {
+            "source": 5, 
+            "target": 15
+        }, 
+        {
+            "source": 5, 
+            "target": 21
+        }, 
+        {
+            "source": 5, 
+            "target": 39
+        }, 
+        {
+            "source": 5, 
+            "target": 40
+        }, 
+        {
+            "source": 6, 
+            "target": 30
+        }, 
+        {
+            "source": 6, 
+            "target": 32
+        }, 
+        {
+            "source": 6, 
+            "target": 14
+        }, 
+        {
+            "source": 6, 
+            "target": 20
+        }, 
+        {
+            "source": 6, 
+            "target": 37
+        }, 
+        {
+            "source": 6, 
+            "target": 38
+        }, 
+        {
+            "source": 7, 
+            "target": 27
+        }, 
+        {
+            "source": 7, 
+            "target": 13
+        }, 
+        {
+            "source": 7, 
+            "target": 33
+        }, 
+        {
+            "source": 7, 
+            "target": 23
+        }, 
+        {
+            "source": 7, 
+            "target": 37
+        }, 
+        {
+            "source": 7, 
+            "target": 39
+        }, 
+        {
+            "source": 8, 
+            "target": 28
+        }, 
+        {
+            "source": 8, 
+            "target": 12
+        }, 
+        {
+            "source": 8, 
+            "target": 34
+        }, 
+        {
+            "source": 8, 
+            "target": 22
+        }, 
+        {
+            "source": 8, 
+            "target": 38
+        }, 
+        {
+            "source": 8, 
+            "target": 39
+        }, 
+        {
+            "source": 9, 
+            "target": 38
+        }, 
+        {
+            "source": 9, 
+            "target": 40
+        }, 
+        {
+            "source": 9, 
+            "target": 24
+        }, 
+        {
+            "source": 9, 
+            "target": 26
+        }, 
+        {
+            "source": 16, 
+            "target": 26
+        }, 
+        {
+            "source": 17, 
+            "target": 37
+        }, 
+        {
+            "source": 17, 
+            "target": 38
+        }, 
+        {
+            "source": 24, 
+            "target": 25
+        }, 
+        {
+            "source": 24, 
+            "target": 35
+        }, 
+        {
+            "source": 26, 
+            "target": 36
+        }, 
+        {
+            "source": 37, 
+            "target": 38
+        }, 
+        {
+            "source": 37, 
+            "target": 39
+        }, 
+        {
+            "source": 37, 
+            "target": 40
+        }, 
+        {
+            "source": 38, 
+            "target": 39
+        }, 
+        {
+            "source": 38, 
+            "target": 40
+        }, 
+        {
+            "source": 39, 
+            "target": 40
+        }
+    ], 
+    "multigraph": false, 
+    "nodes": [
+        {
+            "name": "h2-b4"
+        }, 
+        {
+            "name": "h2-b5"
+        }, 
+        {
+            "name": "b4"
+        }, 
+        {
+            "name": "b5"
+        }, 
+        {
+            "name": "h0-b5"
+        }, 
+        {
+            "name": "b0"
+        }, 
+        {
+            "name": "b1"
+        }, 
+        {
+            "name": "b2"
+        }, 
+        {
+            "name": "b3"
+        }, 
+        {
+            "name": "d0"
+        }, 
+        {
+            "name": "h3-b5"
+        }, 
+        {
+            "name": "h3-b4"
+        }, 
+        {
+            "name": "h3-b3"
+        }, 
+        {
+            "name": "h3-b2"
+        }, 
+        {
+            "name": "h3-b1"
+        }, 
+        {
+            "name": "h3-b0"
+        }, 
+        {
+            "name": "h1-m0"
+        }, 
+        {
+            "name": "s0"
+        }, 
+        {
+            "name": "h1-b5"
+        }, 
+        {
+            "name": "h1-b4"
+        }, 
+        {
+            "name": "h1-b1"
+        }, 
+        {
+            "name": "h1-b0"
+        }, 
+        {
+            "name": "h1-b3"
+        }, 
+        {
+            "name": "h1-b2"
+        }, 
+        {
+            "name": "m1"
+        }, 
+        {
+            "name": "h1-m1"
+        }, 
+        {
+            "name": "m0"
+        }, 
+        {
+            "name": "h0-b2"
+        }, 
+        {
+            "name": "h0-b3"
+        }, 
+        {
+            "name": "h0-b0"
+        }, 
+        {
+            "name": "h0-b1"
+        }, 
+        {
+            "name": "h2-b0"
+        }, 
+        {
+            "name": "h2-b1"
+        }, 
+        {
+            "name": "h2-b2"
+        }, 
+        {
+            "name": "h2-b3"
+        }, 
+        {
+            "name": "h0-m1"
+        }, 
+        {
+            "name": "h0-m0"
+        }, 
+        {
+            "name": "c3"
+        }, 
+        {
+            "name": "c2"
+        }, 
+        {
+            "name": "c1"
+        }, 
+        {
+            "name": "c0"
+        }, 
+        {
+            "name": "h0-b4"
+        }
+    ]
+}
