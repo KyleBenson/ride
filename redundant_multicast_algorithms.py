@@ -129,35 +129,3 @@ def ilp_redundant_multicast(topology, source, destinations, k=2):
 
     return final_trees
 
-if __name__ == '__main__':
-    g = nx.complete_graph(4)
-    g.add_edge(0, 4)
-    g.add_edge(3, 5)
-    # Need to relabel to strings since we assume nodes are strings
-    nx.relabel_nodes(g, {i: str(i) for i in g.nodes()}, copy=False)
-
-    ntrees = 4
-    dest = ["2", "5"]
-    # dest = ["5"]
-    M = ilp_redundant_multicast(g, "4", dest, ntrees)
-
-    # draw the results of the trees on top of the original network
-    import matplotlib.pyplot as plt
-    layout = nx.spring_layout(g)
-    nx.draw_networkx(g, pos=layout)
-
-    # want to overlay edges in different colors and progressively thinner
-    # so that we can see what edges are in a tree
-    line_colors = 'rbgycm'
-    line_width = 2.0**(ntrees - 1)
-    for m in M:
-        # print nx.info(m)
-        # print "edges:", list(m.edges())
-        nx.draw_networkx(m, pos=layout, edge_color=line_colors[0], width=line_width)
-        # advance to next line color and width
-        line_colors = line_colors[1:]
-        line_width /= 1.5
-    plt.show()
-
-
-    # TODO: create a dummy topology, read it in here, and do some tests

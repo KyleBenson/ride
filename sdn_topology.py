@@ -1,25 +1,30 @@
 import logging as log
+
+from network_topology import NetworkTopology
+
 log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 import json
 import networkx as nx
 
 
-class SdnTopology(object):
+class SdnTopology(NetworkTopology):
     """Generates a networkx topology (undirected graph) from information
     gleaned from an SDN Controller.
     Supports various functions such as finding multicast spanning trees and
     installing flow rules.
 
-    The inheritance hierarchy works like this: the base class implements
-    most of the interesting algorithms by using various helper functions.
-    The derived classes implement those helper functions in order to adapt
+    The inheritance hierarchy works like this: the base class (NetworkTopology)
+    implements the networking-related graph algorithms by using various helper functions.
+    This class adds functionality for SDN/OpenFlow by maintaining the underlying
+    topology with proper annotations for use by its helper functions that are
+    used to generate flow rules for insertion into switches.
+    Derived classes implement abstract helper functions in order to adapt
     a particular data model and API (e.g. SDN controller, generic graph, etc.)
     to the SdnTopology tool."""
 
     def __init__(self):
         super(SdnTopology, self).__init__()
-        self.topo = nx.Graph()
 
     def build_topology(self):
         # TODO: refactor this to enable get_switches, get_hosts, get_links, etc? add_ funcs should return the component
@@ -44,76 +49,6 @@ class SdnTopology(object):
 
         log.info("Final %d nodes: %s" % (self.topo.number_of_nodes(), list(self.topo.nodes(data=True))))
         log.info("Final %d edges: %s" % (self.topo.number_of_edges(), list(self.topo.edges(data=True))))
-
-    ### Topoology-related generic methods: this is where the algorithms go!
-
-    def get_multicast_tree(self, source, destinations, algorithm='networkx'):
-        """Uses networkx algorithms to build a multicast tree for the given source node and
-        destinations (an iterable).  Can be used to build and install flow rules.
-        Current implementation uses the metric closure-based approximation of a steiner tree."""
-
-        if algorithm == 'networkx':
-            """Default algorithm implemented by networkx that uses sum of
-            shortest paths 2*D approximation.  Currently not available in
-            latest release of networkx, so see README if this import doesn't work."""
-            try:
-                from networkx.algorithms.approximation import steiner_tree
-            except ImportError:
-                raise NotImplementedError("Steiner Tree algorithm not found!")
-
-            # we don't care about directionality of the mcast tree here,
-            # so we can treat the source as yet another destination
-            destinations.append(source)
-            return steiner_tree(self.topo, destinations)
-
-        elif algorithm == 'ilp':
-            """Our (UCI-DSM group) proposed ILP-based heuristic.
-            This call will just attempt to generate a tree with minimum 'weight'
-            according to our heuristic, which is normally just # links."""
-            self.get_redundant_multicast_trees(source, destinations, 1, algorithm)
-        else:
-            raise ValueError("Unkown multicast tree generation algorithm %s" % algorithm)
-
-    def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='networkx'):
-        """Builds k redundant multicast trees: trees should not share any edges
-        unless necessary.  Supports various algorithms, several of which may not
-        work for k>2."""
-
-        if algorithm == 'networkx':
-            """Default algorithm implemented by networkx that uses sum of
-            shortest paths 2*D approximation.  Currently not available in
-            latest release of networkx, so see README if this import doesn't work."""
-            try:
-                from networkx.algorithms.approximation import steiner_tree
-            except ImportError:
-                raise NotImplementedError("Steiner Tree algorithm not found!")
-
-            # we don't care about directionality of the mcast tree here,
-            # so we can treat the source as yet another destination
-            # TODO: need to create k trees!
-            destinations.append(source)
-            return steiner_tree(self.topo, destinations)
-
-        elif algorithm == 'ilp':
-            """Our (UCI-DSM group) proposed ILP-based heuristic."""
-            from redundant_multicast_algorithms import ilp_redundant_multicast
-            return ilp_redundant_multicast(self.topo, source, destinations, k)
-
-        else:
-            raise ValueError("Unkown multicast tree generation algorithm %s" % algorithm)
-
-
-    # TODO:
-    def get_redundant_paths(self, source, destination, k=2):
-        """Gets k (possibly shortest) redundant paths with NO component overlap"""
-        # TODO: if possible? else get maximally-redundant
-        raise NotImplementedError
-
-    def get_path(self, source, destination):
-        """Gets shortest path by weight attribute between the nodes.
-        @:return a sequence of nodes representing the shortest path"""
-
-        return nx.shortest_path(self.topo, source=source, target=destination)
 
     # Generic flow rule generating functions based on the topology
 
