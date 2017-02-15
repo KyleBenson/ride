@@ -3,6 +3,8 @@ log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 import networkx as nx
 import dsm_networkx_algorithms as dsm_algs
+import json
+from networkx.readwrite import json_graph
 
 
 class NetworkTopology(object):
@@ -21,6 +23,11 @@ class NetworkTopology(object):
             self.topo = nx.Graph()
         else:
             self.topo = topo
+
+    def load_from_file(self, filename):
+        with open(filename) as f:
+            data = json.load(f)
+        self.topo = json_graph.node_link_graph(data)
 
     def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='networkx'):
         """Builds k redundant multicast trees: trees should not share any edges
@@ -69,6 +76,45 @@ class NetworkTopology(object):
 
             return trees
 
+        elif algorithm == 'paths':
+            """This algorithm builds multiple trees by getting multiple paths
+            to each terminal (destination) and selectively adding these paths
+            together to create each tree. The heuristic chooses destinations
+            in increasing order of shortest path from source. It adds a given
+            path to the tree with the most components in common so as to
+            create somewhat minimally-sized multicast trees."""
+
+            destinations = set(destinations)
+            shortest_paths = nx.shortest_path_length(self.topo, source, weight='weight')
+            shortest_paths = ((l, d) for d, l in shortest_paths if d in destinations)
+            sorted_destinations = sorted(shortest_paths)
+
+            # Track trees as sets of edges to make checking overlap faster
+            # NOTE: if the path overlaps with the tree in terms of a node
+            # but not an edge incident with that node, we have a cycle!
+            trees = [set() for i in range(k)]
+
+            for _, d in sorted_destinations:
+                paths = self.get_redundant_paths(source, d, k)
+                # ensure each tree receives a path
+                trees_left = set(range(k))
+                for i, p in enumerate(paths):
+                    # Add this path to the tree with most components in common
+                    edges = zip(p, p[1:])
+                    overlaps = ((len(trees[j].intersection(edges)), j) for j in trees_left)
+                    best_tree = max(overlaps)[1]
+                    trees_left.remove(best_tree)
+                    trees[best_tree].update(edges)
+
+            # Subgraph the topology with the trees' edges to maintain attributes
+            results = [self.topo.edge_subgraph(t) for t in trees]
+            # Sanity check that we're generating actual trees
+            for t in results:
+                if not nx.is_tree(t):
+                    print "WARNING: non-tree mcast tree generated! edges:", list(t.edges())
+                    # TODO: trim excess non-destination leaves from tree while not a tree?
+            return results
+
         elif algorithm == 'ilp':
             """Our (UCI-DSM group) proposed ILP-based heuristic."""
             from redundant_multicast_algorithms import ilp_redundant_multicast
@@ -95,7 +141,7 @@ class NetworkTopology(object):
         The basic idea is to use network flow on a modified graph where each edge can
         handle one flow at regular cost but any others have greatly increased cost.
         This implementation assumes we only care about min-sum costs of edges then nodes
-        for the constraints."""
+        for the constraints. Running time = O(k(E+VlogV))"""
 
         return dsm_algs.get_redundant_paths(self.topo, source, destination, k)
 
@@ -111,20 +157,32 @@ class NetworkTopology(object):
 
 # Run various tests
 if __name__ == '__main__':
-    # algorithm = 'ilp'
-    algorithm = 'networkx'
-    ntrees = 4
+    algorithm = 'paths'
+    ntrees = 2
+    from_file = True
 
-    g = nx.complete_graph(4)
-    g.add_edge(0, 4)
-    g.add_edge(3, 5)
-    # Need to relabel to strings since we assume nodes are strings
-    nx.relabel_nodes(g, {i: str(i) for i in g.nodes()}, copy=False)
-    net = NetworkTopology(g)
+    if from_file:
+        net = NetworkTopology()
+        source = "s0"
+        # net.load_from_file('campus_topo_80b-8h.json')
+        net.load_from_file('campus_topo_8b-4h.json')
+        # dest = ["h1-b4", "h2-b7", "h3-b0", "h2-b0", "h4-b2", "h5-b21", "h6-b45", "h7-b71"]
+        dest = ["h1-b4", "h2-b7", "h3-b0"]
+    else:
+        g = nx.complete_graph(4)
+        g.add_edge(0, 4)
+        g.add_edge(3, 5)
+        # Need to relabel to strings since we assume nodes are strings
+        nx.relabel_nodes(g, {i: str(i) for i in g.nodes()}, copy=False)
+        net = NetworkTopology(g)
 
-    dest = ["2", "5"]
-    # dest = ["5"]
-    M = net.get_redundant_multicast_trees("4", dest, ntrees, algorithm)
+        dest = ["2", "5"]
+        source = "4"
+
+    for u,v in net.topo.edges():
+        net.topo[u][v]['weight'] = 1
+
+    M = net.get_redundant_multicast_trees(source, dest, ntrees, algorithm)
 
     net.draw_multicast_trees(M)
 

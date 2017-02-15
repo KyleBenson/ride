@@ -1,9 +1,7 @@
 import logging as log
 log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
-import json
 import networkx as nx
-from networkx.readwrite import json_graph
 from sdn_topology import SdnTopology
 
 
@@ -62,9 +60,7 @@ class NetworkxSdnTopology(SdnTopology):
     def build_topology(self, filename=None):
         if filename is None:
             filename = self.filename
-        with open(filename) as f:
-            data = json.load(f)
-        self.topo = json_graph.node_link_graph(data)
+        self.load_from_file(filename)
 
     def is_host(self, node):
         """Returns True if the given node is a host, False if it is a switch."""

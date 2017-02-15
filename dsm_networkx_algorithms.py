@@ -5,7 +5,7 @@ might benefit from."""
 import networkx as nx
 
 
-def draw_overlaid_graphs(original, new_graphs):
+def draw_overlaid_graphs(original, new_graphs, print_text=True):
     """Draws the new_graphs as graphs overlaid on the original topology"""
     import matplotlib.pyplot as plt
 
@@ -14,14 +14,14 @@ def draw_overlaid_graphs(original, new_graphs):
     # want to overlay edges in different colors and progressively thinner
     # so that we can see what edges are in a tree
     line_colors = 'rbgycm'
-    line_width = 2.0 ** (len(new_graphs) - 1)
-    for t in new_graphs:
-        # print nx.info(m)
-        # print "edges:", list(m.edges())
-        nx.draw_networkx(t, pos=layout, edge_color=line_colors[0], width=line_width)
-        # advance to next line color and width
-        line_colors = line_colors[1:]
-        line_width /= 1.8
+    line_width = 2.0 ** (min(len(new_graphs), len(line_colors)) - 1)
+    for i, g in enumerate(new_graphs):
+        if print_text:
+            print nx.info(g)
+            print "edges:", list(g.edges())
+        nx.draw_networkx(g, pos=layout, edge_color=line_colors[i % len(line_colors)], width=line_width)
+        # advance to next line width
+        line_width /= 1.7
     plt.show()
 
 
@@ -76,6 +76,8 @@ def get_redundant_paths(G, source, target, k=2):
     for the constraints."""
 
     # 3-step algorithm: build transformed graph(s), find min-cost flow, compute paths
+    if source == target:
+        raise ValueError("source and target cannot be the same!")
 
     # First, build transformed graph by splitting each non-s/t node into two:
     # one for incoming nodes and one for outgoing nodes
@@ -147,6 +149,7 @@ def get_redundant_paths(G, source, target, k=2):
         print "WARNING! flow_graph still has flow edges left!", list(flow_graph.edges())
 
     return paths
+
 
 # Simple tests
 if __name__ == '__main__':
