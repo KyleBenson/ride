@@ -2,6 +2,7 @@ import logging as log
 log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 import networkx as nx
+import dsm_networkx_algorithms as dsm_algs
 
 
 class NetworkTopology(object):
@@ -88,9 +89,15 @@ class NetworkTopology(object):
     # Path generation procedures
 
     def get_redundant_paths(self, source, destination, k=2):
-        """Gets k (possibly shortest) redundant paths with minimal component overlap"""
-        # TODO: if possible? else get maximally-redundant
-        raise NotImplementedError
+        """Gets k (possibly shortest) redundant paths with minimal component overlap.
+        Current version based on Zheng et al 2010 paper entitled
+        'Minimum-Cost Multiple Paths Subject to Minimum Link and Node Sharing in a Network'.
+        The basic idea is to use network flow on a modified graph where each edge can
+        handle one flow at regular cost but any others have greatly increased cost.
+        This implementation assumes we only care about min-sum costs of edges then nodes
+        for the constraints."""
+
+        return dsm_algs.get_redundant_paths(self.topo, source, destination, k)
 
     def get_path(self, source, destination):
         """Gets shortest path by weight attribute between the nodes.
@@ -99,24 +106,8 @@ class NetworkTopology(object):
         return nx.shortest_path(self.topo, source=source, target=destination)
 
     def draw_multicast_trees(self, trees):
-        # draw the results of the trees on top of the original network
-        import matplotlib.pyplot as plt
-
-        layout = nx.spring_layout(self.topo)
-        nx.draw_networkx(self.topo, pos=layout)
-        # want to overlay edges in different colors and progressively thinner
-        # so that we can see what edges are in a tree
-        line_colors = 'rbgycm'
-        line_width = 2.0 ** (ntrees - 1)
-        for t in trees:
-            # print nx.info(m)
-            # print "edges:", list(m.edges())
-            nx.draw_networkx(t, pos=layout, edge_color=line_colors[0], width=line_width)
-            # advance to next line color and width
-            line_colors = line_colors[1:]
-            line_width /= 1.5
-        plt.show()
-
+        """Draws the trees as graphs overlaid on the original topology"""
+        dsm_algs.draw_overlaid_graphs(self.topo, trees)
 
 # Run various tests
 if __name__ == '__main__':
