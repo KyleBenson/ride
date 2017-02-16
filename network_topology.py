@@ -46,7 +46,7 @@ class NetworkTopology(object):
 
             # we don't care about directionality of the mcast tree here,
             # so we can treat the source as yet another destination
-            destinations.append(source)
+            destinations = destinations + [source]
 
             # Skip over graph modifications if we only want one tree
             if k == 1:
