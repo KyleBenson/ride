@@ -13,6 +13,10 @@ import os
 import json
 
 
+# skip over these metrics when looking for results from heuristics
+METRICS_TO_SKIP = {'run', 'nhops', 'overlap'}
+
+
 def parse_args(args):
 ##################################################################################
 #################      ARGUMENTS       ###########################################
@@ -92,7 +96,7 @@ class SeismicStatistics(object):
         for run in group:
             for heuristic, reachability in run.items():
                 # HACK to skip other parameters for this run
-                if heuristic == 'run':
+                if heuristic in METRICS_TO_SKIP:
                     continue
                 reachabilities[heuristic] = reachabilities.get(heuristic, 0) + reachability
                 heuristic_counts[heuristic] = heuristic_counts.get(heuristic, 0) + 1

@@ -94,7 +94,7 @@ def get_redundant_paths(G, source, target, k=2):
     # Choose m1 and m2, which form the aforementioned penalties
     # NOTE: we need max_weight > 1 so we just fudge it here.  The
     # original paper said to modify all weights, but we don't.
-    max_weight = max(G[u][v]['weight'] for u,v in G.edges())
+    max_weight = max(G[u][v].get('weight', 1) for u,v in G.edges())
     if max_weight <= 1:
         max_weight += 1 - max_weight + 0.001
     # m2 discourages selecting a link multiple times, so ensure we'll
@@ -112,11 +112,13 @@ def get_redundant_paths(G, source, target, k=2):
     for u,v in list(g2.edges()):
         is_vv_link = v == u + "'"
 
-        this_weight = m1 if is_vv_link else (g2[u][v][0]['weight'] + m2)
+        this_weight = m1 if is_vv_link else (g2[u][v][0].get('weight', 1) + m2)
         g2[u][v][0]['capacity'] = 1
         # Try copying existing weight from node v to its v-v' link
+        # NOTE: we need to have non-zero weight on these links or
+        # the flow algorithm will needlessly assign flow to them
         if is_vv_link:
-            g2[u][v][0]['weight'] = G.node[u].get('weight', 0)
+            g2[u][v][0]['weight'] = G.node[u].get('weight', 0.00000001)
         g2.add_edge(u, v, 'bar', capacity=k-1, weight=this_weight)
 
     # Now it's time to find the min-cost flow
@@ -133,12 +135,12 @@ def get_redundant_paths(G, source, target, k=2):
     # to avoid traversing them again in future paths.
     paths = []
     for i in range(k):
-        p = nx.shortest_path(flow_graph, source, target)
+        p = nx.shortest_path(flow_graph, source, target, weight='weight')
         for u,v in zip(p, p[1:]):
             # Prefer primary edges first, which cannot have >1 flow
             try:
                 flow_graph.remove_edge(u, v, 0)
-            except nx.NetworkXError:
+            except nx.NetworkXError as e:
                 flow_graph[u][v]['bar']['flow'] -= 1
                 if flow_graph[u][v]['bar']['flow'] == 0:
                     flow_graph.remove_edge(u, v, 'bar')
@@ -146,7 +148,7 @@ def get_redundant_paths(G, source, target, k=2):
 
     # sanity check
     if flow_graph.number_of_edges() > 0:
-        print "WARNING! flow_graph still has flow edges left!", list(flow_graph.edges())
+        print "WARNING! flow_graph still has flow edges left!", list(flow_graph.edges(data=True))
 
     return paths
 
