@@ -18,10 +18,10 @@ import json
 import numpy as np
 
 import argparse
-#from os.path import isdir
-#from os import listdir
-#from getpass import getpass
-#password = getpass('Enter password: ')
+
+COST_METRIC = 'weight'  # for links only
+# TODO: make this latency instead?
+DISTANCE_METRIC = COST_METRIC  # for shortest path calculations
 
 
 class SmartCampusNetworkxExperiment(object):
@@ -149,7 +149,7 @@ class SmartCampusNetworkxExperiment(object):
 
     def output_results(self):
         """Outputs the results to a file"""
-        log.info("Results: %s" % self.results)
+        log.info("Results: %s" % json.dumps(self.results, sort_keys=True, indent=2))
         with open(self.output_filename, "w") as f:
             json.dump(self.results, f, sort_keys=True, indent=2)
 
@@ -193,23 +193,110 @@ class SmartCampusNetworkxExperiment(object):
 
         return trees
 
-    def choose_best_tree(self, failed_topology, server, publishers, trees):
-        """Picks the tree having the most overlap with the paths
-        each publisher's sensor data packet arrived on."""
+    def choose_best_trees(self, failed_topology, server, publishers, subscribers, trees):
+        """
+        Picks the tree having the estimated best chance of reaching
+        subscribers based on their overlap (or not) with the paths
+        each publisher's sensor data packet arrived on.
+
+        :param nx.Graph failed_topology:
+        :param str server:
+        :param List[str] publishers:
+        :param List[str] subscribers:
+        :param List[nx.Graph] trees:
+        :rtype dict:
+        """
+
+        # We'll return a dict of tree choices indexed by method used
+        choices = dict()
 
         # Build up the Successfully Traversed Topology from each publisher
         # by determining which path the packet would take in the functioning
         # topology and add its edges to the STT only if that path is
         # functioning in the failed topology
+        # NOTE: because we're using undirected graphs, we have to worry about
+        # whether edge tuples are formatted (nodes ordered) properly, hence
+        # we just add edges to the set object in both orders (u,v) and (v,u)
         stt = set()
         for pub in publishers:
-            path = nx.shortest_path(self.topo.topo, pub, server, weight='weight')
+            path = nx.shortest_path(self.topo.topo, pub, server, weight=DISTANCE_METRIC)
             if nx.is_simple_path(failed_topology, path):
-                for edge in zip(path, path[1:]):
-                    stt.add(edge)
+                for u, v in zip(path, path[1:]):
+                    stt.add((u,v))
+                    stt.add((v,u))
+        stt_graph = nx.Graph(e for e in stt)
+        # NOTE: Need to ensure at least server is here as doing the is_simple_path
+        # check below causes an error if it was never added (all failed).
+        stt_graph.add_node(server)
 
-        overlaps = ((len(stt.intersection(t.edges())), t) for t in trees)
-        return max(overlaps)[1]
+        method = 'max-overlap'
+        # IDEA: choose the tree with the most # edges overlapping the STT,
+        # which means it has the most # 'known' working links.
+        # We scale the total overlap by the number of edges in the tree
+        # to avoid preferring larger trees that unnecessarily overlap
+        # random paths that we don't care about.
+        overlaps = [(len(stt.intersection(t.edges())) / float(nx.number_of_edges(t)),\
+                     self.random.random(), t) for t in trees]
+        choices[method] = max(overlaps)[2]
+
+        method = 'min-missing'
+        # IDEA: choose the tree with the lease # edges that haven't been
+        # validated as 'currently functioning' by the publishers'
+        # packets' paths, which lessens the probability that a link of
+        # unknown status will have failed.
+        # We use the size of a tree as a tie-breaker (prefer smaller ones)
+        missing = [(len(set(t.edges()) - stt), nx.number_of_edges(t), self.random.random(), t) for t in trees]
+        choices[method] = min(missing)[3]
+
+        method = 'max-reachable'
+        # IDEA: choose the tree with the most # reachable destinations,
+        # as estimated by checking whether the path taken to each
+        # destination is validated as 'currently functioning' by the STT
+        dests_reachable = []
+        for tree in trees:
+            this_reachability = 0
+            for sub in subscribers:
+                path = nx.shortest_path(tree, server, sub, weight=DISTANCE_METRIC)
+                if nx.is_simple_path(stt_graph, path):
+                    this_reachability += 1
+            dests_reachable.append((this_reachability, self.random.random(), tree))
+        best = max(dests_reachable)
+        choices[method] = best[2]
+
+        method = 'importance'
+        # IDEA: essentially a hybrid of max-overlap and max-reachable.
+        # Instead of just counting # edges overlapping, count total
+        # 'importance' of overlapping edges where the importance is
+        # the # destination-paths traversing this edge.
+        importance = []
+        for tree in trees:
+            # We'll use max-flow to find how many paths on each edge
+            sink = "__choose_best_trees_sink_node__"
+            for sub in subscribers:
+                tree.add_edge(sub, sink, capacity=1)
+            flow_value, flow = nx.maximum_flow(tree, server, sink)
+            assert(flow_value == len(subscribers))  # else something wrong
+            tree.remove_node(sink)
+
+            # For every 'up' edge, count the flow along it as its importance.
+            # Also divide by the total importance to avoid preferring larger trees
+            this_importance = 0
+            total_importance = 0.0
+            for u, vd in flow.items():
+                for v, f in vd.items():
+                    if v == sink:
+                        continue
+                    if (u, v) in stt:
+                        this_importance += f
+                    total_importance += f
+            importance.append((this_importance / total_importance, self.random.random(), tree))
+
+        choices[method] = max(importance)[2]
+
+        method = 'random'
+        choices[method] = self.random.choice(trees)
+
+        return choices
 
     def run_experiment(self, failed_nodes, failed_links, server, publishers, subscribers, trees):
         """Check what percentage of subscribers are still reachable
@@ -220,42 +307,72 @@ class SmartCampusNetworkxExperiment(object):
 
         We also explore the use of an intelligent multicast tree-choosing
         heuristic that picks the tree with the most overlap with the paths
-        each publisher's sensor data packet arrived on."""
+        each publisher's sensor data packet arrived on.
 
+        :param List[str] failed_nodes:
+        :param List[str] failed_edges:
+        :param str server:
+        :param List[str] publishers:
+        :param List[str] subscribers:
+        :param List[nx.Graph] trees:
+        :rtype dict:
+        """
 
-        # IDEA: for the whole topology and each mcast tree,
-        # remove the failed nodes and links,
-        # determine all reachable nodes in topology,
-        # consider only those that are subscribers,
-        # record % reachable by any/all topologies.
-        # NOTE: the reachability from the whole topology gives us an
-        # upper bound on how well the multicast algorithms could possibly do.
+        # IDEA: find the % nodes reachable in the topology after failing
+        # the nodes and links listed.  We have different methods of
+        # choosing which tree to use and two non-multicast comparison heuristics.
+        # NOTE: the reachability from the whole topology (oracle) gives us an
+        # upper bound on how well the edge server could possibly do,
+        # even without using multicast.
 
         subscribers = set(subscribers)
-        result = {}
+        result = dict()
+        heuristic = self.mcast_heuristic
+        # we'll record reachability for various choices of trees
+        result[heuristic] = dict()
 
+        # ORACLE
         # First, create a copy of whole topology as the 'oracle' heuristic,
         # which sees what subscribers are even reachable by ANY path.
         failed_topology = self.get_failed_topology(self.topo.topo, failed_nodes, failed_links)
         failed_topology.graph['heuristic'] = 'oracle'
         topos_to_check = [failed_topology]
         res = self.get_reachability(server, subscribers, topos_to_check)
-        result[failed_topology.graph['heuristic']] = res
+        result['oracle'] = res
 
-        # Next, check the tree chosen by the edge server for its overlap with publishers' packets
-        best_tree = self.choose_best_tree(failed_topology, server, publishers, trees)
-        best_tree = self.get_failed_topology(best_tree, failed_nodes, failed_links)
-        best_tree.graph['heuristic'] = 'chosen-%s' % best_tree.graph['heuristic']
-        res = self.get_reachability(server, subscribers, [best_tree])
-        result[best_tree.graph['heuristic']] = res
+        # UNICAST
+        # Second, get the reachability for the 'unicast' heuristic,
+        # which sees what subscribers are reachable on the failed topology
+        # via the path they'd normally be reached on the original topology
+        paths = [nx.shortest_path(self.topo.topo, server, s, weight=DISTANCE_METRIC) for s in subscribers]
+        # record the cost of the paths whether they would succeed or not
+        unicast_cost = sum(self.topo.topo[u][v].get(COST_METRIC, 1) for p in paths\
+                           for u, v in zip(p, p[1:]))
+        # now filter only paths that are still functioning and record the reachability
+        paths = [p for p in paths if nx.is_simple_path(failed_topology, p)]
+        result['unicast'] = len(paths) / float(len(subscribers))
 
-        # Now check the redundant multicast trees
+        # CHOSEN
+        # Next, check the tree chosen by the edge server heuristic(s)
+        # for having the best chance of data delivery
+        # ENHANCE: no need to recompute failed topology for trees chosen >1 times then do them all again
+        best_trees = self.choose_best_trees(failed_topology, server, publishers, subscribers, trees)
+        for choice_method, best_tree in best_trees.items():
+            best_tree = self.get_failed_topology(best_tree, failed_nodes, failed_links)
+            best_tree.graph['heuristic'] = '%s-chosen' % choice_method
+            res = self.get_reachability(server, subscribers, [best_tree])
+            result[heuristic][best_tree.graph['heuristic']] = res
+
+        # ALL TREES
+        # Finally, check all the redundant multicast trees together
         topos_to_check = [self.get_failed_topology(t, failed_nodes, failed_links) for t in trees]
         res = self.get_reachability(server, subscribers, topos_to_check)
         heuristic = trees[0].graph['heuristic']  # we assume all trees from same heuristic
-        result[heuristic] = res
+        result[heuristic]['all'] = res
 
+        ### RECORDING METRICS ###
         # Record the distance to the subscribers in terms of # hops
+        # TODO: make this latency instead?
         nhops = []
         for t in trees:
             for s in subscribers:
@@ -267,13 +384,22 @@ class SmartCampusNetworkxExperiment(object):
         overlap = [len(t1.intersection(t2)) for t1 in tree_edges for t2 in tree_edges]
         result['overlap'] = sum(overlap)
 
+        # Record the average size of the trees
+        costs = [sum(e[2].get(COST_METRIC, 1) for e in t.edges(data=True)) for t in trees]
+        result['cost'] = dict(mean=np.mean(costs), stdev=np.std(costs), min=min(costs), max=max(costs),
+                              unicast=unicast_cost)
+
         return result
 
     def get_reachability(self, server, subscribers, topologies):
         """Returns the average probability of reaching one of the subscribers from the
         server in any of the given topologies."""
 
-        # would it make use of some connectivity information to represent the picks being received at the server?
+        # IDEA: we can determine the reachability by the following:
+        # for each topology, remove the failed nodes and links,
+        # determine all reachable nodes in topology,
+        # consider only those that are subscribers,
+        # record % reachable by any/all topologies.
 
         all_subscribers_reachable = set()
         for topology in topologies:
