@@ -66,7 +66,7 @@ class CampusTopologyGenerator(object):
             server_name = "s%d" % s
             self.topo.add_node(server_name)
             for server_router in random.sample(self.core_nodes, self.links_per_server):
-                self.topo.add_edge(server_router, server_name)
+                self.add_link(server_router, server_name)
 
         # Add buildings
         nminor_buildings = int(math.ceil(self.nbuildings * self.percent_minor_buildings))
@@ -83,7 +83,7 @@ class CampusTopologyGenerator(object):
             self.major_building_routers.append(node_name)
             # Add links to core
             for dst in random.sample(self.core_nodes, self.links_per_building):
-                self.topo.add_edge(node_name, dst)
+                self.add_link(node_name, dst)
 
         # Add distribution routers that support minor buildings (rounding down);
         # then connect them to the minor buildings.  If we have too few minor
@@ -99,7 +99,7 @@ class CampusTopologyGenerator(object):
             self.topo.add_node(router_name)
             self.distribution_routers.append(router_name)
             for dst in random.sample(self.core_nodes, self.links_per_distribution_router):
-                self.topo.add_edge(router_name, dst)
+                self.add_link(router_name, dst)
 
             # evenly balance out the extra minor buildings added,
             # keeping in mind that we may not have had enough minor
@@ -111,9 +111,9 @@ class CampusTopologyGenerator(object):
                 extra_minors -= 1
 
             for j in range(mbs_to_add):
-                node_name = "m%d" % j
+                node_name = "m%d" % len(self.minor_building_routers)
                 self.topo.add_node(node_name)
-                self.topo.add_edge(node_name, router_name)
+                self.add_link(node_name, router_name)
                 self.minor_building_routers.append(node_name)
 
         # add in-building topologies and/or just hosts
@@ -124,7 +124,7 @@ class CampusTopologyGenerator(object):
         for b in self.minor_building_routers:
             self.create_building_topology(b, False, True)
 
-        # TODO: add inter-building links
+        self.add_inter_building_links()
 
         print "Added %d hosts" % len(self.hosts)
 
@@ -145,15 +145,15 @@ class CampusTopologyGenerator(object):
             for floor in range(self.building_floors):
                 floor_switch_name = "f%d-%s" % (floor, building)
                 self.topo.add_node(floor_switch_name)
-                self.topo.add_edge(building, floor_switch_name)
+                self.add_link(building, floor_switch_name)
                 for rack_switch in range(self.building_switches_per_floor):
                     rack_switch_name = "r%d-%s" % (rack_switch, floor_switch_name)
                     self.topo.add_node(rack_switch_name)
-                    self.topo.add_edge(floor_switch_name, rack_switch_name)
+                    self.add_link(floor_switch_name, rack_switch_name)
                     for host in range(self.hosts_per_floor_switch):
                         host_name = "h%d-%s" % (host, rack_switch_name)
                         self.topo.add_node(host_name)
-                        self.topo.add_edge(rack_switch_name, host_name)
+                        self.add_link(rack_switch_name, host_name)
                         self.hosts.append(host_name)
         else:
             if is_minor_building:
@@ -163,9 +163,106 @@ class CampusTopologyGenerator(object):
             for host in range(nhosts):
                 host_name = "h%d-%s" % (host, building)
                 self.topo.add_node(host_name)
-                self.topo.add_edge(building, host_name)
+                self.add_link(building, host_name)
                 self.hosts.append(host_name)
 
+    def add_inter_building_links(self):
+        """Adds links between buildings randomly for additional
+        redundancy and topology diversity."""
+
+        try:
+            endpoints = random.sample(self.major_building_routers, self.inter_building_links * 2)
+        except ValueError as e:
+            print "ERROR: requested more inter_building_links" \
+                  " than can be placed without repeating buildings!"
+            raise e
+
+        for src, dst in zip(endpoints[:len(endpoints)/2], endpoints[len(endpoints)/2:]):
+            self.add_link(src, dst)
+
+    def add_link(self, src, dst):
+        """Add a link between the src and dst. Sets various attributes."""
+        latency = self.get_link_latency(src, dst)
+        weight = self.get_link_weight(src, dst)
+        # TODO: bandwidth
+        self.topo.add_edge(src, dst, latency=latency, weight=weight)
+
+    def get_link_weight(self, src, dst):
+        """Assign a link weight, which represents cost of operation,
+        as determined by the types of end-points:
+          (building | distribution)-core or minor building:
+                low as necessary part of routing to hosts
+          inter-core: medium as fiber but carrying high load
+          server: high as assumed resource constrained / expensive
+          inter-building: highest as assumed for local traffic / emergency backup
+
+        :param str src:
+        :param str dst:
+        """
+        # server
+        if src.startswith('s') or dst.startswith('s'):
+            return 1.4
+        # inter-building
+        elif src.startswith('b') and dst.startswith('b'):
+            return 1.8
+        # inter-core
+        elif src.startswith('c') and dst.startswith('c'):
+            return 1.2
+        # TODO: should support the intra-building link types: 0 weight?  hosts should be too then...
+        # hosts, building-core, distribution-core, or minor building
+        else:
+            return 1.0
+
+    def get_link_latency(self, src, dst):
+        """Randomly generate a link latency within a range determined
+        by the types of end-points:
+          server: lowest as assumed directly connected
+          inter-building: low as assumed close
+          building-core: medium-low as fiber links but relatively close
+          hosts: medium-low as close proximity but ethernet
+          inter-core: medium as fiber links but far apart
+          distribution-core: high as assumed older tech
+          minor building: highest as assumed old tech
+
+        :param str src:
+        :param str dst:
+        """
+        # sort to make these if statements easier
+        src, dst = tuple(sorted((src, dst)))
+        # server
+        if dst.startswith('s'):
+            start = 1
+            stop = 3
+        # host
+        elif src.startswith('h') or dst.startswith('h'):
+            # TODO: should support the intra-building link types here
+            start = 5
+            stop = 10
+        elif src.startswith('b'):
+            # inter-building
+            if dst.startswith('b'):
+                start = 2
+                stop = 8
+            # building-core
+            elif dst.startswith('c'):
+                start = 7
+                stop = 15
+        elif src.startswith('c'):
+            # inter-core
+            if dst.startswith('c'):
+                start = 10
+                stop = 20
+            # distribution-core
+            elif dst.startswith('d'):
+                start = 20
+                stop = 30
+        # minor building
+        elif dst.startswith('m') and src.startswith('d'):
+            start = 25
+            stop = 50
+        else:
+            raise TypeError("Didn't recognize the src/dst router types: %s, %s" % (src, dst))
+        return random.uniform(start, stop)
 
     def get(self):
         if self.topo is not None:
@@ -200,14 +297,36 @@ if __name__ == '__main__':
         # build smaller topology for visualizing
         t = CampusTopologyGenerator(nbuildings=8, hosts_per_floor_switch=2,
                                     building_switches_per_floor=1, building_floors=2,
-                                    add_building_topology=False)
+                                    add_building_topology=False, inter_building_links=3)
     else:
+        # build multiple topologies and save each of them
+        t = CampusTopologyGenerator(nbuildings=8, hosts_per_floor_switch=2,
+                                    building_switches_per_floor=1, building_floors=2,
+                                    add_building_topology=False, inter_building_links=2)
+        t.generate()
+        t.write('campus_topo_8b-4h.json')
+        t.write()  # save as default topo for testing
+
+        t = CampusTopologyGenerator(nbuildings=20, hosts_per_floor_switch=4,
+                                    building_switches_per_floor=1, building_floors=2,
+                                    add_building_topology=False, inter_building_links=3)
+        t.generate()
+        t.write('campus_topo_20b-8h.json')
+
         t = CampusTopologyGenerator(nbuildings=80, hosts_per_floor_switch=4,
                                     building_switches_per_floor=1, building_floors=2,
-                                    add_building_topology=False)
+                                    add_building_topology=False, inter_building_links=8)
+        t.generate()
+        t.write('campus_topo_80b-8h.json')
 
-    g = t.get()
-    print nx.info(g)
+        t = CampusTopologyGenerator(nbuildings=200, hosts_per_floor_switch=10,
+                                    building_switches_per_floor=1, building_floors=2,
+                                    add_building_topology=False, inter_building_links=20)
+        t.generate()
+        t.write('campus_topo_200b-20h.json')
+
     if test_run:
+        g = t.get()
+        print nx.info(g)
         t.draw()
-    t.write()
+        t.write()

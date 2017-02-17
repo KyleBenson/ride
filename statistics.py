@@ -158,7 +158,7 @@ class SeismicStatistics(object):
         markers = 'x.*+do^s1_|'
         colors = 'rbgycm'
         linestyles = ['solid','dashed','dashdot','dotted']
-        
+
         i = 0
         for (heuristic, yvalues) in new_stats.items():
             plt.plot(xvalues, yvalues, label=heuristic, marker=markers[i%len(markers)],

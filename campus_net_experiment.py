@@ -6,7 +6,7 @@ Intended as a simplified simulation that removes the need for network setup or
 components such as switches, SDN controllers, etc.'''
 
 # @author: Kyle Benson
-# (c) Kyle Benson 2016
+# (c) Kyle Benson 2017
 
 from failure_model import SmartCampusFailureModel
 # TODO: from sdn_topology import *
@@ -16,12 +16,10 @@ import logging as log
 import random
 import json
 import numpy as np
-
 import argparse
 
 COST_METRIC = 'weight'  # for links only
-# TODO: make this latency instead?
-DISTANCE_METRIC = COST_METRIC  # for shortest path calculations
+DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
 
 class SmartCampusNetworkxExperiment(object):
