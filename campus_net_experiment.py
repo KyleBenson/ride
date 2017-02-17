@@ -61,9 +61,11 @@ class SmartCampusNetworkxExperiment(object):
                                    'nsubscribers': nsubscribers,
                                    'npublishers': npublishers,
                                    'failure_model': self.failure_model.get_params(),
+                                   'heuristic': self.mcast_heuristic,
                                    'topo': topo,
-                                   # TODO: maybe use connectivity approximation to analyze how resilient the graphs are?
-                                   'randseed': choice_rand_seed,
+                                   'choicerandseed': choice_rand_seed,
+                                   'randseed': rand_seed,
+                                   'failrandseed': kwargs.get('failure_rand_seed', None),
                                    }
                         }
 
@@ -162,13 +164,13 @@ class SmartCampusNetworkxExperiment(object):
 
     def choose_subscribers(self):
         hosts = self.topo.get_hosts()
-        subs = self.random.sample(hosts, self.nsubscribers)
+        subs = self.random.sample(hosts, min(self.nsubscribers, len(hosts)))
         log.debug("Subscribers: %s" % subs)
         return subs
 
     def choose_publishers(self):
         hosts = self.topo.get_hosts()
-        pubs = self.random.sample(hosts, self.npublishers)
+        pubs = self.random.sample(hosts, min(self.npublishers, len(hosts)))
         log.debug("Publishers: %s" % pubs)
         return pubs
 

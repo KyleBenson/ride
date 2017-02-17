@@ -2,7 +2,8 @@ import logging as log
 
 from network_topology import NetworkTopology
 
-log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
+# TODO: specific config for module?
+#log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 import json
 import networkx as nx

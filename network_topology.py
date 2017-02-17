@@ -1,5 +1,4 @@
 import logging as log
-log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 import networkx as nx
 import dsm_networkx_algorithms as dsm_algs
@@ -50,7 +49,6 @@ class NetworkTopology(object):
 
             # Skip over graph modifications if we only want one tree
             if k == 1:
-                # TODO: verify this keeps attributes intact
                 return [steiner_tree(self.topo, destinations)]
 
             # Naive heuristic: generate a multicast tree, increase the
@@ -109,10 +107,18 @@ class NetworkTopology(object):
             # Subgraph the topology with the trees' edges to maintain attributes
             results = [self.topo.edge_subgraph(t) for t in trees]
             # Sanity check that we're generating actual trees
-            for t in results:
+            for i, t in enumerate(results):
                 if not nx.is_tree(t):
-                    print "WARNING: non-tree mcast tree generated! edges:", list(t.edges())
-                    # TODO: trim excess non-destination leaves from tree while not a tree?
+                    log.warning("WARNING: non-tree mcast tree generated! edges:", list(t.edges()))
+                    new_t = t.edge_subgraph(nx.minimum_spanning_edges(t, data=False))
+                    non_terminal_leaves = [n for n in new_t.nodes() if\
+                                           (new_t.degree(n) == 1 and n not in destinations and n != source)]
+                    while len(non_terminal_leaves) > 0:
+                        log.warning("trimming tree:", non_terminal_leaves)
+                        new_t.remove_nodes_from(non_terminal_leaves)
+                        non_terminal_leaves = [n for n in new_t.nodes() if\
+                                               (new_t.degree(n) == 1 and n not in destinations and n != source)]
+                    results[i] = new_t
             return results
 
         elif algorithm == 'ilp':
@@ -160,6 +166,8 @@ if __name__ == '__main__':
     algorithm = 'paths'
     ntrees = 2
     from_file = True
+
+    log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
     if from_file:
         net = NetworkTopology()

@@ -1,5 +1,4 @@
 import logging as log
-log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 import networkx as nx
 from sdn_topology import SdnTopology
@@ -85,5 +84,6 @@ class NetworkxSdnTopology(SdnTopology):
         # the return values.
 
 if __name__ == '__main__':
+    log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
     st = NetworkxSdnTopology()
     print nx.info(st.topo)
