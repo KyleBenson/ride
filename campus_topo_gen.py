@@ -1,4 +1,5 @@
 import math
+import itertools
 import networkx as nx
 from networkx.readwrite import json_graph
 import json
@@ -55,11 +56,12 @@ class CampusTopologyGenerator(object):
     def generate(self):
         """Generates and returns the topology."""
 
-        # Start with core
-        self.topo = nx.complete_graph(self.core_size)
+        # Start with core as a complete graph
+        self.topo = nx.Graph()
         self.topo.graph['name'] = "Campus Network Topology"
-        nx.relabel_nodes(self.topo, {i: "c%d" % i for i in range(self.core_size)}, copy=False)
-        self.core_nodes = list(nx.nodes(self.topo))
+        for src, dst in itertools.combinations(range(self.core_size), 2):
+            self.add_link("c%d" % src, "c%d" % dst)
+        self.core_nodes = list(self.topo.nodes())
 
         # Server(s), e.g. data centers, are assumed to be located close to the core
         for s in range(self.servers):
