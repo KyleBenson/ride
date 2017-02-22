@@ -61,12 +61,13 @@ def node_split_in_out(G, nbunch=None, in_place=False, rename_func=None):
         g2.add_edges_from((n2, neighbor, g2[n][neighbor][0]\
             if g2.is_multigraph() else g2[n][neighbor]) for neighbor in g2.successors(n))
         g2.remove_edges_from([(n, neighbor) for neighbor in g2.successors(n)])
-        g2.add_edge(n, n2)
+        # Try including any node attributes (e.g. weight) in this edge
+        g2.add_edge(n, n2, **G.node[n])
 
     # print '\n'.join([str(x) for x in g2.edges(data=True)])
     return g2
 
-def get_redundant_paths(G, source, target, k=2):
+def get_redundant_paths(G, source, target, k=2, weight='weight'):
     """Gets k (possibly shortest) redundant paths with minimal component overlap.
     Current version based on Zheng et al 2010 paper entitled
     'Minimum-Cost Multiple Paths Subject to Minimum Link and Node Sharing in a Network'.
@@ -94,7 +95,7 @@ def get_redundant_paths(G, source, target, k=2):
     # Choose m1 and m2, which form the aforementioned penalties
     # NOTE: we need max_weight > 1 so we just fudge it here.  The
     # original paper said to modify all weights, but we don't.
-    max_weight = max(G[u][v].get('weight', 1) for u,v in G.edges())
+    max_weight = max(G[u][v].get(weight, 1) for u,v in G.edges())
     if max_weight <= 1:
         max_weight += 1 - max_weight + 0.001
     # m2 discourages selecting a link multiple times, so ensure we'll
@@ -112,13 +113,13 @@ def get_redundant_paths(G, source, target, k=2):
     for u,v in list(g2.edges()):
         is_vv_link = v == u + "'"
 
-        this_weight = m1 if is_vv_link else (g2[u][v][0].get('weight', 1) + m2)
+        this_weight = m1 if is_vv_link else (g2[u][v][0].get(weight, 1) + m2)
         g2[u][v][0]['capacity'] = 1
         # Try copying existing weight from node v to its v-v' link
         # NOTE: we need to have non-zero weight on these links or
         # the flow algorithm will needlessly assign flow to them
         if is_vv_link:
-            g2[u][v][0]['weight'] = G.node[u].get('weight', 0.00000001)
+            g2[u][v][0][weight] = G.node[u].get(weight, 0.00000001)
         g2.add_edge(u, v, 'bar', capacity=k-1, weight=this_weight)
 
     # Now it's time to find the min-cost flow
@@ -128,7 +129,9 @@ def get_redundant_paths(G, source, target, k=2):
 
     # Finally, generate the paths based on the flow found.
     # First, we build a flow graph with 0-flow edges removed.
-    flow_edges = ((u, v, key, dict(flow=flow[u][v][key])) for u in flow.keys() for v in flow[u].keys()\
+    # Include the weight if possible
+    flow_edges = ((u, v, key, dict(flow=flow[u][v][key], weight=g2[u][v][key].get(weight, 0)))\
+                  for u in flow.keys() for v in flow[u].keys()\
                   for key in flow[u][v].keys() if flow[u][v][key] > 0)
     flow_graph = nx.MultiDiGraph(flow_edges)
     # Then, we gather k paths from the flow graph, deleting 0-flow edges
@@ -142,7 +145,7 @@ def get_redundant_paths(G, source, target, k=2):
                 flow_graph.remove_edge(u, v, 0)
             except nx.NetworkXError as e:
                 flow_graph[u][v]['bar']['flow'] -= 1
-                if flow_graph[u][v]['bar']['flow'] == 0:
+                if flow_graph[u][v]['bar']['flow'] <= 0:
                     flow_graph.remove_edge(u, v, 'bar')
         paths.append([v for v in p if not v.endswith("'")])
 
@@ -162,8 +165,6 @@ if __name__ == '__main__':
     g.add_edge(3, 5)
     # Need to relabel to strings since we assume nodes are strings
     nx.relabel_nodes(g, {i: str(i) for i in g.nodes()}, copy=False)
-    for u,v in g.edges():
-        g[u][v]['weight'] = 1
 
     paths = get_redundant_paths(g, '4', '5', npaths)
     print paths

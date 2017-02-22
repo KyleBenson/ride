@@ -28,7 +28,7 @@ class NetworkTopology(object):
             data = json.load(f)
         self.topo = json_graph.node_link_graph(data)
 
-    def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='networkx'):
+    def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='networkx', weight_metric='weight'):
         """Builds k redundant multicast trees: trees should not share any edges
         unless necessary.  Supports various algorithms, several of which may not
         work for k>2."""
@@ -58,7 +58,7 @@ class NetworkTopology(object):
             # TODO: generalize this residual graph approach?
 
             for u,v in self.topo.edges():
-                self.topo[u][v]['_temp_mcast_weight'] = self.topo[u][v].get('weight', 1.0)
+                self.topo[u][v]['_temp_mcast_weight'] = self.topo[u][v].get(weight_metric, 1.0)
             # Add the max weight of all edges to prevent an edge from being chosen next round
             max_weight = max((e[2]['_temp_mcast_weight'] for e in self.topo.edges(data=True)))
 
@@ -83,7 +83,7 @@ class NetworkTopology(object):
             create somewhat minimally-sized multicast trees."""
 
             destinations = set(destinations)
-            shortest_paths = nx.shortest_path_length(self.topo, source, weight='weight')
+            shortest_paths = nx.shortest_path_length(self.topo, source, weight=weight_metric)
             shortest_paths = ((l, d) for d, l in shortest_paths if d in destinations)
             sorted_destinations = sorted(shortest_paths)
 
@@ -108,13 +108,16 @@ class NetworkTopology(object):
             results = [self.topo.edge_subgraph(t) for t in trees]
             # Sanity check that we're generating actual trees
             for i, t in enumerate(results):
+                # If it isn't a tree for some reason, trim it down until it is
+                # by first getting a spanning tree of it and then trimming off
+                # any leaf nodes that aren't terminals (destinations).
                 if not nx.is_tree(t):
-                    log.warning("WARNING: non-tree mcast tree generated! edges:", list(t.edges()))
-                    new_t = t.edge_subgraph(nx.minimum_spanning_edges(t, data=False))
+                    log.info("non-tree mcast tree generated!")
+                    new_t = t.edge_subgraph(nx.minimum_spanning_edges(t, data=False, weight=weight_metric))
                     non_terminal_leaves = [n for n in new_t.nodes() if\
                                            (new_t.degree(n) == 1 and n not in destinations and n != source)]
                     while len(non_terminal_leaves) > 0:
-                        log.warning("trimming tree:", non_terminal_leaves)
+                        log.info("trimming tree leaves: %s" % non_terminal_leaves)
                         new_t.remove_nodes_from(non_terminal_leaves)
                         non_terminal_leaves = [n for n in new_t.nodes() if\
                                                (new_t.degree(n) == 1 and n not in destinations and n != source)]
