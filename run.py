@@ -1,4 +1,5 @@
-#!/usr/bin/python
+#!/usr/bin/python -O
+# -O flag turns off assertions
 
 """
 This script runs a whole batch of experiments in multiple processes
