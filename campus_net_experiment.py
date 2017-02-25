@@ -11,6 +11,8 @@ components such as switches, SDN controllers, etc.'''
 from failure_model import SmartCampusFailureModel
 # TODO: from sdn_topology import *
 from networkx_sdn_topology import NetworkxSdnTopology
+# from redundant_multicast_algorithms import ilp_redundant_multicast
+
 import networkx as nx
 import logging as log
 import random
@@ -387,6 +389,11 @@ class SmartCampusNetworkxExperiment(object):
         tree_edges = [set(t.edges()) for t in trees]
         overlap = [len(t1.intersection(t2)) for t1 in tree_edges for t2 in tree_edges]
         result['overlap'] = sum(overlap)
+
+        # TODO: try to get this working on topos > 20?
+        # the ILP will need some work if we're going to get even the relaxed version running on large topologies
+        # overlap_lower_bound = ilp_redundant_multicast(self.topo.topo, server, subscribers, len(trees), get_lower_bound=True)
+        # result['overlap_lower_bound'] = overlap_lower_bound
 
         # Record the average size of the trees
         costs = [sum(e[2].get(COST_METRIC, 1) for e in t.edges(data=True)) for t in trees]

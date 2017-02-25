@@ -446,11 +446,16 @@ class SkeletonList(object):
 
 
 
-def ilp_redundant_multicast(topology, source, destinations, k=2):
+def ilp_redundant_multicast(topology, source, destinations, k=2, get_lower_bound=False):
     """Uses pulp and our ILP formulation to create k redundant
     multicast trees from the source to all the destinations on the given topology.
     NOTE: this assumes nodes in the topology are represented as strings!
+    :param get_lower_bound: if True, simply returns the lower bound of the
+     overlap for k trees as computed by the relaxation
     """
+
+    relaxed = get_lower_bound
+    var_type = pulp.LpContinuous if relaxed else pulp.LpBinary
 
     # Extract strings to work with pulp more easily
     # edges = [edge_to_str(e) for e in topology.edges()]
@@ -461,7 +466,7 @@ def ilp_redundant_multicast(topology, source, destinations, k=2):
     # First, convert topology and parameters into variables
     # To construct the multicast trees, we need TE variables that determine
     # if edge e is used for tree t
-    edge_selection = pulp.LpVariable.dicts("Edge", (edges, multicast_trees), 0, 1, pulp.LpInteger)
+    edge_selection = pulp.LpVariable.dicts("Edge", (edges, multicast_trees), 0, 1, var_type)
 
     # OBJECTIVE FUNTION: sums # shared edges pair-wise betweend all redundant trees
     # That is, the total cost is sum_{links}{shared^2} where shared = # trees sharing this link
@@ -474,7 +479,7 @@ def ilp_redundant_multicast(topology, source, destinations, k=2):
     overlap_costs = dict()
     for e, t1, t2 in pairwise_edge_tree_choices:
         overlap_costs.setdefault(e, dict()).setdefault(t1, dict())[t2] = \
-            pulp.LpVariable("Overlap_%s,%s_%s_%s" % (e[0], e[1], t1, t2), 0, 1, pulp.LpInteger)
+            pulp.LpVariable("Overlap_%s,%s_%s_%s" % (e[0], e[1], t1, t2), 0, 1, var_type)
 
     # To ensure each destination is reached by all the multicast trees,
     # we need a variable to determine if an edge is being used on the path
@@ -484,7 +489,7 @@ def ilp_redundant_multicast(topology, source, destinations, k=2):
     _flipped_edges = zip(*reversed(zip(*edges)))
     _flipped_edges.extend(edges)
     _sources, _dests = zip(*_flipped_edges)
-    path_selection = pulp.LpVariable.dicts("Path", (_sources, _dests, destinations, multicast_trees), 0, 1, pulp.LpInteger)
+    path_selection = pulp.LpVariable.dicts("Path", (_sources, _dests, destinations, multicast_trees), 0, 1, var_type)
 
     # TODO: set the starting values of some variables (destination flows and edges?)
     # using var.setInitialValue
@@ -500,7 +505,7 @@ def ilp_redundant_multicast(topology, source, destinations, k=2):
     # CONSTRAINTS:
 
     # These ~1.5*E*T^2 constraints help linearize the overlap_costs components of the objective function.
-    # the overlap, multiplying the resulting sum by 2, and adding the sum over diagonal?
+    # It counts the lower-diagonal overlap, multiplying the resulting sum by 2, and adding the sum over diagonal
     for e, t1, t2 in pairwise_edge_tree_choices:
         # This ensures the overlap is 0 if the edge not selected by a tree
         problem += overlap_costs[e][t1][t2] <= edge_selection[e][t1],\
@@ -554,22 +559,24 @@ def ilp_redundant_multicast(topology, source, destinations, k=2):
     # Now we can solve the problem
     problem.solve()
 
-    print "#Variables:", len(problem.variables())
-    print "#Constraints:", len(problem.constraints)
-    print "Status:", pulp.LpStatus[problem.status]
-    print "Cost:", pulp.value(problem.objective) # should be 7 for C(4) + 2 graph with 1 dest
+    log.info("#Variables: %d" % len(problem.variables()))
+    log.info("#Constraints: %d" % len(problem.constraints))
+    log.info("Status: %s" % pulp.LpStatus[problem.status])
+    cost = pulp.value(problem.objective)
+    log.info("Cost: %f" % cost) # should be 7 for C(4) + 2 graph with 1 dest
 
-    # Lastly, construct multicast trees from the edge_selection variables and return the results
-    # TODO: get the 'data' back into the nodes?
-    final_trees = []
-    for t in multicast_trees:
-        res = nx.Graph()
-        final_trees.append(res)
-        for e in edges:
-            if edge_selection[e][t].value():
-                res.add_edge(*e)
+    if get_lower_bound:
+        return cost
+    else:
+        # Lastly, construct multicast trees from the edge_selection variables and return the results
+        # We use subgraph in order to ensure the attributes remain
+        final_trees = []
+        for t in multicast_trees:
+            res = topology.edge_subgraph(e for e in edges if edge_selection[e][t].value())
+            final_trees.append(res)
+            assert nx.is_tree(res) and all(nx.has_path(res, source, d) for d in destinations)
 
-    return final_trees
+        return final_trees
 
 
 # tests
