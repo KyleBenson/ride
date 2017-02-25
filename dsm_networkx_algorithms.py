@@ -5,7 +5,7 @@ might benefit from."""
 import networkx as nx
 
 
-def draw_overlaid_graphs(original, new_graphs, print_text=True):
+def draw_overlaid_graphs(original, new_graphs, print_text=False):
     """Draws the new_graphs as graphs overlaid on the original topology"""
     import matplotlib.pyplot as plt
 
