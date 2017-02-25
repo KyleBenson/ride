@@ -167,7 +167,8 @@ class NetworkTopology(object):
 
             # Slice off unrequested results
             results = results[:k]
-            results = [steiner_tree(t, destinations, root=source, weight=weight_metric) for t in results]
+            results = [steiner_tree(t, destinations, root=source, weight=weight_metric).to_undirected() for t in results]
+            assert not results[0].is_directed()
             return results
 
         elif algorithm == 'ilp':
@@ -213,7 +214,7 @@ class NetworkTopology(object):
 # Run various tests
 if __name__ == '__main__':
     algorithm = 'red-blue'
-    ntrees = 3
+    ntrees = 4
     from_file = True
 
     log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
