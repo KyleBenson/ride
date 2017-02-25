@@ -3,6 +3,7 @@ __author__ = 'kyle'
 import itertools
 import networkx as nx
 import pulp
+import logging as log
 
 
 class SkeletonList(object):
@@ -391,7 +392,7 @@ class SkeletonList(object):
         return True
 
     def __validate_coloring(self):
-        print "validating red-blue coloring; this could take a while (forever) if your graph is too big"
+        log.debug("validating red-blue coloring; this could take a while (forever) if your graph is too big")
         # All red paths to a vertex should be disjoint from all blue paths
         # to the same vertex, except for red-blue links and their incident nodes
         red_dag = self.get_red_graph()
@@ -573,6 +574,8 @@ def ilp_redundant_multicast(topology, source, destinations, k=2):
 
 # tests
 if __name__ == '__main__':
+    log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
+
     # TEST SKELETON LIST
     # This test graph comes from Fig. 2 of the paper
     g = nx.DiGraph([('r','x'), ('r','w'), ('r','a'), ('a','b'), ('a','c'),
@@ -586,23 +589,39 @@ if __name__ == '__main__':
     g.add_edge('x','m')
     g.add_edge('y','m')
 
-    # g = nx.complete_graph(20)  # much bigger and it gets slowwwww
+    # g = nx.complete_graph(8)  # about 40 gets slowwwww
     # root = 0
 
     # filename = 'campus_topo_20b-8h.json'
-    filename = 'campus_topo_200b-20h.json'  # this takes a while!
-    from networkx.readwrite import json_graph
-    import json
-    with open(filename) as f:
-        data = json.load(f)
-        g = json_graph.node_link_graph(data)
-    root = 's0'
+    # filename = 'campus_topo_200b-20h.json'  # this takes a while!
+    # from networkx.readwrite import json_graph
+    # import json
+    # with open(filename) as f:
+    #     data = json.load(f)
+    #     g = json_graph.node_link_graph(data)
+    # root = 's0'
 
     sl = SkeletonList(g, root)
 
     print "final list:",
     sl.print_list()
 
-    # from dsm_networkx_algorithms import draw_overlaid_graphs
-    # draw_overlaid_graphs(g, [sl.get_red_graph(), sl.get_blue_graph()])
+    red = sl.get_red_graph()
+    blue = sl.get_blue_graph()
+    # intersection should only be cut-links
+    green = nx.algorithms.intersection(red, blue)
 
+    assert nx.is_directed_acyclic_graph(red) and nx.is_directed_acyclic_graph(blue)
+
+    from dsm_networkx_algorithms import draw_overlaid_graphs
+    draw_overlaid_graphs(g, [red, blue, green])
+
+    # recursively partition them: what happens?
+    redsl = SkeletonList(red, root)
+    bluesl = SkeletonList(blue, root)
+    redred = redsl.get_red_graph()
+    redblue = redsl.get_blue_graph()
+    bluered = bluesl.get_red_graph()
+    blueblue = bluesl.get_blue_graph()
+
+    draw_overlaid_graphs(g, [redred, redblue, bluered, blueblue])
