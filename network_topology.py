@@ -1,4 +1,5 @@
 import logging as log
+import math
 
 import networkx as nx
 import dsm_networkx_algorithms as dsm_algs
@@ -124,6 +125,51 @@ class NetworkTopology(object):
                     results[i] = new_t
             return results
 
+        elif algorithm == 'red-blue':
+            """SkeletonList red-blue paths construction based off
+            2013 Bejerano and Koppol (Bell Labs) paper entitled
+            'Link-Coloring Based Scheme for Multicast and Unicast Protection'.
+            This only gives us two redundant yet maximally disjoint subgraphs
+            so we need to apply some other heuristic to further partition them.
+
+            Currently, we recursively apply this procedure to the pair of graphs
+            in order to generate a number of maximally disjoint trees numbering
+            a power of 2"""
+
+            # TODO: determine how to better support k not powers of 2
+            if k != (2**int(math.log(k, 2))):
+                log.warn("Requested %d redundant red-blue trees, but we currently only fully support powers of 2 for k!  Slicing off tail end of results..." % k)
+
+            from redundant_multicast_algorithms import SkeletonList
+
+            # Repeatedly apply the procedure over everything currently in the results,
+            # which doubles the number of maximally disjoint spanning DAGs each time
+            results = [self.topo]
+
+            for i in range(int(math.ceil(math.log(k, 2)))):
+                this_round = []
+                for t in results:
+                    sl = SkeletonList(t, source)
+                    red_dag = sl.get_red_graph()
+                    blue_dag = sl.get_blue_graph()
+                    this_round.append(red_dag)
+                    this_round.append(blue_dag)
+                results = this_round
+            assert len(results) >= k
+
+            # Now we need to turn the results into multicast trees
+            try:
+                from networkx.algorithms.approximation import steiner_tree
+            except ImportError:
+                raise NotImplementedError("Steiner Tree algorithm not found!  See README")
+
+            assert all(all(d in g for d in destinations) for g in results)
+
+            # Slice off unrequested results
+            results = results[:k]
+            results = [steiner_tree(t, destinations, root=source, weight=weight_metric) for t in results]
+            return results
+
         elif algorithm == 'ilp':
             """Our (UCI-DSM group) proposed ILP-based heuristic."""
             from redundant_multicast_algorithms import ilp_redundant_multicast
@@ -166,8 +212,8 @@ class NetworkTopology(object):
 
 # Run various tests
 if __name__ == '__main__':
-    algorithm = 'paths'
-    ntrees = 2
+    algorithm = 'red-blue'
+    ntrees = 3
     from_file = True
 
     log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
@@ -178,7 +224,7 @@ if __name__ == '__main__':
         # net.load_from_file('campus_topo_80b-8h.json')
         net.load_from_file('campus_topo_8b-4h.json')
         # dest = ["h1-b4", "h2-b7", "h3-b0", "h2-b0", "h4-b2", "h5-b21", "h6-b45", "h7-b71"]
-        dest = ["h1-b4", "h2-b7", "h3-b0"]
+        dest = ["h1-b4", "h2-b5", "h3-b0"]
     else:
         g = nx.complete_graph(4)
         g.add_edge(0, 4)
@@ -189,9 +235,6 @@ if __name__ == '__main__':
 
         dest = ["2", "5"]
         source = "4"
-
-    for u,v in net.topo.edges():
-        net.topo[u][v]['weight'] = 1
 
     M = net.get_redundant_multicast_trees(source, dest, ntrees, algorithm)
 
