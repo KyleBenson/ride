@@ -95,7 +95,7 @@ class SmartCampusNetworkxExperiment(object):
         # experimental treatment parameters
         parser.add_argument('--nruns', '-r', type=int, default=1,
                             help='''number of times to run experiment (default=%(default)s)''')
-        parser.add_argument('--ntrees', '-t', type=int, default=3,
+        parser.add_argument('--ntrees', '-t', type=int, default=4,
                             help='''number of redundant multicast trees to build (default=%(default)s)''')
         parser.add_argument('--mcast-heuristic', '-a', type=str, default='steiner', dest='mcast_heuristic',
                             help='''heuristic algorithm for building multicast trees (default=%(default)s)''')
@@ -203,7 +203,7 @@ class SmartCampusNetworkxExperiment(object):
         :param str server:
         :param List[str] publishers:
         :param List[str] subscribers:
-        :param List[nx.Graph] trees:
+        :param List[nx.Graph] trees: before failure
         :rtype dict:
         """
 
@@ -293,9 +293,6 @@ class SmartCampusNetworkxExperiment(object):
 
         choices[method] = max(importance)[2]
 
-        method = 'random'
-        choices[method] = self.random.choice(trees)
-
         return choices
 
     def run_experiment(self, failed_nodes, failed_links, server, publishers, subscribers, trees):
@@ -318,9 +315,13 @@ class SmartCampusNetworkxExperiment(object):
         :rtype dict:
         """
 
-        # IDEA: find the % nodes reachable in the topology after failing
-        # the nodes and links listed.  We have different methods of
-        # choosing which tree to use and two non-multicast comparison heuristics.
+        # IDEA: we can determine the reachability by the following:
+        # for each topology, remove the failed nodes and links,
+        # determine all reachable nodes in topology,
+        # consider only those that are subscribers,
+        # record % reachable by any/all topologies.
+        # We also have different methods of choosing which tree to use
+        # and two non-multicast comparison heuristics.
         # NOTE: the reachability from the whole topology (oracle) gives us an
         # upper bound on how well the edge server could possibly do,
         # even without using multicast.
@@ -330,15 +331,15 @@ class SmartCampusNetworkxExperiment(object):
         heuristic = self.mcast_heuristic
         # we'll record reachability for various choices of trees
         result[heuristic] = dict()
+        failed_topology = self.get_failed_topology(self.topo.topo, failed_nodes, failed_links)
 
         # ORACLE
-        # First, create a copy of whole topology as the 'oracle' heuristic,
+        # First, use a copy of whole topology as the 'oracle' heuristic,
         # which sees what subscribers are even reachable by ANY path.
-        failed_topology = self.get_failed_topology(self.topo.topo, failed_nodes, failed_links)
         failed_topology.graph['heuristic'] = 'oracle'
         topos_to_check = [failed_topology]
-        res = self.get_reachability(server, subscribers, topos_to_check)
-        result['oracle'] = res
+        reach = self.get_reachability(server, subscribers, topos_to_check)[0]
+        result['oracle'] = reach
 
         # UNICAST
         # Second, get the reachability for the 'unicast' heuristic,
@@ -352,23 +353,26 @@ class SmartCampusNetworkxExperiment(object):
         paths = [p for p in paths if nx.is_simple_path(failed_topology, p)]
         result['unicast'] = len(paths) / float(len(subscribers))
 
+        # ALL TREES' REACHABILITIES: all, min, max, mean, stdev
+        # Next, check all the redundant multicast trees together to get their respective (and aggregate) reachabilities
+        topos_to_check = [self.get_failed_topology(t, failed_nodes, failed_links) for t in trees]
+        reaches = self.get_reachability(server, subscribers, topos_to_check)
+        heuristic = trees[0].graph['heuristic']  # we assume all trees from same heuristic
+        result[heuristic]['all'] = reaches[-1]
+        reaches = reaches[:-1]
+        result[heuristic]['max'] = max(reaches)
+        result[heuristic]['min'] = min(reaches)
+        result[heuristic]['mean'] = np.mean(reaches)
+        result[heuristic]['stdev'] = np.std(reaches)
+
         # CHOSEN
-        # Next, check the tree chosen by the edge server heuristic(s)
-        # for having the best chance of data delivery
-        # ENHANCE: no need to recompute failed topology for trees chosen >1 times then do them all again
+        # Finally, check the tree chosen by the edge server heuristic(s)
+        # for having the best estimated chance of data delivery
         best_trees = self.choose_best_trees(failed_topology, server, publishers, subscribers, trees)
         for choice_method, best_tree in best_trees.items():
-            best_tree = self.get_failed_topology(best_tree, failed_nodes, failed_links)
-            best_tree.graph['heuristic'] = '%s-chosen' % choice_method
-            res = self.get_reachability(server, subscribers, [best_tree])
-            result[heuristic][best_tree.graph['heuristic']] = res
-
-        # ALL TREES
-        # Finally, check all the redundant multicast trees together
-        topos_to_check = [self.get_failed_topology(t, failed_nodes, failed_links) for t in trees]
-        res = self.get_reachability(server, subscribers, topos_to_check)
-        heuristic = trees[0].graph['heuristic']  # we assume all trees from same heuristic
-        result[heuristic]['all'] = res
+            best_tree_idx = trees.index(best_tree)
+            reach = reaches[best_tree_idx]
+            result[heuristic]['%s-chosen' % choice_method] = reach
 
         ### RECORDING METRICS ###
         # Record the distance to the subscribers in terms of # hops
@@ -392,24 +396,27 @@ class SmartCampusNetworkxExperiment(object):
         return result
 
     def get_reachability(self, server, subscribers, topologies):
-        """Returns the average probability of reaching one of the subscribers from the
-        server in any of the given topologies."""
+        """Returns the average probability of reaching any of the subscribers from the
+        server in each of the given topologies.  Also includes the result for using
+        all topologies at once.
+        :returns list: containing reachability for each topology (in order),
+        with the last entry representing using all topologies at the same time
+        """
 
-        # IDEA: we can determine the reachability by the following:
-        # for each topology, remove the failed nodes and links,
-        # determine all reachable nodes in topology,
-        # consider only those that are subscribers,
-        # record % reachable by any/all topologies.
-
+        subs_reachable_by_tree = []
         all_subscribers_reachable = set()
         for topology in topologies:
             nodes_reachable = set(nx.single_source_shortest_path(topology, server))
             # could also use has_path()
             subscribers_reachable = subscribers.intersection(nodes_reachable)
+            subs_reachable_by_tree.append(len(subscribers_reachable) / float(len(subscribers)))
             all_subscribers_reachable.update(subscribers_reachable)
 
-            log.debug("%s heuristic reached %d subscribers" % (topology.graph['heuristic'], len(subscribers_reachable)))
-        return float(len(all_subscribers_reachable)) / len(subscribers)
+            log.debug("%s heuristic reached %d subscribers in this topo" % (topology.graph['heuristic'], len(subscribers_reachable)))
+        log.debug("ALL subscribers reached by these topos: %d" % len(all_subscribers_reachable))
+        # Lastly, include all of them reachable
+        subs_reachable_by_tree.append(float(len(all_subscribers_reachable)) / len(subscribers))
+        return subs_reachable_by_tree
 
     def get_failed_topology(self, topo, failed_nodes, failed_links):
         """Returns a copy of the graph topo with all of the failed nodes
