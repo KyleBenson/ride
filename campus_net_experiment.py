@@ -24,7 +24,7 @@ DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
 class SmartCampusNetworkxExperiment(object):
 
-    def __init__(self, nruns=1, ntrees=3, mcast_heuristic='networkx', nsubscribers=5, npublishers=5,
+    def __init__(self, nruns=1, ntrees=3, mcast_heuristic='steiner', nsubscribers=5, npublishers=5,
                  failure_model=None, topo=['networkx'],
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
@@ -97,7 +97,7 @@ class SmartCampusNetworkxExperiment(object):
                             help='''number of times to run experiment (default=%(default)s)''')
         parser.add_argument('--ntrees', '-t', type=int, default=3,
                             help='''number of redundant multicast trees to build (default=%(default)s)''')
-        parser.add_argument('--mcast-heuristic', '-a', type=str, default='networkx', dest='mcast_heuristic',
+        parser.add_argument('--mcast-heuristic', '-a', type=str, default='steiner', dest='mcast_heuristic',
                             help='''heuristic algorithm for building multicast trees (default=%(default)s)''')
         # TODO: should this be a percentage? should also warn if too many subs based on model of how many would need mcast support
         parser.add_argument('--nsubscribers', '-s', type=int, default=5,

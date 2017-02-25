@@ -29,12 +29,12 @@ class NetworkTopology(object):
             data = json.load(f)
         self.topo = json_graph.node_link_graph(data)
 
-    def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='networkx', weight_metric='weight'):
+    def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='steiner', weight_metric='weight'):
         """Builds k redundant multicast trees: trees should not share any edges
         unless necessary.  Supports various algorithms, several of which may not
         work for k>2."""
 
-        if algorithm == 'networkx':
+        if algorithm == 'steiner':
             """Default algorithm implemented by networkx that uses sum of
             shortest paths 2*D approximation.  Currently not available in
             latest release of networkx, so see README if this import doesn't work."""
@@ -75,7 +75,7 @@ class NetworkTopology(object):
 
             return trees
 
-        elif algorithm == 'paths':
+        elif algorithm == 'diverse-paths':
             """This algorithm builds multiple trees by getting multiple paths
             to each terminal (destination) and selectively adding these paths
             together to create each tree. The heuristic chooses destinations
@@ -179,7 +179,7 @@ class NetworkTopology(object):
             raise ValueError("Unkown multicast tree generation algorithm %s" % algorithm)
 
 
-    def get_multicast_tree(self, source, destinations, algorithm='networkx'):
+    def get_multicast_tree(self, source, destinations, algorithm='steiner'):
         """Uses networkx algorithms to build a multicast tree for the given source node and
         destinations (an iterable).  Can be used to build and install flow rules.
         Current implementation simply calls to get_redundant_multicast_trees(k=1)

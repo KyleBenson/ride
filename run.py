@@ -29,7 +29,7 @@ DEFAULT_PARAMS = {
     'nsubscribers': 80,
     'npublishers': 40,
     'topo': ['networkx', 'campus_topo_200b-20h.json'], # 200
-    'mcast_heuristic': ['networkx', 'paths'],  # always a list!  we run all of them for each treatment
+    'mcast_heuristic': ['steiner', 'diverse-paths'],  # always a list!  we run all of them for each treatment
 }
 
 # we'll explore each of these when running experiments
