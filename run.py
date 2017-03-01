@@ -33,8 +33,8 @@ DEFAULT_PARAMS = {
     'ntrees': 4,
     'nsubscribers': 400,
     'npublishers': 200,
-    'topo': ['networkx', 'campus_topo_200b-20h.json'], # 200
-    # 'topo': ['networkx', 'campus_topo_20b-8h.json'], # 200
+    'topo': ['networkx', 'campus_topo_200b-20h-20ibl.json'],
+    # 'topo': ['networkx', 'campus_topo_20b-8h-3ibl.json'],
     # always a list of tuples!  we run all of them for each treatment and
     # each heuristic optionally takes arguments
     'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],

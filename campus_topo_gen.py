@@ -302,30 +302,25 @@ if __name__ == '__main__':
                                     add_building_topology=False, inter_building_links=3)
     else:
         # build multiple topologies and save each of them
+        # this one will be the default topo for testing
         t = CampusTopologyGenerator(nbuildings=8, hosts_per_floor_switch=2,
                                     building_switches_per_floor=1, building_floors=2,
                                     add_building_topology=False, inter_building_links=2)
         t.generate()
-        t.write('campus_topo_8b-4h.json')
-        t.write()  # save as default topo for testing
+        t.write()
 
-        t = CampusTopologyGenerator(nbuildings=20, hosts_per_floor_switch=4,
-                                    building_switches_per_floor=1, building_floors=2,
-                                    add_building_topology=False, inter_building_links=3)
-        t.generate()
-        t.write('campus_topo_20b-8h.json')
-
-        t = CampusTopologyGenerator(nbuildings=80, hosts_per_floor_switch=4,
-                                    building_switches_per_floor=1, building_floors=2,
-                                    add_building_topology=False, inter_building_links=8)
-        t.generate()
-        t.write('campus_topo_80b-8h.json')
-
-        t = CampusTopologyGenerator(nbuildings=200, hosts_per_floor_switch=10,
-                                    building_switches_per_floor=1, building_floors=2,
-                                    add_building_topology=False, inter_building_links=20)
-        t.generate()
-        t.write('campus_topo_200b-20h.json')
+        # iterate over multiple options of form (nbuildings, nhosts, n-inter-building-links)
+        topologies_to_build = ((20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
+                               (200, 20, 20),  # main large topology
+                               (200, 20, 40), (200, 20, 80),  # vary ibl on main topology
+                               )
+        for nb, nh, nibl in topologies_to_build:
+            print "Generating topo with %d buildings, %d hosts, and %d inter-building links" % (nb, nh, nibl)
+            t = CampusTopologyGenerator(nbuildings=nb, hosts_per_floor_switch=nh,
+                                        building_switches_per_floor=1, building_floors=1,
+                                        add_building_topology=False, inter_building_links=nibl)
+            t.generate()
+            t.write('campus_topo_%db-%dh-%dibl.json' % (nb, nh, nibl))
 
     if test_run:
         g = t.get()

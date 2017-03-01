@@ -607,8 +607,8 @@ if __name__ == '__main__':
     # g = nx.complete_graph(8)  # about 40 gets slowwwww
     # root = 0
 
-    # filename = 'campus_topo_20b-8h.json'
-    # filename = 'campus_topo_200b-20h.json'  # this takes a while!
+    # filename = 'campus_topo_20b-8h-3ibl.json'
+    # filename = 'campus_topo_200b-20h-20ibl.json'  # this takes a while!
     # from networkx.readwrite import json_graph
     # import json
     # with open(filename) as f:

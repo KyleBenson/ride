@@ -241,9 +241,7 @@ if __name__ == '__main__':
     if from_file:
         net = NetworkTopology()
         source = "s0"
-        # net.load_from_file('campus_topo_80b-8h.json')
-        # net.load_from_file('campus_topo_200b-20h.json')
-        net.load_from_file('campus_topo_8b-4h.json')
+        net.load_from_file('campus_topo.json')
         # dest = ["h1-b4", "h2-b7", "h3-b0", "h2-b0", "h4-b2", "h5-b21", "h6-b45", "h7-b71"]
         dest = ["h1-b4", "h2-b5", "h3-b0"]
     else:
