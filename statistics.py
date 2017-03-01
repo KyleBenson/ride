@@ -16,6 +16,8 @@ import json
 
 # skip over these metrics when looking for results from heuristics
 METRICS_TO_SKIP = {'run', 'nhops', 'overlap', 'cost'}
+# these heuristic names are treated differently as they're always present
+OMNIPRESENT_HEURISTICS = {'oracle', 'unicast'}
 
 
 def parse_args(args):
@@ -153,20 +155,35 @@ class SeismicStatistics(object):
                 # Here we add the heuristic name to those parameters to make a
                 # new unique heuristic group.
                 # We also filter these by 'choice' (tree-choosing heuristic).
-                # If only one choice, don't include choice name.
+                #
+                # Furthermore, we may trim down the name to not include the
+                # choice at all (if <=1 requested) or not include the heuristic
+                # name at all (if <=1 requested that isn't oracle/unicast.
+                # When both of these cases apply, we only use the heuristic name.
                 if isinstance(reachability, dict):
                     reachability_dict = {}
                     for choice, v in reachability.items():
                         if self.config.include_choices is not None:
                             if choice not in self.config.include_choices:
                                 continue
+                            # Only include choice name if we requested more than one
                             if len(self.config.include_choices) > 1:
-                                reachability_dict["%s (%s)" % (heuristic, choice)] = v
+                                # Similarly, if only one heuristic (other than oracle/unicast) requested,
+                                # don't include heuristic name (expect we'd put it in title)
+                                if self.config.include_heuristics is None or \
+                                                len(set(self.config.include_heuristics) - OMNIPRESENT_HEURISTICS) > 1:
+                                    reachability_dict["%s (%s)" % (heuristic, choice)] = v
+                                else:
+                                    reachability_dict[choice] = v
                             else:
                                 reachability_dict[heuristic] = v
-                        else:
-                            # TODO: something similar where we trim off the heuristic name if only including one of them?
-                            reachability_dict["%s (%s)" % (heuristic, choice)] = v
+                        else:  # including all choices
+                            # similarly to above we trim off the heuristic name if only including one of them
+                            if self.config.include_heuristics is None or \
+                                            len(set(self.config.include_heuristics) - OMNIPRESENT_HEURISTICS) > 1:
+                                reachability_dict["%s (%s)" % (heuristic, choice)] = v
+                            else:
+                                reachability_dict[choice] = v
                 else:
                     reachability_dict = {heuristic: reachability}
                 # Now we can iterate over all of them (or the original one)
