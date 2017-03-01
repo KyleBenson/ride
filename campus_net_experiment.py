@@ -1,4 +1,5 @@
 #! /usr/bin/python
+
 NEW_SCRIPT_DESCRIPTION = '''Experiment that models failures in a campus network setting
 and determines the effectiveness of several SDN/IP multicast tree-establishing algorithms
 in improving data dissemination to subscribing IoT devices around the campus.
@@ -19,6 +20,7 @@ import random
 import json
 import numpy as np
 import argparse
+import time
 
 COST_METRIC = 'weight'  # for links only
 DISTANCE_METRIC = 'latency'  # for shortest path calculations
@@ -130,8 +132,21 @@ class SmartCampusNetworkxExperiment(object):
     def run_all_experiments(self):
         """Runs the requested experimental configuration
         for the requested number of times, saving the results to an output file."""
+
+        # Log progress to a file so that we can check on
+        # long-running simulations to see how far they've gotten.
+        progress_filename = self.output_filename.replace(".json", ".progress")
+        if progress_filename == self.output_filename:
+            progress_filename += ".progress"
+        try:
+            progress_file = open(progress_filename, "w")
+            progress_file.write("Starting experiments at time %s\n" % time.ctime())
+        except IOError as e:
+            log.warn("Error opening progress file for writing: %s" % e)
+            progress_file = None
+
         for r in range(self.nruns):
-            log.debug("Starting run %d" % r)
+            log.info("Starting run %d" % r)
             # QUESTION: should we really do this each iteration?  won't it make for higher variance?
             subs = self.choose_subscribers()
             pubs = self.choose_publishers()
@@ -142,6 +157,13 @@ class SmartCampusNetworkxExperiment(object):
             result = self.run_experiment(failed_nodes, failed_links, server, pubs, subs, trees)
             result['run'] = r
             self.record_result(result)
+
+            if progress_file is not None:
+                try:
+                    progress_file.write("Finished run %d at %s\n" % (r, time.ctime()))
+                    progress_file.flush()  # so we can tail it
+                except IOError as e:
+                    log.warn("Error writing to progress file: %s" % e)
         self.output_results()
 
     def record_result(self, result):

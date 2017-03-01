@@ -4,6 +4,7 @@
 # Workspace files
 networkx
 *.json
+*.progress
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
