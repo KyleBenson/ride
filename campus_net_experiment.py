@@ -21,6 +21,7 @@ import json
 import numpy as np
 import argparse
 import time
+import signal
 
 COST_METRIC = 'weight'  # for links only
 DISTANCE_METRIC = 'latency'  # for shortest path calculations
@@ -145,6 +146,16 @@ class SmartCampusNetworkxExperiment(object):
             log.warn("Error opening progress file for writing: %s" % e)
             progress_file = None
 
+        # catch termination signal and immediately output results so we don't lose ALL that work
+        def __sigint_handler(sig, frame):
+            # HACK: try changing filename so we know it wasn't finished
+            self.output_filename = self.output_filename.replace('.json', '_UNFINISHED.json')
+            log.critical("SIGINT received! Outputting current results to %s and exiting" % self.output_filename)
+            self.output_results()
+            exit(1)
+        signal.signal(signal.SIGINT, __sigint_handler)
+
+        # start the actual experimentation
         for r in range(self.nruns):
             log.info("Starting run %d" % r)
             # QUESTION: should we really do this each iteration?  won't it make for higher variance?
