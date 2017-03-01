@@ -31,6 +31,13 @@ class SkeletonList(object):
         :type graph: nx.Graph
         """
 
+        # ENHANCE: arbitrary orderings to explore:
+        # 1) Sets in initial list
+        # 2) Order of refinement
+        # 3) Pivot node (order of incoming neighbors); also pivot point? Easiest to do right next to anchor set
+
+        # Something about the size of red vs. blue DAGs?
+
         # TODO: maybe deep copy this to prevent corruption if the graph is changed?  Or just subclass nx.DiGraph...
         if not copy_graph:
             if not graph.is_directed():
@@ -447,6 +454,7 @@ class SkeletonList(object):
 
 
 def ilp_redundant_multicast(topology, source, destinations, k=2, get_lower_bound=False):
+    # ENHANCE: use_multicommodity_flow=False,
     """Uses pulp and our ILP formulation to create k redundant
     multicast trees from the source to all the destinations on the given topology.
     NOTE: this assumes nodes in the topology are represented as strings!
