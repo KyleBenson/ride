@@ -37,8 +37,8 @@ DEFAULT_PARAMS = {
     # 'topo': ['networkx', 'campus_topo_20b-8h.json'], # 200
     # always a list of tuples!  we run all of them for each treatment and
     # each heuristic optionally takes arguments
-    # 'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
-    'mcast_heuristic': [('steiner', 'max'), ('steiner', 'double')],
+    'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
+    # 'mcast_heuristic': [('steiner', 'max'), ('steiner', 'double')],
 }
 
 # we'll explore each of these when running experiments
@@ -75,9 +75,9 @@ EXPERIMENTAL_TREATMENTS = {
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers)
     # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
-    'steiner-double': [{'ntrees': t, 'fprob': f} for t in [2] for f in fprobs[:3]]
-    # TODO: vary topology for inter-building connectivity
-    # 'topo': [DEFAULT_PARAMS['topo']],
+    # 'steiner-double': [{'ntrees': t, 'fprob': f} for t in [8, 4, 2] for f in fprobs[:3]]
+    # vary topology for inter-building connectivity
+    'topo': [['networkx', 'campus_topo_200b-20h-%dibl.json' % ibl] for ibl in [20, 40, 80]],
 }
 
 CONTROL_FLOW_PARAMS = {
@@ -148,9 +148,11 @@ def getargs(output_dirname='', **kwargs):
     _args.update(**kwargs)
 
     # label the file with a parameter summary and optionally place in a directory
-    _args['output_filename'] = os.path.join(output_dirname, 'results_%dt_%0.2ff_%ds_%dp_%s.json' % \
+    building_connectivity = _args['topo'][1].split('-')[2].split('i')[0]
+    _args['output_filename'] = os.path.join(output_dirname, 'results_%dt_%0.2ff_%ds_%dp_%s_%sibl.json' % \
                                            (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
-                                            SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic'])))
+                                            SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
+                                            building_connectivity))
     return _args
 
 
