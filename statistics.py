@@ -42,7 +42,7 @@ def parse_args(args):
                         (default=%(default)s)''')
 
     # Controlling what data is plotted
-    parser.add_argument('--x-axis', '-x', type=str, default='fprob', dest='x_axis',
+    parser.add_argument('--x-axis', '-x', type=str, default='failure_model', dest='x_axis',
                         help='''name of parameter to plot reachability against:
                         places it on the x-axis (ordered for increasing reachability)
                         (default=%(default)s)''')
