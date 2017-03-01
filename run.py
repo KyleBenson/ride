@@ -10,8 +10,11 @@ ones we're currently doing so we can easily re-run them.
 
 import random
 import sys, os
-from multiprocessing import Pool
+from os import getpid
+from multiprocessing import Pool, Manager
+from multiprocessing.managers import ValueProxy
 import signal
+from time import sleep
 from campus_net_experiment import SmartCampusNetworkxExperiment
 from failure_model import SmartCampusFailureModel
 from itertools import chain
@@ -26,10 +29,10 @@ verbose = True
 DEFAULT_PARAMS = {
     'fprob': 0.1,
     'ntrees': 4,
-    'nsubscribers': 80,
-    'npublishers': 40,
+    'nsubscribers': 400,
+    'npublishers': 200,
     'topo': ['networkx', 'campus_topo_200b-20h.json'], # 200
-    'mcast_heuristic': ['steiner', 'diverse-paths'],  # always a list!  we run all of them for each treatment
+    'mcast_heuristic': ['steiner', 'diverse-paths', 'red-blue'],  # always a list!  we run all of them for each treatment
 }
 
 # we'll explore each of these when running experiments
@@ -37,10 +40,12 @@ nsubscribers = [20, 40, 80, 160]
 npublishers = [10, 20, 40, 80, 160]
 # nhosts = None  # build nhosts with the nsubscribers/npublishers parameters
 # subs/pubs ratio goes 1:1 thru 1:8, also vary total # hosts
-nhosts = [{'nsubscribers': i*ratio, 'npublishers': i} for i in [25, 50, 100] for ratio in [1, 2, 4, 8]
+nhosts = [{'nsubscribers': i*ratio, 'npublishers': i} for i in [200, 300, 400] for ratio in [1, 2, 4, 8]
 ]  # explicitly set the nhosts params
-ntrees = [2, 4, 8, 16]
-fprobs = [DEFAULT_PARAMS['fprob'], 0.2, 0.35, 0.5]
+ntrees = [1, 2, 4, 8, 16]
+fprobs = [0.05, 0.15, 0.25, 0.35, 0.5]
+nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
+ntrees.reverse()
 
 # now build up the actual dict of parameters
 def get_nhosts_treatment(nsubs, npubs):
@@ -69,7 +74,7 @@ EXPERIMENTAL_TREATMENTS = {
 }
 
 CONTROL_FLOW_PARAMS = {
-    'nruns': 50, # 100
+    'nruns': 30, # 100
 }
 # these aren't passed to the experiment class
 nprocs = None if not testing else 1  # None uses cpu_count()
@@ -168,26 +173,43 @@ def get_next_seeds(nseeds=3):
     else:
         return tuple(random.randint(-sys.maxsize-1, sys.maxsize) for i in range(nseeds))
 
+def run_experiment(jobs_finished, total_jobs, kwargs):
+    """
+    :param ProxyValue jobs_finished:
+    :param int total_jobs:
+    :param dict kwargs:
+    :return:
+    """
 
-def run_experiment(finished_message, kwargs):
     if using_pool:
         # Ignore ctrl-c in worker processes
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-    if testing:
-        print kwargs['output_filename']
-        return
+    if verbose:
+        print "Proc", getpid(), "starting", kwargs['output_filename'], "..."
+
+    # re-raise any errors after we register that the job completed
+    err = None
+    if not testing:
+        try:
+            failure_model = SmartCampusFailureModel(**kwargs)
+            exp = SmartCampusNetworkxExperiment(failure_model=failure_model, **kwargs)
+            exp.run_all_experiments()
+        except BaseException as e:
+            err = e
 
     if verbose:
-        print kwargs['output_filename']
+        if isinstance(jobs_finished, ValueProxy):
+            jobs_finished.set(jobs_finished.get() + 1)
+            jobs_finished = jobs_finished.value
+        else:
+            jobs_finished += 1
+        # ENHANCE: use a lock instead of a counter and update a progressbar (that's the package name)
+        print "Proc", getpid(), "finished" if err is None else "FAILED!!", kwargs['output_filename'],\
+            "-- %f%% complete" % (jobs_finished*100.0/total_jobs)
 
-    failure_model = SmartCampusFailureModel(**kwargs)
-    exp = SmartCampusNetworkxExperiment(failure_model=failure_model, **kwargs)
-    exp.run_all_experiments()
-
-    if verbose:
-        print finished_message
-
+    if err is not None:
+        raise err
 
 if __name__ == '__main__':
 
@@ -203,14 +225,28 @@ if __name__ == '__main__':
 
     # use a process pool to run jobs in parallel
     using_pool = nprocs != 1
+    # track the returned (empty) results to see if any processes crash
+    results = []
     if using_pool:
         pool = Pool(processes=nprocs)
+        # shared variable to track progress
+        # NOTE: need to use Manager as directly using Value with pool causes RuntimeException...
+        _mgr = Manager()
+        jobs_completed = _mgr.Value('i', 0)
+    else:
+        pool = None
+        jobs_completed = 0
 
     def __sigint_handler(sig, frame):
         """Called when user presses Ctrl-C to kill whole process.
         Kills the pool to end the program."""
         if using_pool:
-            pool.terminate()
+            try:
+                pool.terminate()
+            except BaseException as e:
+                print "Error trying to terminate pool:", e
+            # ENHANCE: gracefully close the jobs_completed shared counter
+            # and print out any incompleted jobs for easy manual restart
         exit(1)
 
     signal.signal(signal.SIGINT, __sigint_handler)
@@ -218,14 +254,41 @@ if __name__ == '__main__':
     # map inputs a positional argument, not kwargs
     # pool.map(run_experiment, makecmds(_dirname=dirname), chunksize=1)
     all_cmds = list(makecmds(output_dirname=dirname))
+    total_jobs = len(all_cmds)
     for i, cmd in enumerate(all_cmds):
-        msg = "%f%% complete (assuming previous ones finished)" % ((i+1)*100.0/(len(all_cmds)))
-        cmd = [msg, cmd]
+        cmd = [jobs_completed, total_jobs, cmd]
         if using_pool:
-            pool.apply_async(run_experiment, cmd)
+            result = pool.apply_async(run_experiment, cmd)
+            results.append((result, cmd))
         else:
             apply(run_experiment, cmd)
+            jobs_completed += 1
 
+    # clean up the pool and print out any failed commands for later manual re-run
+    # ENHANCE: have this get called even if we Ctrl+C terminate?
     if using_pool:
         pool.close()
+
+        failed_cmds = []
+        # wait for results to finish first so that we don't
+        # interleave failure reports with progress reports
+        for res, cmd in results:
+            res.wait()
+        for res, cmd in results:
+            if res.ready() and not res.successful():
+                failed_cmds.append(cmd)
+                try:
+                    print "COMMAND FAILED with result:", res.get()
+                except BaseException as e:
+                    print "COMMAND FAILED:", cmd
+                    print "REASON:", e.__class__, e.message, e.args
+
+        if failed_cmds:
+            failed_cmds_filename = os.path.join(dirname, "failed_cmds")
+            with open(failed_cmds_filename, "w") as f:
+                f.write(str(failed_cmds))
+            print "Failed commands written to file", failed_cmds_filename
+        else:
+            print "All commands successful!"
+
         pool.join()
