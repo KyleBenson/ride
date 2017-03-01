@@ -15,16 +15,18 @@ from multiprocessing import Pool, Manager
 from multiprocessing.managers import ValueProxy
 import signal
 from time import sleep
+import traceback
 from campus_net_experiment import SmartCampusNetworkxExperiment
 from failure_model import SmartCampusFailureModel
 from itertools import chain
 
 # when True, this flag causes run.py to only print out the commands rather than run them each
-testing = True
-# testing = False
+# testing = True
+testing = False
 # debug_level = 'debug'  # for the actual experiment
 debug_level = 'warn'
 verbose = True
+nruns = 30
 
 DEFAULT_PARAMS = {
     'fprob': 0.1,
@@ -32,7 +34,11 @@ DEFAULT_PARAMS = {
     'nsubscribers': 400,
     'npublishers': 200,
     'topo': ['networkx', 'campus_topo_200b-20h.json'], # 200
-    'mcast_heuristic': ['steiner', 'diverse-paths', 'red-blue'],  # always a list!  we run all of them for each treatment
+    # 'topo': ['networkx', 'campus_topo_20b-8h.json'], # 200
+    # always a list of tuples!  we run all of them for each treatment and
+    # each heuristic optionally takes arguments
+    # 'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
+    'mcast_heuristic': [('steiner', 'max'), ('steiner', 'double')],
 }
 
 # we'll explore each of these when running experiments
@@ -64,17 +70,18 @@ def get_nhosts_treatment(nsubs, npubs):
             nhosts.append({k: v for k,v in zip(('nsubscribers', 'npublishers'), tup)})
     return nhosts
 EXPERIMENTAL_TREATMENTS = {
-    'ntrees': ntrees,
-    'fprob': fprobs,
+    # 'ntrees': ntrees,
+    # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
-    'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers)
-
+    # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers)
+    # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
+    'steiner-double': [{'ntrees': t, 'fprob': f} for t in [2] for f in fprobs[:3]]
     # TODO: vary topology for inter-building connectivity
     # 'topo': [DEFAULT_PARAMS['topo']],
 }
 
 CONTROL_FLOW_PARAMS = {
-    'nruns': 30, # 100
+    'nruns': nruns,
 }
 # these aren't passed to the experiment class
 nprocs = None if not testing else 1  # None uses cpu_count()
@@ -142,8 +149,8 @@ def getargs(output_dirname='', **kwargs):
 
     # label the file with a parameter summary and optionally place in a directory
     _args['output_filename'] = os.path.join(output_dirname, 'results_%dt_%0.2ff_%ds_%dp_%s.json' % \
-                                           (_args['ntrees'], _args['fprob'], _args['nsubscribers'],
-                                            _args['npublishers'], _args['mcast_heuristic']))
+                                           (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
+                                            SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic'])))
     return _args
 
 
@@ -196,7 +203,9 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
             exp = SmartCampusNetworkxExperiment(failure_model=failure_model, **kwargs)
             exp.run_all_experiments()
         except BaseException as e:
-            err = e
+            err = (e, traceback.format_exc())
+    else:
+        return
 
     if verbose:
         if isinstance(jobs_finished, ValueProxy):
@@ -207,9 +216,11 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
         # ENHANCE: use a lock instead of a counter and update a progressbar (that's the package name)
         print "Proc", getpid(), "finished" if err is None else "FAILED!!", kwargs['output_filename'],\
             "-- %f%% complete" % (jobs_finished*100.0/total_jobs)
+        if err is not None:
+            print "FAILURE TRACEBACK:\n", err[1]
 
     if err is not None:
-        raise err
+        raise err[0]
 
 if __name__ == '__main__':
 
@@ -276,7 +287,8 @@ if __name__ == '__main__':
             res.wait()
         for res, cmd in results:
             if res.ready() and not res.successful():
-                failed_cmds.append(cmd)
+                # slice off first two since they're just metadata
+                failed_cmds.append(cmd[2:])
                 try:
                     print "COMMAND FAILED with result:", res.get()
                 except BaseException as e:

@@ -29,7 +29,9 @@ class NetworkTopology(object):
             data = json.load(f)
         self.topo = json_graph.node_link_graph(data)
 
-    def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='steiner', weight_metric='weight'):
+
+    def get_redundant_multicast_trees(self, source, destinations, k=2, algorithm='steiner',
+                                      weight_metric='weight', heur_args=None):
         """Builds k redundant multicast trees: trees should not share any edges
         unless necessary.  Supports various algorithms, several of which may not
         work for k>2."""
@@ -60,14 +62,27 @@ class NetworkTopology(object):
 
             for u,v in self.topo.edges():
                 self.topo[u][v]['_temp_mcast_weight'] = self.topo[u][v].get(weight_metric, 1.0)
-            # Add the max weight of all edges to prevent an edge from being chosen next round
+            # Disjoint trees heuristic: we have the choice of two penalties that we
+            # add to an edge's weight to prevent it from being chosen next round:
+            # 1) args[0] == 'max' --> the max weight of all edges
+            # 2) args[0] == 'double' --> double the weight of the edge
+            penalty_heuristic = 'max'
+            if heur_args is not None and len(heur_args) >= 1:
+                if heur_args[0] not in ('max', 'double'):
+                    log.warn("Unknown steiner tree edge penalty heuristic (args[0]): %s. Using max instead" % heur_args[0])
+                else:
+                    penalty_heuristic = heur_args[0]
+
             max_weight = max((e[2]['_temp_mcast_weight'] for e in self.topo.edges(data=True)))
 
             trees = []
             for i in range(k):
                 new_tree = steiner_tree(self.topo, destinations, weight='_temp_mcast_weight')
                 for u,v in new_tree.edges():
-                    self.topo[u][v]['_temp_mcast_weight'] += max_weight
+                    if penalty_heuristic == 'max':
+                        self.topo[u][v]['_temp_mcast_weight'] += max_weight
+                    else:  # must be double
+                        self.topo[u][v]['_temp_mcast_weight'] *= 2
                 trees.append(new_tree)
 
             for u,v in self.topo.edges():
@@ -246,4 +261,3 @@ if __name__ == '__main__':
 
     if draw_trees:
         net.draw_multicast_trees(M)
-

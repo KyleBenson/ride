@@ -29,8 +29,8 @@ DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
 class SmartCampusNetworkxExperiment(object):
 
-    def __init__(self, nruns=1, ntrees=3, mcast_heuristic='steiner', nsubscribers=5, npublishers=5,
-                 failure_model=None, topo=['networkx'],
+    def __init__(self, nruns=1, ntrees=3, mcast_heuristic=('steiner',), nsubscribers=5, npublishers=5,
+                 failure_model=None, topo=('networkx',),
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
                  # NOTE: kwargs just used for construction via argparse
@@ -66,7 +66,7 @@ class SmartCampusNetworkxExperiment(object):
                                    'nsubscribers': nsubscribers,
                                    'npublishers': npublishers,
                                    'failure_model': self.failure_model.get_params(),
-                                   'heuristic': self.mcast_heuristic,
+                                   'heuristic': self.get_mcast_heuristic_name(),
                                    'topo': topo,
                                    'choicerandseed': choice_rand_seed,
                                    'randseed': rand_seed,
@@ -102,8 +102,9 @@ class SmartCampusNetworkxExperiment(object):
                             help='''number of times to run experiment (default=%(default)s)''')
         parser.add_argument('--ntrees', '-t', type=int, default=4,
                             help='''number of redundant multicast trees to build (default=%(default)s)''')
-        parser.add_argument('--mcast-heuristic', '-a', type=str, default='steiner', dest='mcast_heuristic',
-                            help='''heuristic algorithm for building multicast trees (default=%(default)s)''')
+        parser.add_argument('--mcast-heuristic', '-a', type=str, default=('steiner',), nargs='+', dest='mcast_heuristic',
+                            help='''heuristic algorithm for building multicast trees.  First arg is the heuristic
+                            name; all others are passed as args to the heuristic. (default=%(default)s)''')
         # TODO: should this be a percentage? should also warn if too many subs based on model of how many would need mcast support
         parser.add_argument('--nsubscribers', '-s', type=int, default=5,
                             help='''number of multicast subscribers (terminals) to reach (default=%(default)s)''')
@@ -218,15 +219,31 @@ class SmartCampusNetworkxExperiment(object):
         """Build redundant multicast trees over the specified subscribers using
         the requested heuristic algorithm."""
 
-        trees = self.topo.get_redundant_multicast_trees(source, subscribers, self.ntrees, self.mcast_heuristic)
+        trees = self.topo.get_redundant_multicast_trees(source, subscribers, self.ntrees,
+                                                        algorithm=self.mcast_heuristic[0],
+                                                        heur_args=self.mcast_heuristic[1:])
 
         # Need to record which heuristic and tree # we used for later
         for tree in trees:
-            tree.graph['heuristic'] = self.mcast_heuristic
+            tree.graph['heuristic'] = self.get_mcast_heuristic_name()
 
         # log.debug("MCast Trees: %s" % trees)
 
         return trees
+
+    def get_mcast_heuristic_name(self):
+        return self.build_mcast_heuristic_name(*self.mcast_heuristic)
+
+    @staticmethod
+    def build_mcast_heuristic_name(*args):
+        """The heuristic is given with arguments so we use this function
+        to convert it to a compact human-readable form.  This is a
+        separate static function for use by other classes."""
+        if len(args) > 1:
+            interior = ",".join(args[1:])
+            return "%s[%s]" % (args[0], interior)
+        else:
+            return args[0]
 
     def choose_best_trees(self, failed_topology, server, publishers, subscribers, trees):
         """
@@ -363,7 +380,7 @@ class SmartCampusNetworkxExperiment(object):
 
         subscribers = set(subscribers)
         result = dict()
-        heuristic = self.mcast_heuristic
+        heuristic = self.get_mcast_heuristic_name()
         # we'll record reachability for various choices of trees
         result[heuristic] = dict()
         failed_topology = self.get_failed_topology(self.topo.topo, failed_nodes, failed_links)
