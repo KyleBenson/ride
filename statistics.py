@@ -42,7 +42,7 @@ def parse_args(args):
                         (default=%(default)s)''')
 
     # Controlling what data is plotted
-    parser.add_argument('--x-axis', '-x', type=str, default='failure_model', dest='x_axis',
+    parser.add_argument('--x-axis', '-x', type=str, default='fprob', dest='x_axis',
                         help='''name of parameter to plot reachability against:
                         places it on the x-axis (ordered for increasing reachability)
                         (default=%(default)s)''')
@@ -63,6 +63,10 @@ def parse_args(args):
                         help='''save the figure to file automatically (default=%(default)s)''')
     parser.add_argument('--skip-plot', '-s', action='store_true', dest='skip_plot',
                         help='''disables showing the plot''')
+    parser.add_argument('--no-legend', '-l', action='store_false', dest='legend',
+                        help='''disables showing the legend; useful if you have too many groups
+                        but still want to look at general trends''')
+
 
     # Misc control params
     parser.add_argument('--debug', '--verbose', '-v', type=str, default='info', nargs='?', const='debug',
@@ -246,7 +250,8 @@ class SeismicStatistics(object):
         plt.xlabel(self.config.xlabel if self.config.xlabel is not None else self.config.x_axis)
         plt.ylabel(self.config.ylabel)
         plt.title(self.config.title)
-        plt.legend(loc=6)  # loc=4 --> bottom right
+        if self.config.legend:
+            plt.legend(loc=6)  # loc=4 --> bottom right
         # adjust the left and right of the plot to make them more visible
         xmin, xmax = plt.xlim()
         plt.xlim(xmin=(xmin - 0.05 * (xmax - xmin)), xmax=(xmax + 0.05 * (xmax - xmin)))
