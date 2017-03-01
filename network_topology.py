@@ -165,10 +165,13 @@ class NetworkTopology(object):
 
             assert all(all(d in g for d in destinations) for g in results)
 
-            # Slice off unrequested results
+            # Slice off unrequested results, and then convert to undirected
+            # graphs
             results = results[:k]
             results = [steiner_tree(t, destinations, root=source, weight=weight_metric).to_undirected() for t in results]
-            assert not results[0].is_directed()
+            assert not any(r.is_directed() for r in results)
+            if not all(nx.is_tree(r) for r in results):
+                log.warn("Non-tree generated for red-blue!")
             return results
 
         elif algorithm == 'ilp':
@@ -216,6 +219,7 @@ if __name__ == '__main__':
     algorithm = 'red-blue'
     ntrees = 4
     from_file = True
+    draw_trees = False
 
     log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
@@ -223,6 +227,7 @@ if __name__ == '__main__':
         net = NetworkTopology()
         source = "s0"
         # net.load_from_file('campus_topo_80b-8h.json')
+        # net.load_from_file('campus_topo_200b-20h.json')
         net.load_from_file('campus_topo_8b-4h.json')
         # dest = ["h1-b4", "h2-b7", "h3-b0", "h2-b0", "h4-b2", "h5-b21", "h6-b45", "h7-b71"]
         dest = ["h1-b4", "h2-b5", "h3-b0"]
@@ -239,5 +244,6 @@ if __name__ == '__main__':
 
     M = net.get_redundant_multicast_trees(source, dest, ntrees, algorithm)
 
-    net.draw_multicast_trees(M)
+    if draw_trees:
+        net.draw_multicast_trees(M)
 
