@@ -66,9 +66,11 @@ def parse_args(args):
                         (default=%(default)s or %(const)s when switch specified with no arg)''')
     parser.add_argument('--skip-plot', '-s', action='store_true', dest='skip_plot',
                         help='''disables showing the plot''')
-    parser.add_argument('--no-legend', '-l', action='store_false', dest='legend',
-                        help='''disables showing the legend; useful if you have too many groups
-                        but still want to look at general trends''')
+    parser.add_argument('--legend', '-l', nargs='?', dest='legend', type=int, const=None, default=4,
+                        help='''disables showing the legend if specified with no args,
+                        which is useful if you have too many groups but still want to look
+                        at general trends.  Can optionally specify an integer passed to
+                        matplotlib for determining the legend's location (default=%(default)s)''')
     parser.add_argument('--no-error-bars', '-err', action='store_false', dest='error_bars',
                         help='''disables showing the error bars and max/min values;
                         useful if you have too many groups and the graph is cluttered''')
@@ -362,8 +364,8 @@ class SeismicStatistics(object):
         plt.ylabel(self.config.ylabel)
         if self.config.title is not None:
             plt.title(self.config.title)
-        if self.config.legend:
-            plt.legend(loc=6)  # loc=4 --> bottom right
+        if self.config.legend is not None:
+            plt.legend(loc=self.config.legend)  # loc=4 --> bottom right
         # adjust the left and right of the plot to make them more visible
         xmin, xmax = plt.xlim()
         plt.xlim(xmin=(xmin - 0.05 * (xmax - xmin)), xmax=(xmax + 0.05 * (xmax - xmin)))
