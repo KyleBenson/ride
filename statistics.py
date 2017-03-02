@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import numbers
 
 STATISTICS_DESCRIPTION = '''Gathers statistics from the campus_net_experiment.py output files in order to determine how
 resilient different multicast tree-generating algorithms are under various scenarios.
@@ -57,21 +58,30 @@ def parse_args(args):
     # Controlling plots
     parser.add_argument('--title', '-t', nargs='?', default='Subscriber hosts reached', const=None,
                         help='''title of the plot (default=%(default)s; no title if specified with no arg)''')
-    # TODO: y/x group names
     parser.add_argument('--ylabel', '-yl', type=str, default="avg host reach ratio",
                         help='''label to place on the y-axis (default=%(default)s)''')
     parser.add_argument('--xlabel', '-xl', type=str, default=None,
                         help='''label to place on the x-axis (default=%(default)s)''')
+    # We aren't plotting non-int/float values on y-axis currently so no need for this yet
+    # parser.add_argument('--ynames', '-yn', type=str, default=None, nargs='+',
+    #                     help='''replace y-axis parameter names with these values.
+    #                     Specify them in the order the original graph put the parameter values in;
+    #                     it will replace the parameter value names and then re-sort again''')
+    parser.add_argument('--xnames', '-xn', type=str, default=None, nargs='+',
+                        help='''replace x-axis parameter names with these values.
+                        Specify them in the order the original graph put the parameter values in;
+                        it will replace the parameter value names and then re-sort again''')
     parser.add_argument('--save', nargs='?', default=False, const='fig.png',
                         help='''save the figure to file automatically
                         (default=%(default)s or %(const)s when switch specified with no arg)''')
     parser.add_argument('--skip-plot', '-s', action='store_true', dest='skip_plot',
                         help='''disables showing the plot''')
-    parser.add_argument('--legend', '-l', nargs='?', dest='legend', type=int, const=None, default=4,
+    parser.add_argument('--legend', '-l', nargs='?', dest='legend', type=int, const=None, default=0,
                         help='''disables showing the legend if specified with no args,
                         which is useful if you have too many groups but still want to look
                         at general trends.  Can optionally specify an integer passed to
-                        matplotlib for determining the legend's location (default=%(default)s)''')
+                        matplotlib for determining the legend's location. Specifying 0 asks
+                        matplotlib to find the best location. (default=%(default)s)''')
     parser.add_argument('--no-error-bars', '-err', action='store_false', dest='error_bars',
                         help='''disables showing the error bars and max/min values;
                         useful if you have too many groups and the graph is cluttered''')
@@ -129,7 +139,14 @@ class SeismicStatistics(object):
                 raise e
             param_value = (data['params']['nsubscribers'], data['params']['npublishers'])
             # param_value = "%s,%s" % param_value
-        self.stats.setdefault(param_value, []).extend(data['results'])
+
+        # HACK: topo is stored as a list, so convert it to a tuple
+        # Actually maybe we want to just extract the [1:] strings?
+        try:
+            self.stats.setdefault(param_value, []).extend(data['results'])
+        except TypeError:
+            self.stats.setdefault(tuple(param_value), []).extend(data['results'])
+
 
     def gather_yvalues_from_raw_results(self, results):
         """Averages the reachabilities (or other value) over this collection of results
@@ -216,7 +233,8 @@ class SeismicStatistics(object):
                 if isinstance(yvalue, dict):
 
                     metrics_to_gather_in_dict = ('max', 'min', 'mean', 'stdev')
-                    assert all(key in yvalue for key in metrics_to_gather_in_dict)
+                    if not all(key in yvalue for key in metrics_to_gather_in_dict):
+                        log.warn("Did not find statistical metrics in results dictionary: must be results from older version?")
 
                     for metric_result_key, metric_results_value in yvalue.items():
                         # Collect the statistical metrics for this heuristic or metric
@@ -278,8 +296,8 @@ class SeismicStatistics(object):
                 log.debug("Mean value for x=%s, group[%s]: %f" % (xvalue, group_name, group_values_array.mean()))
                 stats_by_group.setdefault(group_name, []).append(group_values_array)
 
-        # Extract numerical xvalues from strings
-        # NOTE: don't forget to sort them since we'll do that when plotting!
+        # Extract numerical xvalues from strings for plotting
+        # NOTE: don't forget to sort them before applying names since we'll do that when plotting!
         try:
             xvalues = [float(x) for x in xvalues]
         except ValueError:
@@ -290,15 +308,37 @@ class SeismicStatistics(object):
             # need to request numerics instead
             elif any(isinstance(xv, basestring) for xv in xvalues):
                 plt.xticks(range(len(xvalues)), sorted(xvalues))
-                xvalues = range(len(xvalues))
+                # need to set xvalues to index values, but maintain ordering
+                xvalues = [sorted(xvalues).index(x) for x in xvalues]
         except TypeError as e:
+            # HACKS: lists/tuples will cause this error
             # nhosts will format them as tuples, which is good for sorting,
             # but bad for labels and actual plotting
             if self.x_axis == 'nhosts':
                 _xval = tuple("%s,%s" % (s,p) for s,p in sorted(xvalues))
                 plt.xticks(range(len(xvalues)), _xval)
+            # topo is a list containing topology reader and filename
+            elif self.x_axis == 'topo':
+                _xval = tuple(topo[1].split('.')[0].split('_')[-1] for topo in sorted(xvalues))
+                plt.xticks(range(len(xvalues)), _xval)
             else:
                 raise e
+        finally:
+            # Verify we now have numeric values after all this hacking...
+            if not all(isinstance(x, numbers.Number) for x in xvalues):
+                # need to set xvalues to index values, but maintain ordering
+                xvalues = [sorted(xvalues).index(x) for x in xvalues]
+
+            # optionally re-label the x-axis parameter values with new names
+            # (ordered by original sorting).
+            if self.config.xnames is not None:
+                # ENHANCE: optionally sort by new labels?  causes issues e.g. 200 < 40 since they're strings
+                # new_xvalues = [x[0] for x in sorted(zip(self.config.xnames, sorted(xvalues)))]
+                if len(xvalues) != len(self.config.xnames):
+                    raise ValueError("Specified new labels don't have same length as original xvalues!")
+                plt.xticks(range(len(xvalues)), self.config.xnames)
+                # need to set xvalues to index values while maintaining ordering that corresponds with ORIGINAL xvalues
+                xvalues = [sorted(xvalues).index(x) for x in xvalues]
 
         # Plot each group (heuristic) with different markers / colors
         # TODO: figure out how to consistently color different heuristics/groups
@@ -342,10 +382,6 @@ class SeismicStatistics(object):
             xval, yval = zip(*sorted(zip(xvalues, yvalues)))
             if not (len(xval) == len(xvalues) and len(yval) == len(yvalues)):
                 log.warn("We seem to be missing some y or x values for heuristic %s" % group_name)
-
-            # HACK: tuples will cause pyplot to think it's multi-dimensional data
-            if self.x_axis == 'nhosts':
-                xval = range(len(xval))
 
             plot_kwargs = {'label': group_name,
                            'marker': markers[i%len(markers)],
