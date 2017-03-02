@@ -62,7 +62,8 @@ def parse_args(args):
     parser.add_argument('--xlabel', '-xl', type=str, default=None,
                         help='''label to place on the x-axis (default=%(default)s)''')
     parser.add_argument('--save', nargs='?', default=False, const='fig.png',
-                        help='''save the figure to file automatically (default=%(default)s)''')
+                        help='''save the figure to file automatically
+                        (default=%(default)s or %(const)s when switch specified with no arg)''')
     parser.add_argument('--skip-plot', '-s', action='store_true', dest='skip_plot',
                         help='''disables showing the plot''')
     parser.add_argument('--no-legend', '-l', action='store_false', dest='legend',
@@ -370,10 +371,10 @@ class SeismicStatistics(object):
         if not self.config.skip_plot:
             plt.show()
         if self.config.save:
-            # TODO: finish this!
-            raise NotImplementedError("Can't save plots automatically yet")
-            #savefig(os.path.join(args.output_directory, )
-            # fig.savefig('fig1.png', bbox_inches='tight')
+            if '.' not in self.config.save:
+                log.warn("No file extension specified in filename we're saving to: %s; using .png" % self.config.save)
+                self.config.save += '.png'
+            plt.savefig(self.config.save, bbox_inches=0)  # may need to use 'tight' on some systems for bbox
 
     def print_statistics(self):
         """Prints summary statistics for all groups and heuristics,
