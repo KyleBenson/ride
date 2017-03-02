@@ -46,14 +46,15 @@ def parse_args(args):
                         help='''name of parameter to plot reachability against:
                         places it on the x-axis (ordered for increasing reachability)
                         (default=%(default)s)''')
-    parser.add_argument('--include-choices', '-c', default=None, nargs='+', dest='include_choices',
-                        help='''name of heuristics' choice to include in analysis (default includes all)''')
+    parser.add_argument('--include-choices', '-c', default=None, nargs='*', dest='include_choices',
+                        help='''name of multicast tree choice heuristics to include in analysis (default includes all).
+                        Specify no args to filter out all tree-choosing heuristics.''')
+    # TODO: determine how to plot ONLY choices for a given heuristic without plotting that heuristic's stats
     parser.add_argument('--include-heuristics', '-i', default=None, nargs='+', dest='include_heuristics',
                         help='''name of heuristics (before tree choice heuristic name is added)
                         to include in analysis (default includes all)''')
 
     # Controlling plots
-    # TODO: only if not None
     parser.add_argument('--title', '-t', nargs='?', default='Subscriber hosts reached', const=None,
                         help='''title of the plot (default=%(default)s; no title if specified with no arg)''')
     # TODO: y/x group names
