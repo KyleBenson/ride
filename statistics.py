@@ -54,8 +54,8 @@ def parse_args(args):
 
     # Controlling plots
     # TODO: only if not None
-    parser.add_argument('--title', '-t', type=str, default='Subscriber hosts reached',
-                        help='''title of the plot (default=%(default)s)''')
+    parser.add_argument('--title', '-t', nargs='?', default='Subscriber hosts reached', const=None,
+                        help='''title of the plot (default=%(default)s; no title if specified with no arg)''')
     # TODO: y/x group names
     parser.add_argument('--ylabel', '-yl', type=str, default="avg host reach ratio",
                         help='''label to place on the y-axis (default=%(default)s)''')
@@ -360,8 +360,8 @@ class SeismicStatistics(object):
         # Adjust the plot visually, including labelling and legends.
         plt.xlabel(self.config.xlabel if self.config.xlabel is not None else self.config.x_axis)
         plt.ylabel(self.config.ylabel)
-        # TODO: if self.config.title is not None:
-        plt.title(self.config.title)
+        if self.config.title is not None:
+            plt.title(self.config.title)
         if self.config.legend:
             plt.legend(loc=6)  # loc=4 --> bottom right
         # adjust the left and right of the plot to make them more visible
