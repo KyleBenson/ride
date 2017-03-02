@@ -16,8 +16,6 @@ import json
 
 # skip over these metrics when looking for results from heuristics
 METRICS_TO_SKIP = {'run', 'nhops', 'overlap', 'cost'}
-# these heuristic names are treated differently as they're always present
-OMNIPRESENT_HEURISTICS = {'oracle', 'unicast'}
 
 
 def parse_args(args):
@@ -55,8 +53,10 @@ def parse_args(args):
                         to include in analysis (default includes all)''')
 
     # Controlling plots
+    # TODO: only if not None
     parser.add_argument('--title', '-t', type=str, default='Subscriber hosts reached',
                         help='''title of the plot (default=%(default)s)''')
+    # TODO: y/x group names
     parser.add_argument('--ylabel', '-yl', type=str, default="avg host reach ratio",
                         help='''label to place on the y-axis (default=%(default)s)''')
     parser.add_argument('--xlabel', '-xl', type=str, default=None,
@@ -68,13 +68,16 @@ def parse_args(args):
     parser.add_argument('--no-legend', '-l', action='store_false', dest='legend',
                         help='''disables showing the legend; useful if you have too many groups
                         but still want to look at general trends''')
+    parser.add_argument('--no-error-bars', '-err', action='store_false', dest='error_bars',
+                        help='''disables showing the error bars and max/min values;
+                        useful if you have too many groups and the graph is cluttered''')
 
 
     # Misc control params
     parser.add_argument('--debug', '--verbose', '-v', type=str, default='info', nargs='?', const='debug',
                         help='''set verbosity level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
 
-    # TODO: graph metrics as box and whisker plot.  perhaps we specify what gets put on the y axis (default=reach)
+    # TODO: specify what gets put on the y axis (default=reach)
 
     return parser.parse_args(args)
 
@@ -93,7 +96,6 @@ class SeismicStatistics(object):
         log_level = log.getLevelName(config.debug.upper())
         log.basicConfig(format='%(levelname)s:%(message)s', level=log_level)
 
-
         # store all the parsed stats indexed by x-axis parameter values
         self.stats = dict()
 
@@ -111,6 +113,7 @@ class SeismicStatistics(object):
             self.parse_file(os.path.join(dirname, filename))
 
     def parse_file(self, fname):
+        # TODO: support grouping by something other than the x_axis arg?
         with open(fname) as f:
             data = json.load(f)
         # store the results along with any others grouped according to the x-axis parameter
@@ -124,99 +127,152 @@ class SeismicStatistics(object):
             # param_value = "%s,%s" % param_value
         self.stats.setdefault(param_value, []).extend(data['results'])
 
-    def get_reachability(self, results):
-        """Averages the reachabilities over this collection of results
+    def gather_yvalues_from_raw_results(self, results):
+        """Averages the reachabilities (or other value) over this collection of results
         (previously grouped by x-axis parameter name; hence the results
         can be grouped together since they've received the same treatment).
-        @:param group - list of {heuristic1: reachability, heuristic2: reachability} dicts
-        @:return dict with each {heuristic1: avg_reachability, ...}
+
+        @:param results - list of {heuristic1: reachability, heuristic2: {'max': max_reachability...}} dicts
+        @:return dict stats_metrics, dict raw_values:
+         where stats_metrics = {heuristic1: {'mean': np.array(avg_reachability), 'max': np.array(max_reachability), ...}}
+         and raw_values simply contains {heuristic2: np.array(values), ...}
         """
 
-        # First add up the total reachability for each heuristic, and
-        # then divide by the count to get the average
-        reachabilities = {}
-        heuristic_counts = {}
+        # Determine how we name the metrics as we gather them up.
+        # If <=1 tree choice heuristic is requested, the name will
+        # be solely the tree construction heuristic.
+        # If <=1 tree construction heuristic (other than oracle/unicast)
+        # is requested, the name will be solely the tree choice heuristic.
+        # When both of these cases apply, we only use the heuristic name.
+        omnipresent_heuristics = {'oracle', 'unicast'}
+        include_choice_name = True
+        include_construction_name = True
+        if self.config.include_choices is not None and len(self.config.include_choices) <= 1:
+            include_choice_name = False
+        elif self.config.include_heuristics is not None and \
+                        len(set(self.config.include_heuristics) - omnipresent_heuristics) <= 1:
+            include_construction_name = False
+
+        # Now gather up the y-values (typically reachability) for each heuristic/metric
+        # in the proper data structure depending on what the results contain (dict vs. scalar).
+        yvalues_dict = {}
+        yvalues_array = {}
         for run in results:
             # Skip any results with complete failure
             if run['oracle'] == 0.0:
                 continue
 
-            for heuristic, reachability in run.items():
+            for metric_name, yvalue in run.items():
                 # HACK to skip other parameters / metrics for this run
                 # Also, skip any heuristics we don't want included (if this option was specified)
                 # TODO: actually handle metrics?  they should probably go on y-axis, though plotting them against reach could be useful too.
                 if (self.config.include_heuristics is not None\
-                        and heuristic not in self.config.include_heuristics)\
+                        and metric_name not in self.config.include_heuristics)\
                         or (self.config.include_heuristics is None\
-                                and heuristic in METRICS_TO_SKIP):
+                                and metric_name in METRICS_TO_SKIP):
                     continue
 
-                # Some heuristics have nested results with further parameters.
-                # Here we add the heuristic name to those parameters to make a
-                # new unique heuristic group.
-                # We also filter these by 'choice' (tree-choosing heuristic).
+                # Actual results may have nested results with further parameters.
+                # As an example, consider a single run:
+                # {
+                #     "cost": {
+                #         "max": 596.3999999999999,
+                #         "mean": 585.92499999999995,
+                #         "min": 579.0,
+                #         "stdev": 5.1380322108760055,
+                #         "unicast": 1481.4000000000071
+                #     },
+                #     "nhops": {
+                #         "max": 9,
+                #         "mean": 3.9896875000000001,
+                #         "min": 3,
+                #         "stdev": 1.3643519166050841
+                #     },
+                #     "oracle": 0.7975,
+                #     "overlap": 31628,
+                #     "run": 29,
+                #     "steiner": {                        <------  metric_name=steiner, yvalue=this dict
+                #         "all": 0.78,
+                #         "importance-chosen": 0.7125,
+                #         "max": 0.7125,
+                #         "max-overlap-chosen": 0.7125,
+                #         "max-reachable-chosen": 0.7125,
+                #         "mean": 0.56031249999999999,
+                #         "min": 0.135,
+                #         "min-missing-chosen": 0.7125,
+                #         "stdev": 0.17726409279306962
+                #     },
+                #     "unicast": 0.605
+                # }
                 #
-                # Furthermore, we may trim down the name to not include the
-                # choice at all (if <=1 requested) or not include the heuristic
-                # name at all (if <=1 requested that isn't oracle/unicast.
-                # When both of these cases apply, we only use the heuristic name.
-                if isinstance(reachability, dict):
-                    reachability_dict = {}
-                    for choice, v in reachability.items():
-                        if self.config.include_choices is not None:
-                            if choice not in self.config.include_choices:
+                # Here we add the heuristic name to those parameters to make a
+                # new unique heuristic group after filtering these by 'choice'
+                # (tree-choosing heuristic).  We also extract the min, max, mean, stdev
+                # for the heuristic (or other treatment/metric) in question.
+                if isinstance(yvalue, dict):
+
+                    metrics_to_gather_in_dict = ('max', 'min', 'mean', 'stdev')
+                    assert all(key in yvalue for key in metrics_to_gather_in_dict)
+
+                    for metric_result_key, metric_results_value in yvalue.items():
+                        # Collect the statistical metrics for this heuristic or metric
+                        if metric_result_key in metrics_to_gather_in_dict:
+                            yvalues_dict.setdefault(metric_name, {}).setdefault(metric_result_key, []).append(metric_results_value)
+
+                        # Collect the reachabilities for the tree-choosing heuristics
+                        # metric_result_key is a tree-choosing heuristic
+                        else:
+                            # TODO: need a hack for unicast cost metric when we expand to include metrics
+                            if self.config.include_choices is not None and metric_result_key not in self.config.include_choices:
                                 continue
-                            # Only include choice name if we requested more than one
-                            if len(self.config.include_choices) > 1:
-                                # Similarly, if only one heuristic (other than oracle/unicast) requested,
-                                # don't include heuristic name (expect we'd put it in title)
-                                if self.config.include_heuristics is None or \
-                                                len(set(self.config.include_heuristics) - OMNIPRESENT_HEURISTICS) > 1:
-                                    reachability_dict["%s (%s)" % (heuristic, choice)] = v
+                            # Build the name for the metric based on tree-choosing/construction heuristic
+                            if include_choice_name:
+                                if include_construction_name:
+                                    name = "%s (%s)" % (metric_name, metric_result_key)
                                 else:
-                                    reachability_dict[choice] = v
+                                    name = metric_result_key
                             else:
-                                reachability_dict[heuristic] = v
-                        else:  # including all choices
-                            # similarly to above we trim off the heuristic name if only including one of them
-                            if self.config.include_heuristics is None or \
-                                            len(set(self.config.include_heuristics) - OMNIPRESENT_HEURISTICS) > 1:
-                                reachability_dict["%s (%s)" % (heuristic, choice)] = v
-                            else:
-                                reachability_dict[choice] = v
+                                name = metric_name
+                            yvalues_array.setdefault(name, []).append(metric_results_value)
                 else:
-                    reachability_dict = {heuristic: reachability}
-                # Now we can iterate over all of them (or the original one)
-                for _heuristic, _reachability in reachability_dict.items():
-                    reachabilities[_heuristic] = reachabilities.get(_heuristic, 0) + _reachability
-                    heuristic_counts[_heuristic] = heuristic_counts.get(_heuristic, 0) + 1
+                    yvalues_array.setdefault(metric_name, []).append(yvalue)
 
-        # TODO: include error bars?  count would be done differently then
-        # Finally, convert totals to averages and return them
-        for heuristic, count in heuristic_counts.items():
-            reachabilities[heuristic] /= float(count)
-
-        return reachabilities
+        # Before returning the values, we need to convert the lists into np.arrays
+        return {k: {k2: np.array(v) for k2, v in d.items()} for k,d in yvalues_dict.items()},\
+               {k: np.array(v) for k,v in yvalues_array.items()}
+        # ENHANCE: cache the result so we don't recompute for print_statistics
 
     def plot_reachability(self):
         """Plots the average reachability of subscribers by each heuristic versus the
         specified x-axis parameter, ordered ascending by x-axis param.
         NOTE: we try to extract numerical values from the x-axis parameter strings if possible."""
 
-        # First, we need to rotate the dict, which is currently indexed
-        # by x-axis parameter, to index by heuristic (values are lists
-        # of reachabilities that correspond to the list of xvalues) instead.
-        # Then we can plot a curve for each.
-        new_stats = dict()
+        # First, we need to rotate the stats dict, which is currently indexed
+        # by x-axis parameter value, to index by heuristic/metric (where values are lists
+        # of reachabilities/metric values that correspond in order to the list of xvalues) instead.
+        stats_by_group = dict()
         xvalues = []
         for (xvalue, results) in self.stats.items():
-            reachabilities = self.get_reachability(results)
+            yvalues_dicts, yvalues_arrays = self.gather_yvalues_from_raw_results(results)
+            # TODO: ensure that all of the results are present for this xvalue, else put a placeholder
             xvalues.append(xvalue)
+
             # Gather the groups and their respective y-values that
-            # will be plotted for this x-value
-            for heuristic, reachability in reachabilities.items():
-                log.debug("Reach for x=%s, heur[%s]: %f" % (xvalue, heuristic, reachability))
-                new_stats.setdefault(heuristic, []).append(reachability)
+            # will be plotted for this x-value.  The dicts already
+            # have min, max, mean, stdev so we'll need to gather each
+            # of those up and average them, whereas the arrays will
+            # be directly converted to arrays and have those metrics
+            # pulled form them using numpy.
+            #
+            # Each time we run this loop to completion, we've appended
+            # each group's entry for this x-axis value i.e. a single
+            # point in the plot.
+            for group_name, group_values_dict in yvalues_dicts.items():
+                log.debug("Mean value for x=%s, group[%s]: %f" % (xvalue, group_name, group_values_dict['mean'].mean()))
+                stats_by_group.setdefault(group_name, []).append(group_values_dict)
+            for group_name, group_values_array in yvalues_arrays.items():
+                log.debug("Mean value for x=%s, group[%s]: %f" % (xvalue, group_name, group_values_array.mean()))
+                stats_by_group.setdefault(group_name, []).append(group_values_array)
 
         # Extract numerical xvalues from strings
         # NOTE: don't forget to sort them since we'll do that when plotting!
@@ -247,25 +303,63 @@ class SeismicStatistics(object):
         linestyles = ['solid','dashed','dashdot','dotted']
         i = 0
         # TODO: order the heuristics appropriately (oracle first, unicast last)
-        for (heuristic, yvalues) in new_stats.items():
-            log.debug("plotting for %s: %s vs. %s" % (heuristic, xvalues, yvalues))
+        for (group_name, yvalues) in stats_by_group.items():
+            # We need to extract the actual yvalues from the yvalues' np.arrays' raw data,
+            # which might mean getting the arrays from a dict of mean, min, max, stdev arrays.
+            # Keep them as lists for now because we'll be sorting them with the xvalues.
+            # After this try statement, yvalues will be a dict('mean': ...) if config.error_bars is true
+            # TODO: perhaps we only want error-bars on SOME of the heuristics?  too many is too crowded...
+            try:
+                if self.config.error_bars:
+                    yvalues = [{'mean': y.mean(), 'stdev': y.std(),
+                                'min': y.min(), 'max': y.max()} for y in yvalues]
+                else:
+                    yvalues = [y.mean() for y in yvalues]
+            except AttributeError:
+                # must be a dict then...
+                if self.config.error_bars:
+                    yvalues = [{'mean': y['mean'].mean(), 'stdev': y['stdev'].mean(),
+                                'min': y['min'].mean(), 'max': y['max'].mean()} for y in yvalues]
+                else:
+                    yvalues = [y['mean'].mean() for y in yvalues]
+            log.debug("plotting for %s: %s vs. %s" % (group_name, xvalues, yvalues))
+
             # sort by xvalues
             xval, yval = zip(*sorted(zip(xvalues, yvalues)))
             if not (len(xval) == len(xvalues) and len(yval) == len(yvalues)):
-                log.warn("We seem to be missing some y or x values for heuristic %s" % heuristic)
+                log.warn("We seem to be missing some y or x values for heuristic %s" % group_name)
 
             # HACK: tuples will cause pyplot to think it's multi-dimensional data
             if self.x_axis == 'nhosts':
                 xval = range(len(xval))
 
-            # TODO: optional bar graph?
-            plt.plot(xval, yval, label=heuristic, marker=markers[i%len(markers)],
-                     color=colors[i%len(colors)], linestyle=linestyles[i%len(linestyles)])
+            plot_kwargs = {'label': group_name,
+                           'marker': markers[i%len(markers)],
+                           'color': colors[i%len(colors)],
+                           'linestyle': linestyles[i%len(linestyles)]}
+
+            # Optionally plot errorbars and min/max by overlaying two
+            # different errorbars plots: one thicker than the other.
+            # This gives us more flexibility than, looks better than,
+            # and would not be correct if we used box-and-whisker.
+            # Taken from http://stackoverflow.com/questions/33328774/box-plot-with-min-max-average-and-standard-deviation
+            if self.config.error_bars:
+                means = np.array([y['mean'] for y in yval])
+                stdevs = np.array([y['stdev'] for y in yval])
+                mins = np.array([y['min'] for y in yval])
+                maxes = np.array([y['max'] for y in yval])
+
+                plt.errorbar(xval, means, [means - mins, maxes - means], lw=1, **plot_kwargs)
+                del plot_kwargs['label']  # to avoid 2 copies showing up in the legend
+                plt.errorbar(xval, means, stdevs, lw=2, **plot_kwargs)
+            else:
+                plt.plot(xval, yval, **plot_kwargs)
             i += 1
 
         # Adjust the plot visually, including labelling and legends.
         plt.xlabel(self.config.xlabel if self.config.xlabel is not None else self.config.x_axis)
         plt.ylabel(self.config.ylabel)
+        # TODO: if self.config.title is not None:
         plt.title(self.config.title)
         if self.config.legend:
             plt.legend(loc=6)  # loc=4 --> bottom right
@@ -279,18 +373,79 @@ class SeismicStatistics(object):
             # TODO: finish this!
             raise NotImplementedError("Can't save plots automatically yet")
             #savefig(os.path.join(args.output_directory, )
+            # fig.savefig('fig1.png', bbox_inches='tight')
 
     def print_statistics(self):
         """Prints summary statistics for all groups and heuristics,
         in particular the mean and standard deviation of reachability."""
 
+        msg = "Group %s heuristic %s's Mean: %f; stdev: %f; min: %f; max: %f"
         for group_name, group in self.stats.items():
-            reachabilities = self.get_reachability(group)
-            for heur, reach in reachabilities.items():
-                reach = np.array(reach)
-                log.info("Group %s heuristic %s's Mean: %f; stdev: %f" % (group_name, heur, np.mean(reach), np.std(reach)))
+            reachabilities_dict, reachabilities_array = self.gather_yvalues_from_raw_results(group)
+
+            print "reach_dicts:"
+            for heur, reach_dict in reachabilities_dict.items():
+                assert all(isinstance(v, np.ndarray) for v in reach_dict.values())
+                log.info(msg % (group_name, heur, reach_dict['mean'].mean(),
+                                reach_dict['stdev'].mean(), reach_dict['min'].mean(),
+                                reach_dict['max'].mean()))
+
+            print "reach_arrays:"
+            for heur, reach_array in reachabilities_array.items():
+                assert isinstance(reach_array, np.ndarray)
+                log.info(msg % (group_name, heur, reach_array.mean(), reach_array.std(),
+                                reach_array.min(), reach_array.max()))
+
+
+def run_tests():
+    dummy_args = parse_args([])
+    stats = SeismicStatistics(dummy_args)
+    # create some dummy results with really simple values for testing
+    nresults = 4
+    results = [
+        {
+            "cost": {
+                "max": 2000.0*i,
+                "mean": 1000.0*i,
+                "min": 10.0*i,
+                "stdev": 20.0*i,
+                "unicast": 4000.0*i
+            },
+            "nhops": {
+                "max": 10.0*i,
+                "mean": 5.0*i,
+                "min": 1.0*i,
+                "stdev": 2.0*i
+            },
+            "oracle": 1.0*i,
+            "overlap": 10000*i,
+            "run": i-1,
+            ["steiner", "red-blue", "fake_heuristic"][i%3]: {  # note that since i starts at 1 this means red-blue repeats first
+                "all": 0.7*i,
+                "importance-chosen": 0.55*i,
+                "max": 0.6*i,
+                "max-overlap-chosen": 0.45*i,
+                "max-reachable-chosen": 0.4*i,
+                "mean": 0.5*i,
+                "min": 0.1*i,
+                "min-missing-chosen": 0.3*i,
+                "stdev": 0.2*i
+            },
+            "unicast": 0.25*i
+        } for i in range(1, nresults+1)
+        ]
+
+    # validate correctness of gather_yvalues_from_raw_results()
+    stats_dicts, stats_arrays = stats.gather_yvalues_from_raw_results(results)
+    print stats_dicts
+    print stats_arrays
+    # assert stats_dicts['']
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+        run_tests()
+        exit()
+
     args = parse_args(sys.argv[1:])
     stats = SeismicStatistics(args)
     stats.parse_all()
