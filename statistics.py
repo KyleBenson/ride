@@ -305,8 +305,18 @@ class SeismicStatistics(object):
         colors = 'rbgycm'
         linestyles = ['solid','dashed','dashdot','dotted']
         i = 0
-        # TODO: order the heuristics appropriately (oracle first, unicast last)
-        for (group_name, yvalues) in stats_by_group.items():
+
+        # order the heuristics appropriately (oracle first, unicast last, rest alphabetical)
+        def __heuristic_sorter(tup):
+            _group_name = tup[0]
+            if _group_name == 'unicast':
+                return '~'  # highest ASCII letter
+            if _group_name == 'oracle':
+                return ' '  # lowest ASCII letter
+            return _group_name  # else alphabetical
+        stats_to_plot = sorted(stats_by_group.items(), key=__heuristic_sorter)
+
+        for (group_name, yvalues) in stats_to_plot:
             # We need to extract the actual yvalues from the yvalues' np.arrays' raw data,
             # which might mean getting the arrays from a dict of mean, min, max, stdev arrays.
             # Keep them as lists for now because we'll be sorting them with the xvalues.
