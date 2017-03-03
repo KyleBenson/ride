@@ -48,6 +48,7 @@ class CampusTopologyGenerator(object):
 
         self.topo = None
         self.core_nodes = None
+        self.server_nodes = None
         self.major_building_routers = None
         self.minor_building_routers = None
         self.distribution_routers = None
@@ -64,9 +65,11 @@ class CampusTopologyGenerator(object):
         self.core_nodes = list(self.topo.nodes())
 
         # Server(s), e.g. data centers, are assumed to be located close to the core
+        self.server_nodes = []
         for s in range(self.servers):
             server_name = "s%d" % s
             self.topo.add_node(server_name)
+            self.server_nodes.append(server_name)
             for server_router in random.sample(self.core_nodes, self.links_per_server):
                 self.add_link(server_router, server_name)
 
@@ -280,7 +283,14 @@ class CampusTopologyGenerator(object):
             # TODO: ignore building internals?
             colormap = {'c': 'r', 'b': 'b', 'd': 'g', 'm': 'y', 's': 'c', 'h': 'm', 'f': 'k', 'r': 'w'}
             node_colors = [colormap[node[0]] for node in self.topo.nodes()]
-            nx.draw(self.topo, node_color=node_colors)
+            # shell layout places nodes as a series of concentric circles
+            positions = nx.shell_layout(self.topo, [self.core_nodes,
+                                                    # sort the building routers by degree in attempt to get ones connected to each other next to each other
+                                                    sorted(self.major_building_routers, key=lambda n: nx.degree(self.topo, n)) + self.distribution_routers + self.server_nodes,
+                                                    self.hosts + self.minor_building_routers])
+            # then do a spring layout, keeping the inner nodes fixed in positions
+            positions = nx.spring_layout(self.topo, pos=positions, fixed=self.core_nodes + self.server_nodes + self.major_building_routers + self.distribution_routers)
+            nx.draw(self.topo, node_color=node_colors, pos=positions)
             plt.show()
         except ImportError:
             print "ERROR: couldn't draw graph as matplotlib.pyplot couldn't be imported!"
