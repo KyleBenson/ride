@@ -29,7 +29,7 @@ DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
 class SmartCampusNetworkxExperiment(object):
 
-    def __init__(self, nruns=1, ntrees=3, mcast_heuristic=('steiner',), nsubscribers=5, npublishers=5,
+    def __init__(self, nruns=1, ntrees=4, mcast_heuristic=('steiner',), nsubscribers=5, npublishers=5,
                  failure_model=None, topo=('networkx',),
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
@@ -59,6 +59,8 @@ class SmartCampusNetworkxExperiment(object):
         else:
             raise NotImplementedError("unrecognized or unimplemented SdnTopology type %s" % topo[0])
         self.topo = topology
+        # freeze graph to prevent any accidental topological changes
+        nx.freeze(topology.topo)
 
         # results are output as JSON to file after the experiment runs
         self.results = {'results': [], # each is a single run containing: {run: run#, heuristic_name: percent_reachable}
@@ -73,12 +75,6 @@ class SmartCampusNetworkxExperiment(object):
                                    'failrandseed': kwargs.get('failure_rand_seed', None),
                                    }
                         }
-
-        # HACK for saving failure model's rand seed
-        try:
-            self.results['params']['failrandseed'] = kwargs['failure_rand_seed']
-        except IndexError:
-            pass
 
     @classmethod
     def build_from_args(cls, args):
@@ -226,6 +222,8 @@ class SmartCampusNetworkxExperiment(object):
         # Need to record which heuristic and tree # we used for later
         for tree in trees:
             tree.graph['heuristic'] = self.get_mcast_heuristic_name()
+            # sanity check that the returned trees reach all destinations
+            assert all(nx.has_path(t, source, sub) for sub in subscribers for t in trees)
 
         # log.debug("MCast Trees: %s" % trees)
 
@@ -478,7 +476,8 @@ class SmartCampusNetworkxExperiment(object):
     def get_failed_topology(self, topo, failed_nodes, failed_links):
         """Returns a copy of the graph topo with all of the failed nodes
         and links removed."""
-        topology = topo.copy()
+        # since we froze the graph we can't just use .copy()
+        topology = nx.Graph(topo)
         topology.remove_edges_from(failed_links)
         topology.remove_nodes_from(failed_nodes)
         return topology
