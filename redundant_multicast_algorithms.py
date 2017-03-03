@@ -88,7 +88,8 @@ class SkeletonList(object):
         # skeleton lists in order to color their 'internal' links correctly
         self._recurse()
 
-        assert self.__validate_coloring()
+        # Turning this off for now as it's really slow for bigger topologies
+        # assert self.__validate_coloring()
 
     def _get_initial_list(self, graph, root):
         """We initialize a skeleton list by placing the root alone in the
