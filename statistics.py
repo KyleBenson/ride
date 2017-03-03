@@ -71,10 +71,10 @@ def parse_args(args):
                         help='''replace x-axis parameter names with these values.
                         Specify them in the order the original graph put the parameter values in;
                         it will replace the parameter value names and then re-sort again''')
-    parser.add_argument('--save', nargs='?', default=False, const='fig.png',
+    parser.add_argument('--save', '-s', nargs='?', default=False, const='fig.png',
                         help='''save the figure to file automatically
                         (default=%(default)s or %(const)s when switch specified with no arg)''')
-    parser.add_argument('--skip-plot', '-s', action='store_true', dest='skip_plot',
+    parser.add_argument('--skip-plot', action='store_true', dest='skip_plot',
                         help='''disables showing the plot''')
     parser.add_argument('--legend', '-l', nargs='?', dest='legend', type=int, const=None, default=0,
                         help='''disables showing the legend if specified with no args,
@@ -82,10 +82,12 @@ def parse_args(args):
                         at general trends.  Can optionally specify an integer passed to
                         matplotlib for determining the legend's location. Specifying 0 asks
                         matplotlib to find the best location. (default=%(default)s)''')
-    parser.add_argument('--no-error-bars', '-err', action='store_false', dest='error_bars',
-                        help='''disables showing the error bars and max/min values;
-                        useful if you have too many groups and the graph is cluttered''')
-
+    parser.add_argument('--error-bars', '-err', action='store_false', dest='error_bars',
+                        help='''show the error bars and max/min values on curves''')
+    parser.add_argument('--stats-to-plot', '-st', dest='stats_to_plot', default=None, nargs='+',
+                        help='''rather than plotting the mean values of heuristics' reachability
+                        (or complete error bars if that's not disabled), plot the given stats
+                        instead.  Options are: (mean, stdev, min, max)''')
 
     # Misc control params
     parser.add_argument('--debug', '--verbose', '-v', type=str, default='info', nargs='?', const='debug',
@@ -112,6 +114,25 @@ class SeismicStatistics(object):
 
         # store all the parsed stats indexed by x-axis parameter values
         self.stats = dict()
+
+        # Determine how we name the metrics as we gather them up.
+        # If <=1 tree choice heuristic is requested, the name will
+        # be solely the tree construction heuristic.
+        # If <=1 tree construction heuristic (other than oracle/unicast)
+        # is requested, the name will be solely the tree choice heuristic.
+        # When both of these cases apply, we only use the heuristic name.
+        # If we requested plotting certain statistical metrics (min, mean, etc.),
+        # we should always include choice names or else it won't be clear what
+        # value is being referred to by the heuristic's name.
+        omnipresent_heuristics = {'oracle', 'unicast'}
+        self.include_choice_name = True
+        self.include_construction_name = True
+        if self.config.include_choices is not None and len(self.config.include_choices) <= 1\
+                and self.config.stats_to_plot is None:
+            self.include_choice_name = False
+        elif self.config.include_heuristics is not None and \
+                        len(set(self.config.include_heuristics) - omnipresent_heuristics) <= 1:
+            self.include_construction_name = False
 
     def parse_all(self):
         """Parse either all directories (if specified) or all files."""
@@ -159,21 +180,6 @@ class SeismicStatistics(object):
          and raw_values simply contains {heuristic2: np.array(values), ...}
         """
 
-        # Determine how we name the metrics as we gather them up.
-        # If <=1 tree choice heuristic is requested, the name will
-        # be solely the tree construction heuristic.
-        # If <=1 tree construction heuristic (other than oracle/unicast)
-        # is requested, the name will be solely the tree choice heuristic.
-        # When both of these cases apply, we only use the heuristic name.
-        omnipresent_heuristics = {'oracle', 'unicast'}
-        include_choice_name = True
-        include_construction_name = True
-        if self.config.include_choices is not None and len(self.config.include_choices) <= 1:
-            include_choice_name = False
-        elif self.config.include_heuristics is not None and \
-                        len(set(self.config.include_heuristics) - omnipresent_heuristics) <= 1:
-            include_construction_name = False
-
         # Now gather up the y-values (typically reachability) for each heuristic/metric
         # in the proper data structure depending on what the results contain (dict vs. scalar).
         yvalues_dict = {}
@@ -187,10 +193,10 @@ class SeismicStatistics(object):
                 # HACK to skip other parameters / metrics for this run
                 # Also, skip any heuristics we don't want included (if this option was specified)
                 # TODO: actually handle metrics?  they should probably go on y-axis, though plotting them against reach could be useful too.
-                if (self.config.include_heuristics is not None\
-                        and metric_name not in self.config.include_heuristics)\
-                        or (self.config.include_heuristics is None\
-                                and metric_name in METRICS_TO_SKIP):
+                if (self.config.include_heuristics is not None
+                    and metric_name not in self.config.include_heuristics)\
+                        or (self.config.include_heuristics is None
+                            and metric_name in METRICS_TO_SKIP):
                     continue
 
                 # Actual results may have nested results with further parameters.
@@ -248,8 +254,8 @@ class SeismicStatistics(object):
                             if self.config.include_choices is not None and metric_result_key not in self.config.include_choices:
                                 continue
                             # Build the name for the metric based on tree-choosing/construction heuristic
-                            if include_choice_name:
-                                if include_construction_name:
+                            if self.include_choice_name:
+                                if self.include_construction_name:
                                     name = "%s (%s)" % (metric_name, metric_result_key)
                                 else:
                                     name = metric_result_key
@@ -291,7 +297,15 @@ class SeismicStatistics(object):
             # point in the plot.
             for group_name, group_values_dict in yvalues_dicts.items():
                 log.debug("Mean value for x=%s, group[%s]: %f" % (xvalue, group_name, group_values_dict['mean'].mean()))
-                stats_by_group.setdefault(group_name, []).append(group_values_dict)
+
+                # Heuristics' results are stored in these dicts so if we requested specific
+                # stats this is where we should gather the ones we want
+                if self.config.stats_to_plot is not None:
+                    for stat in self.config.stats_to_plot:
+                        stats_by_group.setdefault(group_name + ' (%s)' % stat, []).append(group_values_dict[stat])
+                else:
+                    stats_by_group.setdefault(group_name, []).append(group_values_dict)
+
             for group_name, group_values_array in yvalues_arrays.items():
                 log.debug("Mean value for x=%s, group[%s]: %f" % (xvalue, group_name, group_values_array.mean()))
                 stats_by_group.setdefault(group_name, []).append(group_values_array)
