@@ -14,14 +14,16 @@ def draw_overlaid_graphs(original, new_graphs, print_text=False):
     # want to overlay edges in different colors and progressively thinner
     # so that we can see what edges are in a tree
     line_colors = 'rbgycm'
-    line_width = 2.0 ** (min(len(new_graphs), len(line_colors)) - 1)
+    line_width = 2.0 ** (min(len(new_graphs), len(line_colors)) - 1)  # use this for visualising on screen
+    # line_width = 3.0 ** (min(len(new_graphs), len(line_colors)) - 1)  # use this for generating diagrams
     for i, g in enumerate(new_graphs):
         if print_text:
             print nx.info(g)
             print "edges:", list(g.edges())
         nx.draw_networkx(g, pos=layout, edge_color=line_colors[i % len(line_colors)], width=line_width)
         # advance to next line width
-        line_width /= 1.7
+        line_width /= 1.7  # use this for visualising on screen
+        # line_width /= 2.0  # use this for generating diagrams
     plt.show()
 
 

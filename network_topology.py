@@ -231,10 +231,11 @@ class NetworkTopology(object):
 
 # Run various tests
 if __name__ == '__main__':
-    algorithm = 'red-blue'
-    ntrees = 4
-    from_file = True
-    draw_trees = False
+    # algorithm = 'diverse-paths'
+    algorithm = 'ilp'
+    ntrees = 3
+    from_file = False
+    draw_trees = True
 
     log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
@@ -246,14 +247,16 @@ if __name__ == '__main__':
         dest = ["h1-b4", "h2-b5", "h3-b0"]
     else:
         g = nx.complete_graph(4)
-        g.add_edge(0, 4)
-        g.add_edge(3, 5)
+        g.add_edge(0, "s")
+        g.add_edge(3, "d1")
+        g.add_edge(2, "d1")
+        g.add_edge(1, "d2")
         # Need to relabel to strings since we assume nodes are strings
         nx.relabel_nodes(g, {i: str(i) for i in g.nodes()}, copy=False)
         net = NetworkTopology(g)
 
-        dest = ["2", "5"]
-        source = "4"
+        dest = ["d1", "d2"]
+        source = "s"
 
     M = net.get_redundant_multicast_trees(source, dest, ntrees, algorithm)
 
