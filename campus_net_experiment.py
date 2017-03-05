@@ -46,9 +46,13 @@ class SmartCampusNetworkxExperiment(object):
         log_level = log.getLevelName(debug.upper())
         log.basicConfig(format='%(levelname)s:%(message)s', level=log_level)
 
+        # this is used for choosing pubs/subs/servers ONLY
         self.random = random.Random(choice_rand_seed)
+        # this RNG is used for everything else (tie-breakers, algorithms, etc.)
         random.seed(rand_seed)
-        # QUESTION: do we need one for the algorithms as well?
+        # QUESTION: do we need one for the algorithms as well?  probably not because
+        # each algorithm could call random() a different number of times and so the
+        # comparison between the algorithms wouldn't really be consistent between runs.
 
         if failure_model is None:
             failure_model = SmartCampusFailureModel()
@@ -196,6 +200,11 @@ class SmartCampusNetworkxExperiment(object):
 
     def choose_subscribers(self):
         hosts = self.topo.get_hosts()
+        # ENHANCE: could sample ALL of the hosts and then just slice off nsubs.
+        # This would make it so that different processes with different nhosts
+        # but same topology would give complete overlap (smaller nsubs would be
+        # a subset of larger nsubs).  This would still cause significant variance
+        # though since which hosts are chosen is different and that affects outcomes.
         subs = self.random.sample(hosts, min(self.nsubscribers, len(hosts)))
         log.debug("Subscribers: %s" % subs)
         return subs
@@ -286,7 +295,7 @@ class SmartCampusNetworkxExperiment(object):
         # to avoid preferring larger trees that unnecessarily overlap
         # random paths that we don't care about.
         overlaps = [(len(stt.intersection(t.edges())) / float(nx.number_of_edges(t)),\
-                     self.random.random(), t) for t in trees]
+                     random.random(), t) for t in trees]
         choices[method] = max(overlaps)[2]
 
         method = 'min-missing'
@@ -295,7 +304,7 @@ class SmartCampusNetworkxExperiment(object):
         # packets' paths, which lessens the probability that a link of
         # unknown status will have failed.
         # We use the size of a tree as a tie-breaker (prefer smaller ones)
-        missing = [(len(set(t.edges()) - stt), nx.number_of_edges(t), self.random.random(), t) for t in trees]
+        missing = [(len(set(t.edges()) - stt), nx.number_of_edges(t), random.random(), t) for t in trees]
         choices[method] = min(missing)[3]
 
         method = 'max-reachable'
@@ -309,7 +318,7 @@ class SmartCampusNetworkxExperiment(object):
                 path = nx.shortest_path(tree, server, sub, weight=DISTANCE_METRIC)
                 if nx.is_simple_path(stt_graph, path):
                     this_reachability += 1
-            dests_reachable.append((this_reachability, self.random.random(), tree))
+            dests_reachable.append((this_reachability, random.random(), tree))
         best = max(dests_reachable)
         choices[method] = best[2]
 
@@ -339,7 +348,7 @@ class SmartCampusNetworkxExperiment(object):
                     if (u, v) in stt:
                         this_importance += f
                     total_importance += f
-            importance.append((this_importance / total_importance, self.random.random(), tree))
+            importance.append((this_importance / total_importance, random.random(), tree))
 
         choices[method] = max(importance)[2]
 

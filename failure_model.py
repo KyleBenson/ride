@@ -16,7 +16,6 @@ class SmartCampusFailureModel(object):
         super(SmartCampusFailureModel, self).__init__()
         self.model = model
         self.fprob = fprob
-        # TODO: specify this seed
         self.random = random.Random(failure_rand_seed)
 
     def apply_failure_model(self, topo):
