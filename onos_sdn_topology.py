@@ -84,15 +84,12 @@ class OnosSdnTopology(SdnTopology):
         @:param matches - dict<str,str> of matches this flow performs
         @:param actions - str of OpenFlow actions to be taken e.g. 'strip_vlan,output=3'
         @:param **kwargs - all remaining kwargs are added to the flow rule dict
-        At a minimum, you should support the priority kwarg
 
         @:return rule - dict representing the flow rule that can be installed on the switch"""
 
         rule = self.__get_flow_rule(switch, **kwargs)
         rule['treatment'] = {'instructions': actions}
         rule['selector'] = {'criteria': matches}
-        if 'priority' not in kwargs:
-            raise ValueError("ONOS REST API requires the priority field!")
         return rule
 
     def get_matches(self, **kwargs):
@@ -235,7 +232,8 @@ class OnosSdnTopology(SdnTopology):
 
     def __get_flow_rule(self, switch, **kwargs):
         """Helper function to assemble fields of a flow common between flow entry types."""
-        rule = {"deviceId": switch, "isPermanent": True}
+        rule = {"deviceId": switch, "isPermanent": True,
+                "priority": 10}  # priority is required so we set a default here
         rule.update(kwargs)
         return rule
 
