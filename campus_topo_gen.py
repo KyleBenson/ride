@@ -177,12 +177,17 @@ class CampusTopologyGenerator(object):
 
         try:
             endpoints = random.sample(self.major_building_routers, self.inter_building_links * 2)
+            endpoints = zip(endpoints[:len(endpoints)/2], endpoints[len(endpoints)/2:])
         except ValueError as e:
-            print "ERROR: requested more inter_building_links" \
-                  " than can be placed without repeating buildings!"
-            raise e
+            print "NOTE: requested more inter_building_links" \
+                  " than can be placed without repeating (major) buildings!"
+            if self.inter_building_links > 400:
+                print "Requested a lot of inter-building links.  This may take a while to generate all combinations without repeat..."
+            endpoints = list(itertools.combinations_with_replacement(self.major_building_routers, 2))
+            random.shuffle(endpoints)
+            endpoints = endpoints[:self.inter_building_links]
 
-        for src, dst in zip(endpoints[:len(endpoints)/2], endpoints[len(endpoints)/2:]):
+        for src, dst in endpoints:
             self.add_link(src, dst)
 
     def add_link(self, src, dst):
@@ -313,22 +318,29 @@ if __name__ == '__main__':
     else:
         # build multiple topologies and save each of them
         # this one will be the default topo for testing
-        t = CampusTopologyGenerator(nbuildings=8, hosts_per_floor_switch=2,
-                                    building_switches_per_floor=1, building_floors=2,
-                                    add_building_topology=False, inter_building_links=2)
-        t.generate()
-        t.write()
+        # t = CampusTopologyGenerator(nbuildings=8, hosts_per_floor_switch=2,
+        #                             building_switches_per_floor=1, building_floors=2,
+        #                             add_building_topology=False, inter_building_links=2)
+        # t.generate()
+        # t.write()
 
         # iterate over multiple options of form (nbuildings, nhosts, n-inter-building-links)
-        topologies_to_build = ((20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
-                               (200, 20, 20),  # main large topology
-                               (200, 20, 40), (200, 20, 80),  # vary ibl on main topology
-                               )
+        topologies_to_build = (
+            # (20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
+            # (200, 20, 20),  # main large topology
+            # (200, 20, 40), (200, 20, 80),
+            # (200, 20, 10), (200, 20, 0), (200, 20, 60), # vary ibl on main topology
+            # (200, 20, 200), (200, 20, 400), (200, 20, 800), # vary ibl on main topology, with repeats and larger #s
+            # (200, 8, 20), (80, 16, 8), (200, 40, 20),  # keeping constant host:nbuilds ratio
+            (400, 80, 400),  # did this with core_size=8
+        )
         for nb, nh, nibl in topologies_to_build:
             print "Generating topo with %d buildings, %d hosts, and %d inter-building links" % (nb, nh, nibl)
             t = CampusTopologyGenerator(nbuildings=nb, hosts_per_floor_switch=nh,
                                         building_switches_per_floor=1, building_floors=1,
-                                        add_building_topology=False, inter_building_links=nibl)
+                                        add_building_topology=False, inter_building_links=nibl,
+                                        core_size=8
+                                        )
             t.generate()
             t.write('campus_topo_%db-%dh-%dibl.json' % (nb, nh, nibl))
 
