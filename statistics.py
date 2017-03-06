@@ -82,7 +82,7 @@ def parse_args(args):
                         at general trends.  Can optionally specify an integer passed to
                         matplotlib for determining the legend's location. Specifying 0 asks
                         matplotlib to find the best location. (default=%(default)s)''')
-    parser.add_argument('--error-bars', '-err', action='store_false', dest='error_bars',
+    parser.add_argument('--error-bars', '-err', action='store_true', dest='error_bars',
                         help='''show the error bars and max/min values on curves''')
     parser.add_argument('--stats-to-plot', '-st', dest='stats_to_plot', default=None, nargs='+',
                         help='''rather than plotting the mean values of heuristics' reachability
@@ -148,9 +148,15 @@ class SeismicStatistics(object):
             self.parse_file(os.path.join(dirname, filename))
 
     def parse_file(self, fname):
-        # TODO: support grouping by something other than the x_axis arg?
+        # TODO: support grouping by something other than the x_axis arg? use python itertools.groupby
         with open(fname) as f:
-            data = json.load(f)
+            # this try statement was added because the -d <dir> option didn't work with .progress files
+            try:
+                data = json.load(f)
+            except ValueError as e:
+                log.debug("Skipping file %s that raised error: %s" % (fname, e))
+                return
+
         # store the results along with any others grouped according to the x-axis parameter
         try:
             param_value = data['params'][self.x_axis]
