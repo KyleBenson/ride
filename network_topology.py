@@ -229,10 +229,20 @@ class NetworkTopology(object):
         """Draws the trees as graphs overlaid on the original topology"""
         dsm_algs.draw_overlaid_graphs(self.topo, trees)
 
+    def draw_paths(self, paths):
+        """Draws the given paths overlaid on the original topology graph"""
+        path_graphs = []
+        for p in paths:
+            new_graph = nx.Graph()
+            nx.add_path(new_graph, p)
+            path_graphs.append(new_graph)
+        # now that the paths are graphs, we can just pass them as if they're trees
+        self.draw_multicast_trees(path_graphs)
+
 # Run various tests
 if __name__ == '__main__':
-    # algorithm = 'diverse-paths'
-    algorithm = 'ilp'
+    algorithm = 'diverse-paths'
+    # algorithm = 'ilp'
     ntrees = 3
     from_file = False
     draw_trees = True
@@ -262,3 +272,8 @@ if __name__ == '__main__':
 
     if draw_trees:
         net.draw_multicast_trees(M)
+
+    # Test out draw_paths feature
+    # p1 = ["s0", "c0", "b0", "h0-b0"]
+    # p2 = ["s0", "c0", "b4", "h0-b4"]
+    # net.draw_paths([p1, p2])
