@@ -327,19 +327,19 @@ if __name__ == '__main__':
         # iterate over multiple options of form (nbuildings, nhosts, n-inter-building-links)
         topologies_to_build = (
             # (20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
-            # (200, 20, 20),  # main large topology
+            (200, 20, 20),  # main large topology
             # (200, 20, 40), (200, 20, 80),
             # (200, 20, 10), (200, 20, 0), (200, 20, 60), # vary ibl on main topology
             # (200, 20, 200), (200, 20, 400), (200, 20, 800), # vary ibl on main topology, with repeats and larger #s
             # (200, 8, 20), (80, 16, 8), (200, 40, 20),  # keeping constant host:nbuilds ratio
-            (400, 80, 400),  # did this with core_size=8
+            # (400, 80, 400),  # did this with core_size=8
         )
         for nb, nh, nibl in topologies_to_build:
             print "Generating topo with %d buildings, %d hosts, and %d inter-building links" % (nb, nh, nibl)
             t = CampusTopologyGenerator(nbuildings=nb, hosts_per_floor_switch=nh,
                                         building_switches_per_floor=1, building_floors=1,
                                         add_building_topology=False, inter_building_links=nibl,
-                                        core_size=8
+                                        # core_size=16, links_per_building=4, links_per_server=8,
                                         )
             t.generate()
             t.write('campus_topo_%db-%dh-%dibl.json' % (nb, nh, nibl))
