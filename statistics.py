@@ -520,7 +520,7 @@ class SeismicStatistics(object):
         # LINESTYLES go with tree-choosing heuristics
         # TODO: make this use markers instead if we add more tree-choosing heuristics?
         linestyle = None
-        if self.include_choice_name and 'chosen' in group_name:
+        if self.include_choice_name and 'chosen' in group_name or group_name == 'all':
             # NOTE: only try to slice the choice name out if the group name has multiple parts!
             if '(' in group_name:
                 choice_name = group_name[group_name.find('(')+1 : group_name.find(')')]
@@ -543,9 +543,11 @@ class SeismicStatistics(object):
                 assert not self.include_construction_name
                 stat_name = group_name
 
-            marker = marker_map[stat_name]
-            # this only used if we're going to convert marker to a color
-            marker_idx = self.config.stats_to_plot.index(stat_name)
+            # HACK: to ignore (all)
+            if stat_name in marker_map:
+                marker = marker_map[stat_name]
+                # this only used if we're going to convert marker to a color
+                marker_idx = self.config.stats_to_plot.index(stat_name)
 
         # Colors are the best way to distinguish curves, so default to that
         # if we didn't include many heuristics.
