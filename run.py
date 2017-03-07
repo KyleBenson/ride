@@ -26,6 +26,7 @@ testing = False
 # debug_level = 'debug'  # for the actual experiment
 debug_level = 'warn'
 verbose = True
+print_cmd = False
 nruns = 30
 
 DEFAULT_PARAMS = {
@@ -182,6 +183,13 @@ def get_next_seeds(nseeds=3):
     else:
         return tuple(random.randint(-sys.maxsize-1, sys.maxsize) for i in range(nseeds))
 
+
+def run_tests_on_cmd(**kwargs):
+    if os.path.exists(kwargs['output_filename']):
+        print "WARNING: file %s already exists!" % kwargs['output_filename']
+    assert os.path.exists(kwargs['topo'][1])
+
+
 def run_experiment(jobs_finished, total_jobs, kwargs):
     """
     :param ProxyValue jobs_finished:
@@ -196,6 +204,8 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
 
     if verbose:
         print "Proc", getpid(), "starting", kwargs['output_filename'], "..."
+    if print_cmd:
+        print kwargs
 
     # re-raise any errors after we register that the job completed
     err = None
@@ -207,6 +217,7 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
         except BaseException as e:
             err = (e, traceback.format_exc())
     else:
+        run_tests_on_cmd(**kwargs)
         return
 
     if verbose:
@@ -230,7 +241,7 @@ if __name__ == '__main__':
     dirname = ''
     if len(sys.argv) > 1:
         dirname = sys.argv[1]
-    if dirname:
+    if dirname and not testing:
         try:
             os.mkdir(dirname)
         except OSError:
