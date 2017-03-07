@@ -21,7 +21,7 @@ from failure_model import SmartCampusFailureModel
 from itertools import chain
 
 # when True, this flag causes run.py to only print out the commands rather than run them each
-# testing = True
+#testing = True
 testing = False
 # debug_level = 'debug'  # for the actual experiment
 debug_level = 'warn'
@@ -52,9 +52,9 @@ npublishers = [10, 20, 40, 80, 160]
 # nhosts = None  # build nhosts with the nsubscribers/npublishers parameters
 # subs/pubs ratio goes 1:1 thru 1:8 and vice-versa, also vary total # hosts
 nhosts = [{'nsubscribers': s, 'npublishers': p} for s,p in
-          [(50 * (ratio if vary_subs else 4), 50 * (ratio if vary_pubs else 4))  # set one param to 200, the other varies from 50-800
+          sorted(set([(50 * (ratio if vary_subs else 4), 50 * (ratio if vary_pubs else 4))  # set one param to 200, the other varies from 50-800
            for vary_subs, vary_pubs in ((0,1), (1,0))
-           for ratio in [1, 2, 4, 8, 16]]
+           for ratio in [1, 2, 4, 8, 16]]), reverse=True)
 ]  # explicitly set the nhosts params
 # nhosts = [{'nsubscribers': s, 'npublishers': p,
 #            "choicerandseed": 7683823364746221991, "failrandseed": -7234762391813259413, "randseed": 737923788253431206,}
@@ -86,6 +86,7 @@ def get_nhosts_treatment(nsubs, npubs):
 # the random seeds here if you want to re-run previous experiments with new parameters and have the
 # same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
+    #    'ilp': [{'mcast_heuristic': [('ilp',)], 'npublishers': p, 'nsubscribers': p*2} for p in [10, 20, 40]]
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
 
     # 'ntrees': ntrees,
