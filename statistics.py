@@ -17,7 +17,11 @@ import json
 
 # skip over these metrics when looking for results from heuristics
 METRICS_TO_SKIP = {'run', 'nhops', 'overlap', 'cost'}
-
+# these two were added so that we can choose a consistent color/linestyle for plots
+# TODO: we should probably just build up a list as we read them in order to handle more heuristics, esp. with params
+CONSTRUCTION_HEURISTICS = ['red-blue', 'steiner', 'diverse-paths', 'ilp',
+                           'steiner[double]', 'steiner[max]',]
+CHOICE_HEURISTICS = ['min-missing-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'importance-chosen']
 
 def parse_args(args):
 ##################################################################################
@@ -127,8 +131,14 @@ class SeismicStatistics(object):
         omnipresent_heuristics = {'oracle', 'unicast'}
         self.include_choice_name = True
         self.include_construction_name = True
+        self.include_stats_name = False
+
+        # if we're plotting stats other than just mean, we should label them as such even if just one of them
+        if self.config.stats_to_plot is not None:
+            self.include_stats_name = True
         if self.config.include_choices is not None and len(self.config.include_choices) <= 1\
-                and self.config.stats_to_plot is None:
+                and not self.include_stats_name:
+            # if we label with stats we should definitely include choice name even if only one to avoid confusion
             self.include_choice_name = False
         elif self.config.include_heuristics is not None and \
                         len(set(self.config.include_heuristics) - omnipresent_heuristics) <= 1:
@@ -306,9 +316,12 @@ class SeismicStatistics(object):
 
                 # Heuristics' results are stored in these dicts so if we requested specific
                 # stats this is where we should gather the ones we want
-                if self.config.stats_to_plot is not None:
+                if self.include_stats_name:
                     for stat in self.config.stats_to_plot:
-                        stats_by_group.setdefault(group_name + ' (%s)' % stat, []).append(group_values_dict[stat])
+                        _name = '%s'
+                        if self.include_construction_name:
+                            _name = group_name + ' (%s)'
+                        stats_by_group.setdefault(_name % stat, []).append(group_values_dict[stat])
                 else:
                     stats_by_group.setdefault(group_name, []).append(group_values_dict)
 
@@ -360,13 +373,6 @@ class SeismicStatistics(object):
                 # need to set xvalues to index values while maintaining ordering that corresponds with ORIGINAL xvalues
                 xvalues = [sorted(xvalues).index(x) for x in xvalues]
 
-        # Plot each group (heuristic) with different markers / colors
-        # TODO: figure out how to consistently color different heuristics/groups
-        markers = 'x.*+do^s1_|'
-        colors = 'rbgycm'
-        linestyles = ['solid','dashed','dashdot','dotted']
-        i = 0
-
         # order the heuristics appropriately (oracle first, unicast last, rest alphabetical)
         def __heuristic_sorter(tup):
             _group_name = tup[0]
@@ -403,10 +409,7 @@ class SeismicStatistics(object):
             if not (len(xval) == len(xvalues) and len(yval) == len(yvalues)):
                 log.warn("We seem to be missing some y or x values for heuristic %s" % group_name)
 
-            plot_kwargs = {'label': group_name,
-                           'marker': markers[i%len(markers)],
-                           'color': colors[i%len(colors)],
-                           'linestyle': linestyles[i%len(linestyles)]}
+            plot_kwargs = self.get_curve_style(group_name)
 
             # Optionally plot errorbars and min/max by overlaying two
             # different errorbars plots: one thicker than the other.
@@ -424,7 +427,6 @@ class SeismicStatistics(object):
                 plt.errorbar(xval, means, stdevs, lw=2, **plot_kwargs)
             else:
                 plt.plot(xval, yval, **plot_kwargs)
-            i += 1
 
         # Adjust the plot visually, including labelling and legends.
         plt.xlabel(self.config.xlabel if self.config.xlabel is not None else self.config.x_axis)
@@ -444,6 +446,93 @@ class SeismicStatistics(object):
                 log.warn("No file extension specified in filename we're saving to: %s; using .png" % self.config.save)
                 self.config.save += '.png'
             plt.savefig(self.config.save, bbox_inches=0)  # may need to use 'tight' on some systems for bbox
+
+    def get_curve_style(self, group_name):
+        """ We want to plot each group (heuristic) with different markers / colors, but
+        consistently color heuristics/groups to easily compare them.
+        :param group_name:
+        :return dict: containing label, marker, color, and linestyle
+        """
+
+        # markers = 'x.*+do^s1_|'  # set explicityly currently
+        colors = 'rbgy'  # 'rbgycm'  # c/m are reserved!
+        linestyles = ['solid','dashed','dashdot','dotted']
+
+        # We determine what groups have been requested to be varied
+        # and assign them consistent values based on the arguments'
+        ret =  {'label': group_name}
+
+        # COLORS go with construction heuristics
+        # First, return immediately for these special cases to avoid trying to include markers or linestyles on them
+        if group_name == 'unicast':
+            ret['color'] = 'c'
+            return ret
+        elif group_name == 'oracle':
+            ret['color'] = 'm'
+            return ret
+        # Next, always assign colors if we're explicitly labelling which construction algorithm was used
+        elif self.include_construction_name:
+            heur_name = group_name.split(' ')[0]
+            color_idx = CONSTRUCTION_HEURISTICS.index(heur_name)
+            color = colors[color_idx % (len(colors))]
+        else:
+            color = None
+
+        # LINESTYLES go with tree-choosing heuristics
+        # TODO: make this use markers instead if we add more tree-choosing heuristics?
+        linestyle = None
+        if self.include_choice_name and 'chosen' in group_name:
+            # NOTE: only try to slice the choice name out if the group name has multiple parts!
+            if '(' in group_name:
+                choice_name = group_name[group_name.find('(')+1 : group_name.find(')')]
+            else:
+                choice_name = group_name
+                assert not self.include_construction_name, "we don't currently support any construction algorithms with 'chosen' in the name: time to fix this"
+            linestyle_idx = CHOICE_HEURISTICS.index(choice_name)
+            linestyle = linestyles[linestyle_idx % len(linestyles)]
+
+        # MARKERS go with stats (min, max, etc.)
+        # NOTE: we do not assign a marker AND a linestyle to the same curve as they're different labels!
+        # TODO: change that fact if we add more choice heuristics as it'll result in re-used colors anyway
+        marker = None
+        marker_map = {'max': '*', 'mean': 'd', 'min': '^', 'std': 's'}
+        if self.include_stats_name and linestyle is None:
+            # NOTE: only try to slice the choice name out if the group name has multiple parts!
+            if '(' in group_name:
+                stat_name = group_name[group_name.find('(')+1 : group_name.find(')')]
+            else:
+                assert not self.include_construction_name
+                stat_name = group_name
+
+            marker = marker_map[stat_name]
+            # this only used if we're going to convert marker to a color
+            marker_idx = self.config.stats_to_plot.index(stat_name)
+
+        # Colors are the best way to distinguish curves, so default to that
+        # if we didn't include many heuristics.
+        if color is None:
+            # NOTE: prioritize using colors for tree-choices and using our hard-coded markers for stats
+            if linestyle is not None:
+                color = colors[linestyle_idx % len(colors)]
+                linestyle = None
+            elif marker is not None:
+                if self.include_choice_name:
+                    color = 'k'  # need to ensure a color chosen or pyplot will assign them for you
+                else:
+                    color = colors[marker_idx % len(colors)]
+                    marker = None
+            else:
+                # didn't assigned colors, markers, OR linestyles
+                color = 'k'
+                log.warn("didn't assigned colors, markers, OR linestyles: this is not well-supported; defaulting to black")
+        assert color, "need to ensure a color chosen or pyplot will assign them for you"
+
+        ret['color'] = color
+        if marker is not None:
+            ret['marker'] = marker
+        if linestyle is not None:
+            ret['linestyle'] = linestyle
+        return ret
 
     def print_statistics(self):
         """Prints summary statistics for all groups and heuristics,
