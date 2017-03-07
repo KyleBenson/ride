@@ -101,7 +101,7 @@ def makecmds(output_dirname=''):
         # an exploration will have the same publishers, subscribers,
         # failures, etc. unless that is the parameter being explored.
         crs, rs, frs = get_next_seeds()
-        args = {'choice_rand_seed': crs,
+        start_args = {'choice_rand_seed': crs,
                 'rand_seed': rs,
                 'failure_rand_seed': frs
                 }
@@ -110,31 +110,31 @@ def makecmds(output_dirname=''):
             # NOTE: we have to make a copy of the args dict or else
             # the next iteration of the loops will overwrite the value
             # of the previous one!
-            args = args.copy()
+            args2 = start_args.copy()
 
             # treat is a dict when it brings in > 1 params
             if isinstance(treat, dict):
-                args.update(treat)
+                args2.update(treat)
             # otherwise we just set the 1 param
             else:
-                args[param] = treat
+                args2[param] = treat
 
             # We always want to run all the heuristics for each treatment
             for heur in DEFAULT_PARAMS['mcast_heuristic']:
                 # Again, make a copy to avoid overwriting params
-                args = args.copy()
-                args['mcast_heuristic'] = heur
+                args3 = args2.copy()
+                args3['mcast_heuristic'] = heur
 
                 # make the directory tell which treatment is being explored currently
                 this_dirname = os.path.join(output_dirname, param)
-                if this_dirname:
+                if this_dirname and not testing:
                     try:
                         os.mkdir(this_dirname)
                     except OSError:
                         pass
 
-                args = getargs(output_dirname=this_dirname, **args)
-                yield args
+                args3 = getargs(output_dirname=this_dirname, **args3)
+                yield args3
 
 
 def getargs(output_dirname='', **kwargs):
@@ -148,11 +148,11 @@ def getargs(output_dirname='', **kwargs):
     _args.update(**kwargs)
 
     # label the file with a parameter summary and optionally place in a directory
-    building_connectivity = _args['topo'][1].split('-')[2].split('i')[0]
-    _args['output_filename'] = os.path.join(output_dirname, 'results_%dt_%0.2ff_%ds_%dp_%s_%sibl.json' % \
-                                           (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
-                                            SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
-                                            building_connectivity))
+    topo_fname = _args['topo'][1].split('_')[2].split('.')[0]
+    _args['output_filename'] = os.path.join(output_dirname, _args.get('output_filename', 'results_%dt_%0.2ff_%ds_%dp_%s_%s.json' % \
+                                                                      (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
+                                                                       SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
+                                                                       topo_fname)))
     return _args
 
 
