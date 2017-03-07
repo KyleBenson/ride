@@ -58,8 +58,15 @@ def parse_args(args):
     parser.add_argument('--include-heuristics', '-i', default=None, nargs='+', dest='include_heuristics',
                         help='''name of heuristics (before tree choice heuristic name is added)
                         to include in analysis (default includes all)''')
+    parser.add_argument('--stats-to-plot', '-st', dest='stats_to_plot', default=None, nargs='+',
+                        help='''rather than plotting the mean values of heuristics' reachability
+                        (or complete error bars if that's not disabled), plot the given stats
+                        instead.  Options are: (mean, stdev, min, max)''')
+    # TODO: specify what gets put on the y axis (default=reach)
 
-    # Controlling plots
+    ### Controlling plots
+
+    # labelling
     parser.add_argument('--title', '-t', nargs='?', default='Subscriber hosts reached', const=None,
                         help='''title of the plot (default=%(default)s; no title if specified with no arg)''')
     parser.add_argument('--ylabel', '-yl', type=str, default="avg host reach ratio",
@@ -75,11 +82,8 @@ def parse_args(args):
                         help='''replace x-axis parameter names with these values.
                         Specify them in the order the original graph put the parameter values in;
                         it will replace the parameter value names and then re-sort again''')
-    parser.add_argument('--save', '-s', nargs='?', default=False, const='fig.png',
-                        help='''save the figure to file automatically
-                        (default=%(default)s or %(const)s when switch specified with no arg)''')
-    parser.add_argument('--skip-plot', action='store_true', dest='skip_plot',
-                        help='''disables showing the plot''')
+
+    # how to do the plot?
     parser.add_argument('--legend', '-l', nargs='?', dest='legend', type=int, const=None, default=0,
                         help='''disables showing the legend if specified with no args,
                         which is useful if you have too many groups but still want to look
@@ -88,16 +92,20 @@ def parse_args(args):
                         matplotlib to find the best location. (default=%(default)s)''')
     parser.add_argument('--error-bars', '-err', action='store_true', dest='error_bars',
                         help='''show the error bars and max/min values on curves''')
-    parser.add_argument('--stats-to-plot', '-st', dest='stats_to_plot', default=None, nargs='+',
-                        help='''rather than plotting the mean values of heuristics' reachability
-                        (or complete error bars if that's not disabled), plot the given stats
-                        instead.  Options are: (mean, stdev, min, max)''')
+    parser.add_argument('--sort-curves-by-name', '-byname', dest='sort_curves_by_name', action='store_true',
+                        help='''sort curves by group name rather than default method,
+                        which puts oracle on top, unicast on bottom, and the others in
+                        approximate order of y-value''')
+
 
     # Misc control params
+    parser.add_argument('--save', '-s', nargs='?', default=False, const='fig.png',
+                        help='''save the figure to file automatically
+                        (default=%(default)s or %(const)s when switch specified with no arg)''')
+    parser.add_argument('--skip-plot', action='store_true', dest='skip_plot',
+                        help='''disables showing the plot''')
     parser.add_argument('--debug', '--verbose', '-v', type=str, default='info', nargs='?', const='debug',
                         help='''set verbosity level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
-
-    # TODO: specify what gets put on the y axis (default=reach)
 
     return parser.parse_args(args)
 
@@ -373,14 +381,23 @@ class SeismicStatistics(object):
                 # need to set xvalues to index values while maintaining ordering that corresponds with ORIGINAL xvalues
                 xvalues = [sorted(xvalues).index(x) for x in xvalues]
 
-        # order the heuristics appropriately (oracle first, unicast last, rest alphabetical)
+        # order the heuristics appropriately (oracle first, unicast last, rest alphabetical or by y-value)
         def __heuristic_sorter(tup):
             _group_name = tup[0]
+            _yvalues = tup[1]
             if _group_name == 'unicast':
-                return '~'  # highest ASCII letter
+                return '~' if self.config.sort_curves_by_name else float("inf")  # highest ASCII letter
             if _group_name == 'oracle':
-                return ' '  # lowest ASCII letter
-            return _group_name  # else alphabetical
+                return ' ' if self.config.sort_curves_by_name else -float("inf")  # lowest ASCII letter
+            if self.config.sort_curves_by_name:
+                return _group_name  # else alphabetical
+            else:  # by y-value
+                # average in case we're missing some y-values for certain x-values
+                # don't forget about possible dicts with stats in them!
+                try:
+                    return -sum(y.mean() for y in _yvalues) / float(len(_yvalues))
+                except AttributeError:
+                    return -sum(y['mean'].mean() for y in _yvalues) / float(len(_yvalues))
         stats_to_plot = sorted(stats_by_group.items(), key=__heuristic_sorter)
 
         for (group_name, yvalues) in stats_to_plot:
