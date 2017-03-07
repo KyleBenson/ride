@@ -339,46 +339,68 @@ class SeismicStatistics(object):
 
         # Extract numerical xvalues from strings for plotting
         # NOTE: don't forget to sort them before applying names since we'll do that when plotting!
+        # We'll relabel the x-axis to explicitly show the x-values rather than a uniform spread.
+        xtick_values = xvalues
+        xtick_locations = xvalues
+
+        # HACKS: first try to extract proper values for known parameters
+        # TODO: extract numeric values from topo?
+        if self.x_axis == 'failure_model':
+            # failure_model looks like: uniform/0.100000
+            xvalues = [float(x.split('/')[1]) for x in xvalues]
+
         try:
             xvalues = [float(x) for x in xvalues]
-        except ValueError:
-            # failure_model looks like: uniform/0.100000
-            if self.x_axis == 'failure_model':
-                xvalues = [float(x.split('/')[1]) for x in xvalues]
+            # now try to take this to an integer, which it may have been from the beginning
+            if all(int(x) == x for x in xvalues):
+                xvalues = [int(x) for x in xvalues]
+            # updates these since we may have updated to numerics now
+            xtick_values = xvalues
+            xtick_locations = xvalues
+        except ValueError as e:
             # If x-axis contains general strings (str or unicode),
             # need to request numerics instead
-            elif any(isinstance(xv, basestring) for xv in xvalues):
-                plt.xticks(range(len(xvalues)), sorted(xvalues))
-                # need to set xvalues to index values, but maintain ordering
-                xvalues = [sorted(xvalues).index(x) for x in xvalues]
+            if any(isinstance(xv, basestring) for xv in xvalues):
+                xtick_values = sorted(xvalues)
+                xtick_locations = range(len(xvalues))
         except TypeError as e:
             # HACKS: lists/tuples will cause this error
             # nhosts will format them as tuples, which is good for sorting,
             # but bad for labels and actual plotting
             if self.x_axis == 'nhosts':
-                _xval = tuple("%s,%s" % (s,p) for s,p in sorted(xvalues))
-                plt.xticks(range(len(xvalues)), _xval)
+                xtick_values = tuple("%s,%s" % (s,p) for s,p in sorted(xvalues))
+                xtick_locations = range(len(xvalues))
             # topo is a list containing topology reader and filename
             elif self.x_axis == 'topo':
-                _xval = tuple(topo[1].split('.')[0].split('_')[-1] for topo in sorted(xvalues))
-                plt.xticks(range(len(xvalues)), _xval)
+                xtick_values = tuple(topo[1].split('.')[0].split('_')[-1] for topo in sorted(xvalues))
+                xtick_locations = range(len(xvalues))
             else:
                 raise e
         finally:
-            # Verify we now have numeric values after all this hacking...
-            if not all(isinstance(x, numbers.Number) for x in xvalues):
-                # need to set xvalues to index values, but maintain ordering
-                xvalues = [sorted(xvalues).index(x) for x in xvalues]
-
             # optionally re-label the x-axis parameter values with new names
             # (ordered by original sorting).
             if self.config.xnames is not None:
-                # ENHANCE: optionally sort by new labels?  causes issues e.g. 200 < 40 since they're strings
-                # new_xvalues = [x[0] for x in sorted(zip(self.config.xnames, sorted(xvalues)))]
                 if len(xvalues) != len(self.config.xnames):
                     raise ValueError("Specified new labels don't have same length as original xvalues!")
-                plt.xticks(range(len(xvalues)), self.config.xnames)
-                # need to set xvalues to index values while maintaining ordering that corresponds with ORIGINAL xvalues
+
+                # try to extract numeric values from the user-provided labels
+                try:
+                    xtick_locations = [float(x) for x in self.config.xnames]
+                    xtick_values = xtick_locations
+                except ValueError:
+                    xtick_locations = range(len(xvalues))
+                    xtick_values = self.config.xnames
+
+                # ENHANCE: optionally sort by new labels?  causes issues e.g. 200 < 40 since they're strings
+                # now we've extracted floats if they specified compatible strings, so just need to update xticks in try statement above
+                # new_xvalues = [x[0] for x in sorted(zip(self.config.xnames, sorted(xvalues)))]
+                # may also need to adjust the sorting thing below as the strings might have been sorted differently than how your new xvalues will be
+
+            plt.xticks(xtick_locations, xtick_values)
+
+            # Verify we now have numeric values after all this hacking...
+            if not all(isinstance(x, numbers.Number) for x in xvalues):
+                # need to set xvalues to index values, but maintain ordering
                 xvalues = [sorted(xvalues).index(x) for x in xvalues]
 
         # order the heuristics appropriately (oracle first, unicast last, rest alphabetical or by y-value)
