@@ -27,7 +27,7 @@ testing = False
 debug_level = 'warn'
 verbose = True
 print_cmd = False
-nruns = 50
+nruns = 100
 
 DEFAULT_PARAMS = {
     'fprob': 0.1,
@@ -41,7 +41,8 @@ DEFAULT_PARAMS = {
     # always a list of tuples!  we run all of them for each treatment and
     # each heuristic optionally takes arguments
     # 'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
-    'mcast_heuristic': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
+    'mcast_heuristic': [('steiner',), ('red-blue',)],  # skip diverse-paths since it's slowest
+    # 'mcast_heuristic': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
     # 'mcast_heuristic': [('steiner', 'max'), ('steiner', 'double')],
 }
 
@@ -49,12 +50,15 @@ DEFAULT_PARAMS = {
 nsubscribers = [20, 40, 80, 160]
 npublishers = [10, 20, 40, 80, 160]
 # nhosts = None  # build nhosts with the nsubscribers/npublishers parameters
-# subs/pubs ratio goes 1:1 thru 1:8, also vary total # hosts
-# nhosts = [{'nsubscribers': i*ratio, 'npublishers': i} for i in [200, 300, 400] for ratio in [1, 2, 4, 8]
-# ]  # explicitly set the nhosts params
-nhosts = [{'nsubscribers': s, 'npublishers': p,
-           "choicerandseed": 7683823364746221991, "failrandseed": -7234762391813259413, "randseed": 737923788253431206,}
-          for s,p in [(400, 800), (400, 25), (800, 200), (800, 50), (800, 800), (800, 1600)]]
+# subs/pubs ratio goes 1:1 thru 1:8 and vice-versa, also vary total # hosts
+nhosts = [{'nsubscribers': s, 'npublishers': p} for s,p in
+          [(50 * (ratio if vary_subs else 4), 50 * (ratio if vary_pubs else 4))  # set one param to 200, the other varies from 50-800
+           for vary_subs, vary_pubs in ((0,1), (1,0))
+           for ratio in [1, 2, 4, 8, 16]]
+]  # explicitly set the nhosts params
+# nhosts = [{'nsubscribers': s, 'npublishers': p,
+#            "choicerandseed": 7683823364746221991, "failrandseed": -7234762391813259413, "randseed": 737923788253431206,}
+#           for s,p in [(400, 800), (400, 25), (800, 200), (800, 50), (800, 800), (800, 1600)]]
 ntrees = [1, 2, 4, 8, 16]
 fprobs = [0.05, 0.15, 0.25, 0.35, 0.5]
 # nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
@@ -89,7 +93,7 @@ EXPERIMENTAL_TREATMENTS = {
     # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
     # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
-    # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
+    'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
     # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
     # 'steiner-double': [{'ntrees': t, 'fprob': f} for t in [8, 4, 2] for f in fprobs[:3]]
     # vary topology for inter-building connectivity
@@ -297,6 +301,7 @@ if __name__ == '__main__':
         Kills the pool to end the program."""
         if using_pool:
             try:
+                _mgr.shutdown()
                 pool.terminate()
             except BaseException as e:
                 print "Error trying to terminate pool:", e
