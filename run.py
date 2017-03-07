@@ -152,7 +152,7 @@ def makecmds(output_dirname=''):
                 args2[param] = treat
 
             # We always want to run all the heuristics for each treatment
-            for heur in DEFAULT_PARAMS['mcast_heuristic']:
+            for heur in args2.get('mcast_heuristic', DEFAULT_PARAMS['mcast_heuristic']):
                 # Again, make a copy to avoid overwriting params
                 args3 = args2.copy()
                 args3['mcast_heuristic'] = heur
