@@ -27,18 +27,21 @@ testing = False
 debug_level = 'warn'
 verbose = True
 print_cmd = False
-nruns = 30
+nruns = 50
 
 DEFAULT_PARAMS = {
     'fprob': 0.1,
     'ntrees': 4,
     'nsubscribers': 400,
+    # 'nsubscribers': 40,
     'npublishers': 200,
+    # 'npublishers': 20,
     'topo': ['networkx', 'campus_topo_200b-20h-20ibl.json'],
     # 'topo': ['networkx', 'campus_topo_20b-8h-3ibl.json'],
     # always a list of tuples!  we run all of them for each treatment and
     # each heuristic optionally takes arguments
-    'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
+    # 'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
+    'mcast_heuristic': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
     # 'mcast_heuristic': [('steiner', 'max'), ('steiner', 'double')],
 }
 
@@ -47,11 +50,14 @@ nsubscribers = [20, 40, 80, 160]
 npublishers = [10, 20, 40, 80, 160]
 # nhosts = None  # build nhosts with the nsubscribers/npublishers parameters
 # subs/pubs ratio goes 1:1 thru 1:8, also vary total # hosts
-nhosts = [{'nsubscribers': i*ratio, 'npublishers': i} for i in [200, 300, 400] for ratio in [1, 2, 4, 8]
-]  # explicitly set the nhosts params
+# nhosts = [{'nsubscribers': i*ratio, 'npublishers': i} for i in [200, 300, 400] for ratio in [1, 2, 4, 8]
+# ]  # explicitly set the nhosts params
+nhosts = [{'nsubscribers': s, 'npublishers': p,
+           "choicerandseed": 7683823364746221991, "failrandseed": -7234762391813259413, "randseed": 737923788253431206,}
+          for s,p in [(400, 800), (400, 25), (800, 200), (800, 50), (800, 800), (800, 1600)]]
 ntrees = [1, 2, 4, 8, 16]
 fprobs = [0.05, 0.15, 0.25, 0.35, 0.5]
-nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
+# nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
 ntrees.reverse()
 
 # now build up the actual dict of parameters
@@ -70,15 +76,40 @@ def get_nhosts_treatment(nsubs, npubs):
         for tup in tups:
             nhosts.append({k: v for k,v in zip(('nsubscribers', 'npublishers'), tup)})
     return nhosts
+# Here is where you can define experiments to run.  A list of values as dict value will vary the key's
+# parameter for each of those values; a list of dicts as the dict value will explicitly set each of
+# those parameters, which means you can name the key anything you want.  Note that you can specify
+# the random seeds here if you want to re-run previous experiments with new parameters and have the
+# same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
+    # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
+
     # 'ntrees': ntrees,
+    # look at varying fprobs too as 0.1 may be too low for >2-4 trees
+    # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
     # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
-    # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers)
+    # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
     # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
     # 'steiner-double': [{'ntrees': t, 'fprob': f} for t in [8, 4, 2] for f in fprobs[:3]]
     # vary topology for inter-building connectivity
-    'topo': [['networkx', 'campus_topo_200b-20h-%dibl.json' % ibl] for ibl in [20, 40, 80]],
+    # 'topo-ibl': [{'topo': ['networkx', 'campus_topo_200b-20h-%dibl.json' % ibl],
+    #               "choicerandseed": 8968339335534376984, "failrandseed": -4400980186153869600,
+    #               "randseed": -6760040867077965717,} for ibl in [200, 400, 800]],
+    # vary topology size (need to vary nhosts along with it)
+    # 'topo-sizes': [{'topo': ['networkx', 'campus_topo_%db-%dh-%dibl.json' % (nbuilds, nhosts, ibl)],
+    #                 'npublishers': nbuilds, 'nsubscribers': nbuilds*2,
+    #                 # 'output_filename': "%db-%dh-%d.json" % (nbuilds, nhosts, ibl),
+    #                 }
+    #                for nbuilds, nhosts, ibl in (
+    #         # might want to check if lower numbers with repeats improves
+    #         # if this big topo with ncores=8 makes a difference, try mid-range ibls
+    #         # (400, 80, 400),
+    #         # (200, 8, 20),
+    #         # (80, 16, 8), (200, 40, 20),  # see if nhosts makes a difference
+    #     )],  # (200, 20, 20)
+    # 'topo-redundant': [{'topo': ['networkx', fname]} for fname in
+    #                    ['campus_topo_200b-20h-1000ibl-redundant.json', 'campus_topo_200b-20h-1000ibl-redundant2.json']]
 }
 
 CONTROL_FLOW_PARAMS = {
