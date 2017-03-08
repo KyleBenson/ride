@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import numbers
+from pprint import pprint
 
 STATISTICS_DESCRIPTION = '''Gathers statistics from the campus_net_experiment.py output files in order to determine how
 resilient different multicast tree-generating algorithms are under various scenarios.
@@ -15,13 +16,17 @@ import os
 import json
 
 
-# skip over these metrics when looking for results from heuristics
-METRICS_TO_SKIP = {'run', 'nhops', 'overlap', 'cost'}
+# skip over these metrics when looking for reachability results from heuristics
+AVAILABLE_METRICS = {'run', 'nhops', 'overlap', 'cost'}
 # these two were added so that we can choose a consistent color/linestyle for plots
 # TODO: we should probably just build up a list as we read them in order to handle more heuristics, esp. with params
 CONSTRUCTION_HEURISTICS = ['red-blue', 'steiner', 'diverse-paths', 'ilp',
                            'steiner[double]', 'steiner[max]',]
 CHOICE_HEURISTICS = ['min-missing-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'importance-chosen']
+
+# placeholder used when missing values for a particular group-curve/xvalue combination
+# we need this because we build len(xvalues)-length lists representing the yvalues
+MISSING_YVALUE_PLACEHOLDER = None
 
 def parse_args(args):
 ##################################################################################
@@ -51,6 +56,8 @@ def parse_args(args):
                         help='''name of parameter to plot reachability against:
                         places it on the x-axis (ordered for increasing reachability)
                         (default=%(default)s)''')
+    parser.add_argument('--y-axis', '-y', type=str, default='reachability', dest='y_axis',
+                        help='''name of parameter to plot on y-axis against (default=%(default)s)''')
     parser.add_argument('--include-choices', '-c', default=None, nargs='*', dest='include_choices',
                         help='''name of multicast tree choice heuristics to include in analysis (default includes all).
                         Specify no args to filter out all tree-choosing heuristics.''')
@@ -152,6 +159,9 @@ class SeismicStatistics(object):
                         len(set(self.config.include_heuristics) - omnipresent_heuristics) <= 1:
             self.include_construction_name = False
 
+        # We'll relabel the x-axis when we have discrete xvalues.  Metrics will be bucketized and continuous.
+        self.discrete_xaxis_values = False if self.config.x_axis in AVAILABLE_METRICS else True
+
     def parse_all(self):
         """Parse either all directories (if specified) or all files."""
         if self.parsing_dirs:
@@ -160,6 +170,56 @@ class SeismicStatistics(object):
         else:
             for fname in self.files:
                 self.parse_file(fname)
+
+        # If we requested metrics or other continuous data contained
+        # within the results themselves for the x-axis, we now need
+        # to bucketize all of this data and store it by its bucket
+        # so that stats appears like any other data would.
+        if '__PARSING_METRICS__' in self.stats:
+            assert len(self.stats) == 1, "when parsing metrics we should not have > 1 entry at this point in stats!"
+            self.stats = self.bucketize_results(self.stats['__PARSING_METRICS__'], self.x_axis)
+
+    @staticmethod
+    def bucketize_results(results, param):
+        """Bucketize the given runs according to the contained parameter.
+        :param list results: with each element being a results dict with reachabilities, metrics, etc.
+        :param str param: which parameter (in results dict) to group & bucketize by
+        :return dict new_stats: results lists indexed by param bucket (midpoint value of left-edge/right-edge)
+        """
+
+        try:
+            metric_values = [r[param] for r in results]
+        except KeyError as e:
+            log.error("invalid metric requested: %s" % param)
+            raise e
+
+        # some metrics store their results as dicts with mean, max, etc.
+        # we're just going to take the mean of these for now
+        try:
+            metric_values = [r['mean'] for r in metric_values]
+        except TypeError:
+            pass  # must be scalars
+
+        hist_values, bin_edges = np.histogram(metric_values)
+        # if any counts are 0, we can safely ignore them and they just won't get plotted
+
+        # we might need to store the bin edges for use with a histogram plot later
+        # so just save the edges for each bin as a tuple
+        xvalues = zip(bin_edges, bin_edges[1:])
+        # but for now we'll just set xvalues to be the mid-point of each bucket
+        xvalues = [np.mean(xval) for xval in xvalues]
+
+        bucket_indices = np.digitize(metric_values, bin_edges)
+        # now we can build up the new stats
+        new_stats = dict()
+        for j, idx in enumerate(bucket_indices):
+            # the bucket index goes 1-11 for 10 buckets, with the 11 index representing the (possibly) lone max value
+            idx -= 1
+            if idx >= len(xvalues):
+                idx -= 1
+            new_stats.setdefault(xvalues[idx], []).append(results[j])
+
+        return new_stats
 
     def parse_dir(self, dirname):
         for filename in os.listdir(dirname):
@@ -180,16 +240,19 @@ class SeismicStatistics(object):
             param_value = data['params'][self.x_axis]
         except KeyError as e:
             # HACK: nhosts is actually two parameters, so need to create an aggregate for it
-            if self.x_axis != 'nhosts':
-                raise e
-            param_value = (data['params']['nsubscribers'], data['params']['npublishers'])
-            # param_value = "%s,%s" % param_value
+            if self.x_axis == 'nhosts':
+                param_value = (data['params']['nsubscribers'], data['params']['npublishers'])
+            # otherwise, we might be requesting a metric, which will be found later in each run,
+            # so just store everything for now
+            else:
+                param_value = '__PARSING_METRICS__'
 
-        # HACK: topo is stored as a list, so convert it to a tuple
-        # Actually maybe we want to just extract the [1:] strings?
+        # TODO: extract topo filename
+
         try:
             self.stats.setdefault(param_value, []).extend(data['results'])
         except TypeError:
+            # if something is stored as a list, convert it to a tuple
             self.stats.setdefault(tuple(param_value), []).extend(data['results'])
 
 
@@ -210,17 +273,18 @@ class SeismicStatistics(object):
         yvalues_array = {}
         for run in results:
             # Skip any results with complete failure
-            if run['oracle'] == 0.0:
-                continue
+            try:
+                if run['oracle'] == 0.0:
+                    continue
+            except KeyError:
+                pass
 
             for metric_name, yvalue in run.items():
+                # Skip any heuristics we don't want included (if this option was specified)
                 # HACK to skip other parameters / metrics for this run
-                # Also, skip any heuristics we don't want included (if this option was specified)
-                # TODO: actually handle metrics?  they should probably go on y-axis, though plotting them against reach could be useful too.
-                if (self.config.include_heuristics is not None
-                    and metric_name not in self.config.include_heuristics)\
-                        or (self.config.include_heuristics is None
-                            and metric_name in METRICS_TO_SKIP):
+                if (self.config.include_heuristics is not None and metric_name not in self.config.include_heuristics) or\
+                        metric_name in AVAILABLE_METRICS:
+                    # TODO: store metric values when we're putting them on y-axis
                     continue
 
                 # Actual results may have nested results with further parameters.
@@ -270,7 +334,6 @@ class SeismicStatistics(object):
                         # Collect the statistical metrics for this heuristic or metric
                         if metric_result_key in metrics_to_gather_in_dict:
                             yvalues_dict.setdefault(metric_name, {}).setdefault(metric_result_key, []).append(metric_results_value)
-
                         # Collect the reachabilities for the tree-choosing heuristics
                         # metric_result_key is a tree-choosing heuristic
                         else:
@@ -286,7 +349,7 @@ class SeismicStatistics(object):
                             else:
                                 name = metric_name
                             yvalues_array.setdefault(name, []).append(metric_results_value)
-                else:
+                else:  # must just be a scalar metric e.g. unicast, overlap, etc.
                     yvalues_array.setdefault(metric_name, []).append(yvalue)
 
         # Before returning the values, we need to convert the lists into np.arrays
@@ -294,33 +357,41 @@ class SeismicStatistics(object):
                {k: np.array(v) for k,v in yvalues_array.items()}
         # ENHANCE: cache the result so we don't recompute for print_statistics
 
-    def plot_reachability(self):
-        """Plots the average reachability of subscribers by each heuristic versus the
-        specified x-axis parameter, ordered ascending by x-axis param.
-        NOTE: we try to extract numerical values from the x-axis parameter strings if possible."""
+    def get_stats_indexed_by_group(self, old_stats=None):
+        """Rotates the stats dict, which is currently indexed by x-axis parameter value,
+        to index by heuristic/metric (where values are lists of reachabilities/metric
+        values that correspond in order to the list of xvalues) instead."""
 
-        # First, we need to rotate the stats dict, which is currently indexed
-        # by x-axis parameter value, to index by heuristic/metric (where values are lists
-        # of reachabilities/metric values that correspond in order to the list of xvalues) instead.
+        if old_stats is None:
+            old_stats = self.stats
         stats_by_group = dict()
-        xvalues = []
-        for (xvalue, results) in self.stats.items():
+
+        # We also to ensure that all of the yvalue results are present
+        # for each xvalue, else put a placeholder in for that group_name.
+        # Because it would be too late to do this after the for loop over self.stats
+        # (how will we know what index to insert the placeholder at?), we have to
+        # handle two cases during this for loop:
+        # 1) The first time we see a new group, we have to pad the beginning of its
+        #    list with a placeholder value for every xvalue we missed.
+        # 2) After each xvalue iteration we need to verify that all groups have
+        #    the same length list by appending placeholders to any missing them.
+        nxvalues_found = 0
+
+        for (xvalue, results) in old_stats.items():
             yvalues_dicts, yvalues_arrays = self.gather_yvalues_from_raw_results(results)
-            # TODO: ensure that all of the results are present for this xvalue, else put a placeholder
-            xvalues.append(xvalue)
 
             # Gather the groups and their respective y-values that
             # will be plotted for this x-value.  The dicts already
             # have min, max, mean, stdev so we'll need to gather each
             # of those up and average them, whereas the arrays will
             # be directly converted to arrays and have those metrics
-            # pulled form them using numpy.
+            # pulled from them using numpy.
             #
-            # Each time we run this loop to completion, we've appended
+            # Each time we run this (outer) loop to completion, we've appended
             # each group's entry for this x-axis value i.e. a single
             # point in the plot.
             for group_name, group_values_dict in yvalues_dicts.items():
-                log.debug("Mean value for x=%s, group[%s]: %f" % (xvalue, group_name, group_values_dict['mean'].mean()))
+                log.debug("Mean value for x=%s, dict-group[%s]: %f" % (xvalue, group_name, group_values_dict['mean'].mean()))
 
                 # Heuristics' results are stored in these dicts so if we requested specific
                 # stats this is where we should gather the ones we want
@@ -329,15 +400,29 @@ class SeismicStatistics(object):
                         _name = '%s'
                         if self.include_construction_name:
                             _name = group_name + ' (%s)'
-                        stats_by_group.setdefault(_name % stat, []).append(group_values_dict[stat])
+                        stats_by_group.setdefault(_name % stat, [None]*nxvalues_found).append(group_values_dict[stat])
                 else:
-                    stats_by_group.setdefault(group_name, []).append(group_values_dict)
+                    stats_by_group.setdefault(group_name, [None]*nxvalues_found).append(group_values_dict)
 
             for group_name, group_values_array in yvalues_arrays.items():
-                log.debug("Mean value for x=%s, group[%s]: %f" % (xvalue, group_name, group_values_array.mean()))
-                stats_by_group.setdefault(group_name, []).append(group_values_array)
+                log.debug("Mean value for x=%s, array-group[%s]: %f" % (xvalue, group_name, group_values_array.mean()))
+                stats_by_group.setdefault(group_name, [None]*nxvalues_found).append(group_values_array)
 
-        # Extract numerical xvalues from strings for plotting
+            # Now we need to make sure that the lengths of the yvalues for every group is the same.
+            # Otherwise, we missed an xvalue for that group and need to put in a placeholder.
+            max_len_yvalues_list = max(len(y) for y in stats_by_group.values())
+            groups_found = stats_by_group.keys()
+            for group_name in groups_found:
+                while len(stats_by_group[group_name]) < max_len_yvalues_list:
+                    stats_by_group[group_name].append(MISSING_YVALUE_PLACEHOLDER)
+            nxvalues_found += 1
+
+        return stats_by_group
+
+    def get_numeric_xvalues_and_set_xticks(self, xvalues):
+        """Extract numerical xvalues from strings for plotting.
+        The returned values may just be indices on the xaxis after we set the xticks."""
+
         # NOTE: don't forget to sort them before applying names since we'll do that when plotting!
         # We'll relabel the x-axis to explicitly show the x-values rather than a uniform spread.
         xtick_values = xvalues
@@ -370,7 +455,7 @@ class SeismicStatistics(object):
             if self.x_axis == 'nhosts':
                 xtick_values = tuple("%s,%s" % (s,p) for s,p in sorted(xvalues))
                 xtick_locations = range(len(xvalues))
-            # topo is a list containing topology reader and filename
+            # topo is a list containing topology reader and filename, so just extract filename
             elif self.x_axis == 'topo':
                 xtick_values = tuple(topo[1].split('.')[0].split('_')[-1] for topo in sorted(xvalues))
                 xtick_locations = range(len(xvalues))
@@ -396,12 +481,33 @@ class SeismicStatistics(object):
                 # new_xvalues = [x[0] for x in sorted(zip(self.config.xnames, sorted(xvalues)))]
                 # may also need to adjust the sorting thing below as the strings might have been sorted differently than how your new xvalues will be
 
-            plt.xticks(xtick_locations, xtick_values)
+            # don't relabel the xticks if we're using continuous bucketized values (e.g. metrics) on x-axis
+            if self.discrete_xaxis_values:
+                plt.xticks(xtick_locations, xtick_values)
 
             # Verify we now have numeric values after all this hacking...
             if not all(isinstance(x, numbers.Number) for x in xvalues):
                 # need to set xvalues to index values, but maintain ordering
                 xvalues = [sorted(xvalues).index(x) for x in xvalues]
+
+        return xvalues
+
+    def plot_reachability(self):
+        """Plots the average reachability of subscribers by each heuristic versus the
+        specified x-axis parameter, ordered ascending by x-axis param.
+        NOTE: we try to extract numerical values from the x-axis parameter strings if possible."""
+
+        # First, we need to rotate the stats dict, which is currently indexed
+        # by x-axis parameter value, to index by heuristic/metric (where values are lists
+        # of reachabilities/metric values that correspond in order to the list of xvalues) instead.
+        # NOTE: some yvalues (in the array) may be None, meaning the yvalue for that heuristic/xvalue
+        # combination was not present in the results.  Make sure you handle these without throwing them out!
+        stats_by_group = self.get_stats_indexed_by_group()
+        xvalues = self.stats.keys()
+
+        # We need numeric xvalues for plotting, but will set the xaxis 'ticks' as the
+        # original strings if that's what they were.
+        xvalues = self.get_numeric_xvalues_and_set_xticks(xvalues)
 
         # order the heuristics appropriately (oracle first, unicast last, rest alphabetical or by y-value)
         def __heuristic_sorter(tup):
@@ -417,9 +523,9 @@ class SeismicStatistics(object):
                 # average in case we're missing some y-values for certain x-values
                 # don't forget about possible dicts with stats in them!
                 try:
-                    return -sum(y.mean() for y in _yvalues) / float(len(_yvalues))
+                    return -sum(y.mean() for y in _yvalues if y is not MISSING_YVALUE_PLACEHOLDER) / float(len(_yvalues))
                 except AttributeError:
-                    return -sum(y['mean'].mean() for y in _yvalues) / float(len(_yvalues))
+                    return -sum(y['mean'].mean() for y in _yvalues if y is not MISSING_YVALUE_PLACEHOLDER) / float(len(_yvalues))
         stats_to_plot = sorted(stats_by_group.items(), key=__heuristic_sorter)
 
         for (group_name, yvalues) in stats_to_plot:
@@ -431,22 +537,22 @@ class SeismicStatistics(object):
             try:
                 if self.config.error_bars:
                     yvalues = [{'mean': y.mean(), 'stdev': y.std(),
-                                'min': y.min(), 'max': y.max()} for y in yvalues]
+                                'min': y.min(), 'max': y.max()} if y is not None else None for y in yvalues]
                 else:
-                    yvalues = [y.mean() for y in yvalues]
+                    yvalues = [y.mean() if y is not None else None for y in yvalues]
             except AttributeError:
                 # must be a dict then...
                 if self.config.error_bars:
                     yvalues = [{'mean': y['mean'].mean(), 'stdev': y['stdev'].mean(),
-                                'min': y['min'].mean(), 'max': y['max'].mean()} for y in yvalues]
+                                'min': y['min'].mean(), 'max': y['max'].mean()} if y is not None else None for y in yvalues]
                 else:
-                    yvalues = [y['mean'].mean() for y in yvalues]
+                    yvalues = [y['mean'].mean() if y is not None else None for y in yvalues]
             log.debug("plotting for %s: %s vs. %s" % (group_name, xvalues, yvalues))
 
             # sort by xvalues
-            xval, yval = zip(*sorted(zip(xvalues, yvalues)))
-            if not (len(xval) == len(xvalues) and len(yval) == len(yvalues)):
-                log.warn("We seem to be missing some y or x values for heuristic %s" % group_name)
+            xvals, yvals = zip(*sorted(zip(xvalues, yvalues)))
+            assert (len(xvals) == len(xvalues) and len(yvals) == len(yvalues)),\
+                "We seem to be missing some y or x values for heuristic %s" % group_name
 
             plot_kwargs = self.get_curve_style(group_name)
 
@@ -456,16 +562,16 @@ class SeismicStatistics(object):
             # and would not be correct if we used box-and-whisker.
             # Taken from http://stackoverflow.com/questions/33328774/box-plot-with-min-max-average-and-standard-deviation
             if self.config.error_bars:
-                means = np.array([y['mean'] for y in yval])
-                stdevs = np.array([y['stdev'] for y in yval])
-                mins = np.array([y['min'] for y in yval])
-                maxes = np.array([y['max'] for y in yval])
+                means = np.array([y['mean'] if y is not None else None for y in yvals])
+                stdevs = np.array([y['stdev'] if y is not None else None for y in yvals])
+                mins = np.array([y['min'] if y is not None else None for y in yvals])
+                maxes = np.array([y['max'] if y is not None else None for y in yvals])
 
-                plt.errorbar(xval, means, [means - mins, maxes - means], lw=1, **plot_kwargs)
+                plt.errorbar(xvals, means, [means - mins, maxes - means], lw=1, **plot_kwargs)
                 del plot_kwargs['label']  # to avoid 2 copies showing up in the legend
-                plt.errorbar(xval, means, stdevs, lw=2, **plot_kwargs)
-            else:
-                plt.plot(xval, yval, **plot_kwargs)
+                plt.errorbar(xvals, means, stdevs, lw=2, **plot_kwargs)
+            elif yvals:
+                plt.plot(xvals, yvals, **plot_kwargs)
 
         # Adjust the plot visually, including labelling and legends.
         plt.xlabel(self.config.xlabel if self.config.xlabel is not None else self.config.x_axis)
@@ -599,9 +705,11 @@ class SeismicStatistics(object):
 
 def run_tests():
     dummy_args = parse_args([])
+    dummy_args.debug = 'debug'
     stats = SeismicStatistics(dummy_args)
     # create some dummy results with really simple values for testing
     nresults = 4
+    test_heuristics = ["steiner", "red-blue", "fake_heuristic"]
     results = [
         {
             "cost": {
@@ -620,7 +728,7 @@ def run_tests():
             "oracle": 1.0*i,
             "overlap": 10000*i,
             "run": i-1,
-            ["steiner", "red-blue", "fake_heuristic"][i%3]: {  # note that since i starts at 1 this means red-blue repeats first
+            test_heuristics[i%3]: {  # note that since i starts at 1 this means red-blue repeats first
                 "all": 0.7*i,
                 "importance-chosen": 0.55*i,
                 "max": 0.6*i,
@@ -635,11 +743,73 @@ def run_tests():
         } for i in range(1, nresults+1)
         ]
 
-    # validate correctness of gather_yvalues_from_raw_results()
+    #### validate correctness of gather_yvalues_from_raw_results()
     stats_dicts, stats_arrays = stats.gather_yvalues_from_raw_results(results)
-    print stats_dicts
-    print stats_arrays
+    # print stats_dicts
+    # print stats_arrays
+    # TODO: finish this?  only if problems arise...
     # assert stats_dicts['']
+
+
+    #### test get_stats_indexed_by_group
+
+    # Testing placeholders for missing yvalues
+    # We need to test two main cases: placeholders appearing
+    # up front or at end of 'current iteration', which should
+    # include the last one.
+
+    stats_by_xvalue = {0: results[1:3],  # gets fake/steiner
+                       1: results[:2],  # gets red-blue1/fake
+                       2: results[2:4]}  # gets steiner/red-blue2
+
+    # need to convince stats to only get raw heuristic's names
+    stats.include_choice_name = False
+    stats.include_stats_name = False
+    stats.include_construction_name = True
+    stats.config.include_choices = []
+    stats.config.stats_to_plot = []
+    stats.config.include_heuristics = test_heuristics
+
+    stats_by_group = stats.get_stats_indexed_by_group(stats_by_xvalue)
+    max_len_stats = max(len(s) for s in stats_by_group.values())
+    # pprint(stats_by_group, depth=2)
+    assert all(len(s) == max_len_stats for s in stats_by_group.values()), "not all lengths the same! "
+
+    assert stats_by_xvalue.keys() == sorted(stats_by_xvalue.keys()), \
+        "TODO: use an ordered dict if the keys don't come out in sorted order"
+
+    assert stats_by_group['steiner'][0] == stats_dicts['steiner']
+    assert stats_by_group['fake_heuristic'][0] == stats_dicts['fake_heuristic']
+    assert stats_by_group['red-blue'][0] is MISSING_YVALUE_PLACEHOLDER
+
+    assert stats_by_group['steiner'][1] is MISSING_YVALUE_PLACEHOLDER
+    assert stats_by_group['fake_heuristic'][1] == stats_dicts['fake_heuristic']
+    # red-blue has multiple entries so this wouldn't be correct
+    # assert stats_by_group['red-blue'][1] == stats_dicts['red-blue']
+
+    assert stats_by_group['steiner'][2] == stats_dicts['steiner']
+    assert stats_by_group['fake_heuristic'][2] is MISSING_YVALUE_PLACEHOLDER
+    # assert stats_by_group['red-blue'][2] == stats_dicts['red-blue'][1]
+
+
+    ############################################################
+    #####       test gathering metrics
+    ############################################################
+
+    ## gather metrics on x-axis
+
+    param = 'some-metric'
+    results = [{param: i} for i in range(100)]
+    new_stats = stats.bucketize_results(results, param)
+    # print new_stats
+    # print "lengths:", [len(s) for s in new_stats.values()]
+
+    test_values = [[{param: j + i*10} for j in range(10)] for i in range(10)]
+
+    for i,k in enumerate(sorted(new_stats.keys())):
+        assert new_stats[k] == test_values[i]
+
+    ## TODO: gather metrics on y-axis
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'test':
