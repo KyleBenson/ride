@@ -578,6 +578,9 @@ class SeismicStatistics(object):
             assert (len(xvals) == len(xvalues) and len(yvals) == len(yvalues)),\
                 "We seem to be missing some y or x values for heuristic %s" % group_name
 
+            # now is the time to drop out any data points with placeholders since yvalues were missing
+            xvals, yvals = zip(*((xvals[i], yvals[i]) for i in range(len(xvals)) if yvals[i] is not MISSING_YVALUE_PLACEHOLDER))
+
             plot_kwargs = self.get_curve_style(group_name)
 
             # Optionally plot errorbars and min/max by overlaying two
