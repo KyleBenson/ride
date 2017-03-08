@@ -69,17 +69,16 @@ def parse_args(args):
                         help='''rather than plotting the mean values of heuristics' reachability
                         (or complete error bars if that's not disabled), plot the given stats
                         instead.  Options are: (mean, stdev, min, max)''')
-    # TODO: specify what gets put on the y axis (default=reach)
 
     ### Controlling plots
 
     # labelling
     parser.add_argument('--title', '-t', nargs='?', default='Subscriber hosts reached', const=None,
                         help='''title of the plot (default=%(default)s; no title if specified with no arg)''')
-    parser.add_argument('--ylabel', '-yl', type=str, default="avg host reach ratio",
-                        help='''label to place on the y-axis (default=%(default)s)''')
+    parser.add_argument('--ylabel', '-yl', type=str, default=None,
+                        help='''label to place on the y-axis (default=y-axis's default)''')
     parser.add_argument('--xlabel', '-xl', type=str, default=None,
-                        help='''label to place on the x-axis (default=%(default)s)''')
+                        help='''label to place on the x-axis (default=x-axis's default)''')
     # We aren't plotting non-int/float values on y-axis currently so no need for this yet
     # parser.add_argument('--ynames', '-yn', type=str, default=None, nargs='+',
     #                     help='''replace y-axis parameter names with these values.
@@ -99,6 +98,10 @@ def parse_args(args):
                         matplotlib to find the best location. (default=%(default)s)''')
     parser.add_argument('--error-bars', '-err', action='store_true', dest='error_bars',
                         help='''show the error bars and max/min values on curves''')
+    parser.add_argument('--log-y-axis', '-logy', action='store_true', dest='log_y_axis',
+                        help='''display the y axis on a log scale''')
+    parser.add_argument('--log-x-axis', '-logx', action='store_true', dest='log_x_axis',
+                        help='''display the x axis on a log scale''')
     parser.add_argument('--sort-curves-by-name', '-byname', dest='sort_curves_by_name', action='store_true',
                         help='''sort curves by group name rather than default method,
                         which puts oracle on top, unicast on bottom, and the others in
@@ -279,14 +282,34 @@ class SeismicStatistics(object):
             except KeyError:
                 pass
 
-            for metric_name, yvalue in run.items():
+            if self.config.y_axis == 'reachability':
                 # Skip any heuristics we don't want included (if this option was specified)
                 # HACK to skip other parameters / metrics for this run
-                if (self.config.include_heuristics is not None and metric_name not in self.config.include_heuristics) or\
-                        metric_name in AVAILABLE_METRICS:
-                    # TODO: store metric values when we're putting them on y-axis
-                    continue
+                results_to_collect = (r for r in run.items() if not ((self.config.include_heuristics is not None
+                                                                 and r[0] not in self.config.include_heuristics) or
+                                      r[0] in AVAILABLE_METRICS))
+            # we must have requested to plot a metric on the y-axis, but we still want to label the curve
+            # with the name of the heuristic that was used in these results so we need to find which key
+            # in this run's keys is a valid heuristic.
+            else:
+                name = self.config.y_axis
+                for k in run.keys():
+                    if k in CONSTRUCTION_HEURISTICS:
+                        name = k
+                        break
+                results_to_collect = [(name, run[self.config.y_axis])]
 
+                # HACK: to include the unicast cost
+                if self.config.y_axis == 'cost' and (self.config.include_heuristics is None or
+                                                     'unicast' in self.config.include_heuristics):
+                    results_to_collect.append(('unicast', run['cost']['unicast']))
+
+                # HACK: we'll confuse the curve-coloring system by specifying the group name this way
+                # (it might be expecting heuristic names such as "steiner (max)").
+                # Unconfuse it by forcing no inclusion of choice names since none will show up (stats may).
+                self.include_choice_name = False
+
+            for metric_name, yvalue in results_to_collect:
                 # Actual results may have nested results with further parameters.
                 # As an example, consider a single run:
                 # {
@@ -325,7 +348,6 @@ class SeismicStatistics(object):
                 # (tree-choosing heuristic).  We also extract the min, max, mean, stdev
                 # for the heuristic (or other treatment/metric) in question.
                 if isinstance(yvalue, dict):
-
                     metrics_to_gather_in_dict = ('max', 'min', 'mean', 'stdev')
                     if not all(key in yvalue for key in metrics_to_gather_in_dict):
                         log.warn("Did not find statistical metrics in results dictionary: must be results from older version?")
@@ -334,7 +356,7 @@ class SeismicStatistics(object):
                         # Collect the statistical metrics for this heuristic or metric
                         if metric_result_key in metrics_to_gather_in_dict:
                             yvalues_dict.setdefault(metric_name, {}).setdefault(metric_result_key, []).append(metric_results_value)
-                        # Collect the reachabilities for the tree-choosing heuristics
+                        # Collect the yvalues for the tree-choosing heuristics
                         # metric_result_key is a tree-choosing heuristic
                         else:
                             # TODO: need a hack for unicast cost metric when we expand to include metrics
@@ -570,12 +592,25 @@ class SeismicStatistics(object):
                 plt.errorbar(xvals, means, [means - mins, maxes - means], lw=1, **plot_kwargs)
                 del plot_kwargs['label']  # to avoid 2 copies showing up in the legend
                 plt.errorbar(xvals, means, stdevs, lw=2, **plot_kwargs)
+
+                if self.config.log_y_axis or self.config.log_x_axis:
+                    log.warn("log scale axes not supported with error bars!")
+                    # TODO: can do this with ax.set_xscale("log", nonposx='clip')
             elif yvals:
-                plt.plot(xvals, yvals, **plot_kwargs)
+                # TODO: could optionally use kw-arguments basex/basey to set the base of the log scale
+                if self.config.log_y_axis and not self.config.log_x_axis:
+                    plotter = plt.semilogy
+                elif not self.config.log_y_axis and self.config.log_x_axis:
+                    plotter = plt.semilogx
+                elif self.config.log_y_axis and self.config.log_x_axis:
+                    plotter = plt.loglog
+                else:
+                    plotter = plt.plot
+                plotter(xvals, yvals, **plot_kwargs)
 
         # Adjust the plot visually, including labelling and legends.
         plt.xlabel(self.config.xlabel if self.config.xlabel is not None else self.config.x_axis)
-        plt.ylabel(self.config.ylabel)
+        plt.ylabel(self.config.ylabel if self.config.ylabel is not None else self.config.y_axis)
         if self.config.title is not None:
             plt.title(self.config.title)
         if self.config.legend is not None:
