@@ -250,7 +250,12 @@ class SeismicStatistics(object):
             else:
                 param_value = '__PARSING_METRICS__'
 
-        # TODO: extract topo filename
+        # topo is a list containing topology reader and filename, so just extract filename
+        if self.x_axis == 'topo':
+            param_value = data['params']['topo'][1].split('.')[0].split('_')[-1]
+
+        # HACK: topo is stored as a list, so convert it to a tuple
+        # Actually maybe we want to just extract the [1:] strings?
 
         try:
             self.stats.setdefault(param_value, []).extend(data['results'])
@@ -478,9 +483,6 @@ class SeismicStatistics(object):
                 xtick_values = tuple("%s,%s" % (s,p) for s,p in sorted(xvalues))
                 xtick_locations = range(len(xvalues))
             # topo is a list containing topology reader and filename, so just extract filename
-            elif self.x_axis == 'topo':
-                xtick_values = tuple(topo[1].split('.')[0].split('_')[-1] for topo in sorted(xvalues))
-                xtick_locations = range(len(xvalues))
             else:
                 raise e
         finally:
