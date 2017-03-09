@@ -276,6 +276,7 @@ class SmartCampusNetworkxExperiment(object):
         # NOTE: because we're using undirected graphs, we have to worry about
         # whether edge tuples are formatted (nodes ordered) properly, hence
         # we just add edges to the set object in both orders (u,v) and (v,u)
+        # BIG OH: O(T) + O(S), where S = |STT|
         stt = set()
         for pub in publishers:
             path = nx.shortest_path(self.topo.topo, pub, server, weight=DISTANCE_METRIC)
@@ -294,7 +295,8 @@ class SmartCampusNetworkxExperiment(object):
         # We scale the total overlap by the number of edges in the tree
         # to avoid preferring larger trees that unnecessarily overlap
         # random paths that we don't care about.
-        overlaps = [(len(stt.intersection(t.edges())) / float(nx.number_of_edges(t)),\
+        # BIG OH: O(k(T+S)) as we assume intersection done in O(|first| + |second|) time
+        overlaps = [(len(stt.intersection(t.edges())) / float(nx.number_of_edges(t)),
                      random.random(), t) for t in trees]
         choices[method] = max(overlaps)[2]
 
@@ -304,6 +306,7 @@ class SmartCampusNetworkxExperiment(object):
         # packets' paths, which lessens the probability that a link of
         # unknown status will have failed.
         # We use the size of a tree as a tie-breaker (prefer smaller ones)
+        # BIG OH: O(k(T+S))
         missing = [(len(set(t.edges()) - stt), nx.number_of_edges(t), random.random(), t) for t in trees]
         choices[method] = min(missing)[3]
 
@@ -311,6 +314,13 @@ class SmartCampusNetworkxExperiment(object):
         # IDEA: choose the tree with the most # reachable destinations,
         # as estimated by checking whether the path taken to each
         # destination is validated as 'currently functioning' by the STT
+        # BIG OH (this implementation): O(S) + O(dijkstra(t)) + O(D) for each K = K(O(S+TlogT+T) + O(D)) = O(K(S+TlogT))
+        #   -- if we do whole computation each time and were to make use of all-pairs paths,
+        #      which this implementation does not.  Here's a better possible running time:
+        # BIG OH (using intersect): O(K(T+S))
+        #   -- take intersection of each T and STT: do a BFS on that for free (linear in size of intersection),
+        #      outputting which subs reachable in that BFS starting at the root. The size of each tree's output
+        #      is that tree's "reachability".
         dests_reachable = []
         for tree in trees:
             this_reachability = 0
@@ -327,6 +337,9 @@ class SmartCampusNetworkxExperiment(object):
         # Instead of just counting # edges overlapping, count total
         # 'importance' of overlapping edges where the importance is
         # the # destination-paths traversing this edge.
+        # BIG-OH for a revised intersection-based version:
+        # O(K(T+S)) by basically pre-computing the 'importance' of each tree edge
+        #      via BFS/DFS where we count #children for each node
         importance = []
         for tree in trees:
             # We'll use max-flow to find how many paths on each edge
