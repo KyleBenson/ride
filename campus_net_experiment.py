@@ -33,6 +33,7 @@ class SmartCampusNetworkxExperiment(object):
                  failure_model=None, topo=('networkx',),
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
+                 publication_error_rate=0.0,
                  # NOTE: kwargs just used for construction via argparse
                  **kwargs):
         super(SmartCampusNetworkxExperiment, self).__init__()
@@ -42,6 +43,7 @@ class SmartCampusNetworkxExperiment(object):
         self.npublishers = npublishers
         self.output_filename = output_filename
         self.mcast_heuristic = mcast_heuristic
+        self.publication_error_rate = publication_error_rate
 
         log_level = log.getLevelName(debug.upper())
         log.basicConfig(format='%(levelname)s:%(message)s', level=log_level)
@@ -110,6 +112,9 @@ class SmartCampusNetworkxExperiment(object):
                             help='''number of multicast subscribers (terminals) to reach (default=%(default)s)''')
         parser.add_argument('--npublishers', '-p', type=int, default=5,
                             help='''number of IoT sensor publishers to contact edge server (default=%(default)s)''')
+        parser.add_argument('--error-rate', type=float, default=0.0, dest='publication_error_rate',
+                            help='''error rate of publications from publishers (chance that we won't
+                            include a publisher in the STT even if it's still connected to server) (default=%(default)s)''')
         parser.add_argument('--topo', type=str, default=['networkx'], nargs='+',
                             help='''type of SdnTopology to use and (optionally) its constructor parameters (default=%(default)s)''')
 
@@ -280,7 +285,7 @@ class SmartCampusNetworkxExperiment(object):
         stt = set()
         for pub in publishers:
             path = nx.shortest_path(self.topo.topo, pub, server, weight=DISTANCE_METRIC)
-            if nx.is_simple_path(failed_topology, path):
+            if self.random.random() >= self.publication_error_rate and nx.is_simple_path(failed_topology, path):
                 for u, v in zip(path, path[1:]):
                     stt.add((u,v))
                     stt.add((v,u))

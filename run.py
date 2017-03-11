@@ -93,7 +93,7 @@ EXPERIMENTAL_TREATMENTS = {
     # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
     # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
-    'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
+    # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
     # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
     # 'steiner-double': [{'ntrees': t, 'fprob': f} for t in [8, 4, 2] for f in fprobs[:3]]
     # vary topology for inter-building connectivity
@@ -114,6 +114,9 @@ EXPERIMENTAL_TREATMENTS = {
     #     )],  # (200, 20, 20)
     # 'topo-redundant': [{'topo': ['networkx', fname]} for fname in
     #                    ['campus_topo_200b-20h-1000ibl-redundant.json', 'campus_topo_200b-20h-1000ibl-redundant2.json']]
+    'publication_error_rate': [{'publication_error_rate': r, "choicerandseed": -5732823796696650875,
+                                "failrandseed": 2648076232431673581,  # seeds are from results3/nhosts
+                                "randseed": -7114345580798557657} for r in [0.01, 0.05, 0.1, 0.2, 0.4, 0.8]]
 }
 
 CONTROL_FLOW_PARAMS = {
@@ -314,6 +317,7 @@ if __name__ == '__main__':
     # map inputs a positional argument, not kwargs
     # pool.map(run_experiment, makecmds(_dirname=dirname), chunksize=1)
     all_cmds = list(makecmds(output_dirname=dirname))
+    # TODO: sort cmds to place diverse-paths first since it runs longest
     total_jobs = len(all_cmds)
     for i, cmd in enumerate(all_cmds):
         cmd = [jobs_completed, total_jobs, cmd]
