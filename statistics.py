@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import numbers
 from pprint import pprint
+import re
 
 STATISTICS_DESCRIPTION = '''Gathers statistics from the campus_net_experiment.py output files in order to determine how
 resilient different multicast tree-generating algorithms are under various scenarios.
@@ -251,8 +252,11 @@ class SeismicStatistics(object):
                 param_value = '__PARSING_METRICS__'
 
         # topo is a list containing topology reader and filename, so just extract filename
+        # and parse the parameters from it
         if self.x_axis == 'topo':
             param_value = data['params']['topo'][1].split('.')[0].split('_')[-1]
+            _parsed = re.match('(\d+)b-(\d+)h-(\d+)ibl', param_value).groups()
+            param_value = (int(_parsed[0]), int(_parsed[1]), int(_parsed[2]))
 
         # HACK: topo is stored as a list, so convert it to a tuple
         # Actually maybe we want to just extract the [1:] strings?
@@ -479,10 +483,10 @@ class SeismicStatistics(object):
             # HACKS: lists/tuples will cause this error
             # nhosts will format them as tuples, which is good for sorting,
             # but bad for labels and actual plotting
-            if self.x_axis == 'nhosts':
-                xtick_values = tuple("%s,%s" % (s,p) for s,p in sorted(xvalues))
+            # topo is a tuple that we parsed earlier
+            if self.x_axis == 'nhosts' or self.x_axis == 'topo':
+                xtick_values = tuple(",".join(str(xvp) for xvp in xv) for xv in sorted(xvalues))
                 xtick_locations = range(len(xvalues))
-            # topo is a list containing topology reader and filename, so just extract filename
             else:
                 raise e
         finally:
