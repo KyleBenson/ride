@@ -27,6 +27,7 @@ testing = False
 debug_level = 'warn'
 verbose = True
 print_cmd = False
+reverse_cmds = False
 nruns = 100
 
 DEFAULT_PARAMS = {
@@ -37,12 +38,13 @@ DEFAULT_PARAMS = {
     'npublishers': 200,
     # 'npublishers': 20,
     'topo': ['networkx', 'campus_topo_200b-20h-20ibl.json'],
-    # 'topo': ['networkx', 'campus_topo_20b-8h-3ibl.json'],
+    #'topo': ['networkx', 'campus_topo_20b-8h-3ibl.json'],
     # always a list of tuples!  we run all of them for each treatment and
     # each heuristic optionally takes arguments
-    # 'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
+    #'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
     'mcast_heuristic': [('steiner',), ('red-blue',)],  # skip diverse-paths since it's slowest
-    # 'mcast_heuristic': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
+    #'mcast_heuristic': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
+    #'mcast_heuristic': [('diverse-paths',)],  # diverse-paths is really slow and steiner almost always performs worse
     # 'mcast_heuristic': [('steiner', 'max'), ('steiner', 'double')],
 }
 
@@ -51,16 +53,18 @@ nsubscribers = [20, 40, 80, 160]
 npublishers = [10, 20, 40, 80, 160]
 # nhosts = None  # build nhosts with the nsubscribers/npublishers parameters
 # subs/pubs ratio goes 1:1 thru 1:8 and vice-versa, also vary total # hosts
-nhosts = [{'nsubscribers': s, 'npublishers': p} for s,p in
-          sorted(set([(50 * (ratio if vary_subs else 4), 50 * (ratio if vary_pubs else 4))  # set one param to 200, the other varies from 50-800
-           for vary_subs, vary_pubs in ((0,1), (1,0))
-           for ratio in [1, 2, 4, 8, 16]]), reverse=True)
+nhosts = [{'nsubscribers': s, 'npublishers': p, "choicerandseed": -5732823796696650875,
+    "failrandseed": 2648076232431673581,
+    "randseed": -7114345580798557657,} for s,p in
+    sorted(set([(50 * (ratio if vary_subs else 4), 50 * (ratio if vary_pubs else 4))  # set one param to 200, the other varies from 50-800
+        for vary_subs, vary_pubs in ((0,1), (1,0))
+        for ratio in [1, 2, 4, 8, 16]]), reverse=True)
 ]  # explicitly set the nhosts params
 # nhosts = [{'nsubscribers': s, 'npublishers': p,
 #            "choicerandseed": 7683823364746221991, "failrandseed": -7234762391813259413, "randseed": 737923788253431206,}
 #           for s,p in [(400, 800), (400, 25), (800, 200), (800, 50), (800, 800), (800, 1600)]]
 ntrees = [1, 2, 4, 8, 16]
-fprobs = [0.05, 0.15, 0.25, 0.35, 0.5]
+fprobs = [0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5]
 # nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
 ntrees.reverse()
 
@@ -86,33 +90,35 @@ def get_nhosts_treatment(nsubs, npubs):
 # the random seeds here if you want to re-run previous experiments with new parameters and have the
 # same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
-    #    'ilp': [{'mcast_heuristic': [('ilp',)], 'npublishers': p, 'nsubscribers': p*2} for p in [10, 20, 40]]
+    #'ilp': [{'mcast_heuristic': [('ilp',)], 'npublishers': p, 'nsubscribers': p*2} for p in [10, 20, 40]]
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
 
-    # 'ntrees': ntrees,
+    #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
+        #"failrandseed": -5644075521501607418,
+        #"randseed": -4277241514845461664} for t in ntrees],
     # look at varying fprobs too as 0.1 may be too low for >2-4 trees
-    # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
+    # 'ntrees': [{'ntrees': t, 'foprob': f} for t in ntrees for f in [0.2, 0.4]],
     # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
     # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
     # 'steiner-double': [{'ntrees': t, 'fprob': f} for t in [8, 4, 2] for f in fprobs[:3]]
     # vary topology for inter-building connectivity
-    # 'topo-ibl': [{'topo': ['networkx', 'campus_topo_200b-20h-%dibl.json' % ibl],
-    #               "choicerandseed": 8968339335534376984, "failrandseed": -4400980186153869600,
-    #               "randseed": -6760040867077965717,} for ibl in [200, 400, 800]],
+    #'topo-sizes': [{'topo': ['networkx', 'campus_topo_%db-%dh-%dibl.json' % (nbuilds, nhosts, ibl)],
+                    #'npublishers': nbuilds, 'nsubscribers': nbuilds*2,
+                    # 'output_filename': "%db-%dh-%d.json" % (nbuilds, nhosts, ibl),
+                    #}
+                   #for nbuilds, nhosts, ibl in
+            # might want to check if lower numbers with repeats improves
+            # if this big topo with ncores=8 makes a difference, try mid-range ibls
+            # (400, 80, 400),
+            #[(b, 8, ibl) for b,ibl in ((20,3),(40,5),(50,6),(80,8), (200,20))] +  # keep nhosts constant
+            #[(80, 16, 8), (200, 40, 20), (400,80,400)]  # see if nhosts makes a difference
+            # did the 400b topo have 8 cores?
+        #],  # (200, 20, 20)
+    #'topo-ibl': [{'topo': ['networkx', 'campus_topo_200b-20h-%dibl.json' % ibl],
+                  #} for ibl in [0, 10, 20, 40, 60, 80, 200, 400, 800]],
     # vary topology size (need to vary nhosts along with it)
-    # 'topo-sizes': [{'topo': ['networkx', 'campus_topo_%db-%dh-%dibl.json' % (nbuilds, nhosts, ibl)],
-    #                 'npublishers': nbuilds, 'nsubscribers': nbuilds*2,
-    #                 # 'output_filename': "%db-%dh-%d.json" % (nbuilds, nhosts, ibl),
-    #                 }
-    #                for nbuilds, nhosts, ibl in (
-    #         # might want to check if lower numbers with repeats improves
-    #         # if this big topo with ncores=8 makes a difference, try mid-range ibls
-    #         # (400, 80, 400),
-    #         # (200, 8, 20),
-    #         # (80, 16, 8), (200, 40, 20),  # see if nhosts makes a difference
-    #     )],  # (200, 20, 20)
     # 'topo-redundant': [{'topo': ['networkx', fname]} for fname in
     #                    ['campus_topo_200b-20h-1000ibl-redundant.json', 'campus_topo_200b-20h-1000ibl-redundant2.json']]
     'publication_error_rate': [{'publication_error_rate': r, "choicerandseed": -5732823796696650875,
@@ -189,10 +195,10 @@ def getargs(output_dirname='', **kwargs):
 
     # label the file with a parameter summary and optionally place in a directory
     topo_fname = _args['topo'][1].split('_')[2].split('.')[0]
-    _args['output_filename'] = os.path.join(output_dirname, _args.get('output_filename', 'results_%dt_%0.2ff_%ds_%dp_%s_%s.json' % \
+    _args['output_filename'] = os.path.join(output_dirname, _args.get('output_filename', 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%0.2fe.json' % \
                                                                       (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
                                                                        SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
-                                                                       topo_fname)))
+                                                                       topo_fname, _args['publication_error_rate'])))
     return _args
 
 
@@ -226,7 +232,7 @@ def get_next_seeds(nseeds=3):
 def run_tests_on_cmd(**kwargs):
     if os.path.exists(kwargs['output_filename']):
         print "WARNING: file %s already exists!" % kwargs['output_filename']
-    assert os.path.exists(kwargs['topo'][1])
+    assert os.path.exists(kwargs['topo'][1]), "topology file %s doesn't exist!" % kwargs['topo'][1]
 
 
 def run_experiment(jobs_finished, total_jobs, kwargs):
@@ -319,6 +325,8 @@ if __name__ == '__main__':
     # pool.map(run_experiment, makecmds(_dirname=dirname), chunksize=1)
     all_cmds = list(makecmds(output_dirname=dirname))
     # TODO: sort cmds to place diverse-paths first since it runs longest
+    if reverse_cmds:
+        all_cmds.reverse()
     total_jobs = len(all_cmds)
     for i, cmd in enumerate(all_cmds):
         cmd = [jobs_completed, total_jobs, cmd]
