@@ -205,7 +205,7 @@ def getargs(output_dirname='', **kwargs):
     _args['output_filename'] = os.path.join(output_dirname, _args.get('output_filename', 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%0.2fe.json' % \
                                                                       (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
                                                                        SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
-                                                                       topo_fname, _args['publication_error_rate'])))
+                                                                       topo_fname, _args.get('publication_error_rate', 0))))
     return _args
 
 
