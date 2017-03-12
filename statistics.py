@@ -439,14 +439,15 @@ class SeismicStatistics(object):
                 log.debug("Mean value for x=%s, array-group[%s]: %f" % (xvalue, group_name, group_values_array.mean()))
                 stats_by_group.setdefault(group_name, [None]*nxvalues_found).append(group_values_array)
 
-            # Now we need to make sure that the lengths of the yvalues for every group is the same.
+            # Now we need to make sure that the lengths of the yvalues for every group is the same
+            # and equal to the total # xvalues found so far (in case we didn't add any others this time).
             # Otherwise, we missed an xvalue for that group and need to put in a placeholder.
-            max_len_yvalues_list = max(len(y) for y in stats_by_group.values())
+            nxvalues_found += 1
+            max_len_yvalues_list = max(max(len(y) for y in stats_by_group.values()), nxvalues_found)
             groups_found = stats_by_group.keys()
             for group_name in groups_found:
                 while len(stats_by_group[group_name]) < max_len_yvalues_list:
                     stats_by_group[group_name].append(MISSING_YVALUE_PLACEHOLDER)
-            nxvalues_found += 1
 
         return stats_by_group
 
