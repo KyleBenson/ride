@@ -27,7 +27,7 @@ testing = False
 debug_level = 'warn'
 verbose = True
 print_cmd = False
-nruns = 100
+nruns = 20
 
 DEFAULT_PARAMS = {
     'fprob': 0.1,
@@ -87,6 +87,14 @@ def get_nhosts_treatment(nsubs, npubs):
 # same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
+    'ilp': [{'mcast_heuristic': [('ilp',), ('steiner',), ('diverse-paths',), ('red-blue',)],
+             'npublishers': p, 'nsubscribers': p*2, 'ntrees': t, 'fprob': f,
+             'topo': ['networkx', 'campus_topo_10b-4h-2ibl.json'],
+             }
+            for p in [5, 10]
+            for t in [2, 4]
+            for f in [0.1, 0.2]
+            ]
 
     # 'ntrees': ntrees,
     # look at varying fprobs too as 0.1 may be too low for >2-4 trees
@@ -114,9 +122,9 @@ EXPERIMENTAL_TREATMENTS = {
     #     )],  # (200, 20, 20)
     # 'topo-redundant': [{'topo': ['networkx', fname]} for fname in
     #                    ['campus_topo_200b-20h-1000ibl-redundant.json', 'campus_topo_200b-20h-1000ibl-redundant2.json']]
-    'publication_error_rate': [{'publication_error_rate': r, "choicerandseed": -5732823796696650875,
-                                "failrandseed": 2648076232431673581,  # seeds are from results3/nhosts
-                                "randseed": -7114345580798557657} for r in [0.01, 0.05, 0.1, 0.2, 0.4, 0.8]]
+    # 'publication_error_rate': [{'publication_error_rate': r, "choicerandseed": -5732823796696650875,
+    #                             "failrandseed": 2648076232431673581,  # seeds are from results3/nhosts
+    #                             "randseed": -7114345580798557657} for r in [0.01, 0.05, 0.1, 0.2, 0.4, 0.8]]
 }
 
 CONTROL_FLOW_PARAMS = {
