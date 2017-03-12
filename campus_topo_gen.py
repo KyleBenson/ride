@@ -327,7 +327,8 @@ if __name__ == '__main__':
         # iterate over multiple options of form (nbuildings, nhosts, n-inter-building-links)
         topologies_to_build = (
             # (20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
-            (200, 20, 20),  # main large topology
+            # (200, 20, 20),  # main large topology
+            (10, 4, 2),
             # (200, 20, 40), (200, 20, 80),
             # (200, 20, 10), (200, 20, 0), (200, 20, 60), # vary ibl on main topology
             # (200, 20, 200), (200, 20, 400), (200, 20, 800), # vary ibl on main topology, with repeats and larger #s
