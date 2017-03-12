@@ -76,6 +76,7 @@ class SmartCampusNetworkxExperiment(object):
                                    'failure_model': self.failure_model.get_params(),
                                    'heuristic': self.get_mcast_heuristic_name(),
                                    'topo': topo,
+                                   'publication_error_rate': self.publication_error_rate,
                                    'choicerandseed': choice_rand_seed,
                                    'randseed': rand_seed,
                                    'failrandseed': kwargs.get('failure_rand_seed', None),
