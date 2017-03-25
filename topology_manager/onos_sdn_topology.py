@@ -1,7 +1,7 @@
 import logging as log
 log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
-from onos_api import OnosRestApi
+from rest_api.onos_api import OnosRestApi
 from sdn_topology import SdnTopology
 
 

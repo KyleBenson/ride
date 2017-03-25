@@ -1,10 +1,8 @@
 import logging as log
 log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
-from floodlight_api import FloodlightRestApi
+from rest_api.floodlight_api import FloodlightRestApi
 from sdn_topology import SdnTopology
-import json
-import networkx as nx
 
 # Otherwise, identify by ipv4
 IDENTIFY_HOSTS_BY_MAC = True

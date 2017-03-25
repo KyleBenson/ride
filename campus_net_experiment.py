@@ -9,23 +9,22 @@ components such as switches, SDN controllers, etc.'''
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
 
-from failure_model import SmartCampusFailureModel
-# TODO: from sdn_topology import *
-from networkx_sdn_topology import NetworkxSdnTopology
-# from redundant_multicast_algorithms import ilp_redundant_multicast
-
-import networkx as nx
+import argparse
+import json
 import logging as log
 import random
-import json
-import numpy as np
-import argparse
-import time
 import signal
+import time
+import numpy as np
+import networkx as nx
+
+from failure_model import SmartCampusFailureModel
+from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
+from ride.ride_d import RideD
 
 COST_METRIC = 'weight'  # for links only
 DISTANCE_METRIC = 'latency'  # for shortest path calculations
-
+PUBLICATION_TOPIC = 'seismic_alert'
 
 class SmartCampusNetworkxExperiment(object):
 
@@ -168,11 +167,11 @@ class SmartCampusNetworkxExperiment(object):
             # QUESTION: should we really do this each iteration?  won't it make for higher variance?
             subs = self.choose_subscribers()
             pubs = self.choose_publishers()
+            # NOTE: this is unnecessary as we only have a single server in our test topos.  If we use multiple, need
+            # to actually modify RideD here with updated server.
             server = self.choose_server()
-            failed_nodes, failed_links = self.apply_failure_model()
-            # TODO: only need to do this each time for non-deterministic heuristics (or if we choose new pubs/subs each time)
-            trees = self.build_mcast_trees(server, subs)
-            result = self.run_experiment(failed_nodes, failed_links, server, pubs, subs, trees)
+            failed_nodes, failed_links = self.get_failed_nodes_links()
+            result = self.run_experiment(failed_nodes, failed_links, server, pubs, subs)
             result['run'] = r
             self.record_result(result)
 
@@ -195,10 +194,9 @@ class SmartCampusNetworkxExperiment(object):
         with open(self.output_filename, "w") as f:
             json.dump(self.results, f, sort_keys=True, indent=2)
 
-    def apply_failure_model(self):
-        """Removes edges/links from a copy of the topology according
-        to the failure model.
-        @:return modified networkx topology"""
+    def get_failed_nodes_links(self):
+        """Returns which nodes/links failed according to the failure model.
+        @:return failed_nodes, failed_links"""
         nodes, links = self.failure_model.apply_failure_model(self.topo)
         log.debug("Failed nodes: %s" % nodes)
         log.debug("Failed links: %s" % links)
@@ -226,24 +224,6 @@ class SmartCampusNetworkxExperiment(object):
         log.debug("Server: %s" % server)
         return server
 
-    def build_mcast_trees(self, source, subscribers):
-        """Build redundant multicast trees over the specified subscribers using
-        the requested heuristic algorithm."""
-
-        trees = self.topo.get_redundant_multicast_trees(source, subscribers, self.ntrees,
-                                                        algorithm=self.mcast_heuristic[0],
-                                                        heur_args=self.mcast_heuristic[1:])
-
-        # Need to record which heuristic and tree # we used for later
-        for tree in trees:
-            tree.graph['heuristic'] = self.get_mcast_heuristic_name()
-            # sanity check that the returned trees reach all destinations
-            assert all(nx.has_path(t, source, sub) for sub in subscribers for t in trees)
-
-        # log.debug("MCast Trees: %s" % trees)
-
-        return trees
-
     def get_mcast_heuristic_name(self):
         return self.build_mcast_heuristic_name(*self.mcast_heuristic)
 
@@ -258,122 +238,7 @@ class SmartCampusNetworkxExperiment(object):
         else:
             return args[0]
 
-    def choose_best_trees(self, failed_topology, server, publishers, subscribers, trees):
-        """
-        Picks the tree having the estimated best chance of reaching
-        subscribers based on their overlap (or not) with the paths
-        each publisher's sensor data packet arrived on.
-
-        :param nx.Graph failed_topology:
-        :param str server:
-        :param List[str] publishers:
-        :param List[str] subscribers:
-        :param List[nx.Graph] trees: before failure
-        :rtype dict:
-        """
-
-        # We'll return a dict of tree choices indexed by method used
-        choices = dict()
-
-        # Build up the Successfully Traversed Topology from each publisher
-        # by determining which path the packet would take in the functioning
-        # topology and add its edges to the STT only if that path is
-        # functioning in the failed topology
-        # NOTE: because we're using undirected graphs, we have to worry about
-        # whether edge tuples are formatted (nodes ordered) properly, hence
-        # we just add edges to the set object in both orders (u,v) and (v,u)
-        # BIG OH: O(T) + O(S), where S = |STT|
-        stt = set()
-        for pub in publishers:
-            path = nx.shortest_path(self.topo.topo, pub, server, weight=DISTANCE_METRIC)
-            if self.random.random() >= self.publication_error_rate and nx.is_simple_path(failed_topology, path):
-                for u, v in zip(path, path[1:]):
-                    stt.add((u,v))
-                    stt.add((v,u))
-        stt_graph = nx.Graph(e for e in stt)
-        # NOTE: Need to ensure at least server is here as doing the is_simple_path
-        # check below causes an error if it was never added (all failed).
-        stt_graph.add_node(server)
-
-        method = 'max-overlap'
-        # IDEA: choose the tree with the most # edges overlapping the STT,
-        # which means it has the most # 'known' working links.
-        # We scale the total overlap by the number of edges in the tree
-        # to avoid preferring larger trees that unnecessarily overlap
-        # random paths that we don't care about.
-        # BIG OH: O(k(T+S)) as we assume intersection done in O(|first| + |second|) time
-        overlaps = [(len(stt.intersection(t.edges())) / float(nx.number_of_edges(t)),
-                     random.random(), t) for t in trees]
-        choices[method] = max(overlaps)[2]
-
-        method = 'min-missing'
-        # IDEA: choose the tree with the lease # edges that haven't been
-        # validated as 'currently functioning' by the publishers'
-        # packets' paths, which lessens the probability that a link of
-        # unknown status will have failed.
-        # We use the size of a tree as a tie-breaker (prefer smaller ones)
-        # BIG OH: O(k(T+S))
-        missing = [(len(set(t.edges()) - stt), nx.number_of_edges(t), random.random(), t) for t in trees]
-        choices[method] = min(missing)[3]
-
-        method = 'max-reachable'
-        # IDEA: choose the tree with the most # reachable destinations,
-        # as estimated by checking whether the path taken to each
-        # destination is validated as 'currently functioning' by the STT
-        # BIG OH (this implementation): O(S) + O(dijkstra(t)) + O(D) for each K = K(O(S+TlogT+T) + O(D)) = O(K(S+TlogT))
-        #   -- if we do whole computation each time and were to make use of all-pairs paths,
-        #      which this implementation does not.  Here's a better possible running time:
-        # BIG OH (using intersect): O(K(T+S))
-        #   -- take intersection of each T and STT: do a BFS on that for free (linear in size of intersection),
-        #      outputting which subs reachable in that BFS starting at the root. The size of each tree's output
-        #      is that tree's "reachability".
-        dests_reachable = []
-        for tree in trees:
-            this_reachability = 0
-            for sub in subscribers:
-                path = nx.shortest_path(tree, server, sub, weight=DISTANCE_METRIC)
-                if nx.is_simple_path(stt_graph, path):
-                    this_reachability += 1
-            dests_reachable.append((this_reachability, random.random(), tree))
-        best = max(dests_reachable)
-        choices[method] = best[2]
-
-        method = 'importance'
-        # IDEA: essentially a hybrid of max-overlap and max-reachable.
-        # Instead of just counting # edges overlapping, count total
-        # 'importance' of overlapping edges where the importance is
-        # the # destination-paths traversing this edge.
-        # BIG-OH for a revised intersection-based version:
-        # O(K(T+S)) by basically pre-computing the 'importance' of each tree edge
-        #      via BFS/DFS where we count #children for each node
-        importance = []
-        for tree in trees:
-            # We'll use max-flow to find how many paths on each edge
-            sink = "__choose_best_trees_sink_node__"
-            for sub in subscribers:
-                tree.add_edge(sub, sink, capacity=1)
-            flow_value, flow = nx.maximum_flow(tree, server, sink)
-            assert(flow_value == len(subscribers))  # else something wrong
-            tree.remove_node(sink)
-
-            # For every 'up' edge, count the flow along it as its importance.
-            # Also divide by the total importance to avoid preferring larger trees
-            this_importance = 0
-            total_importance = 0.0
-            for u, vd in flow.items():
-                for v, f in vd.items():
-                    if v == sink:
-                        continue
-                    if (u, v) in stt:
-                        this_importance += f
-                    total_importance += f
-            importance.append((this_importance / total_importance, random.random(), tree))
-
-        choices[method] = max(importance)[2]
-
-        return choices
-
-    def run_experiment(self, failed_nodes, failed_links, server, publishers, subscribers, trees):
+    def run_experiment(self, failed_nodes, failed_links, server, publishers, subscribers):
         """Check what percentage of subscribers are still reachable
         from the server after the failure model has been applied
         by removing the failed_nodes and failed_links from each tree
@@ -385,11 +250,10 @@ class SmartCampusNetworkxExperiment(object):
         each publisher's sensor data packet arrived on.
 
         :param List[str] failed_nodes:
-        :param List[str] failed_edges:
+        :param List[str] failed_links:
         :param str server:
         :param List[str] publishers:
         :param List[str] subscribers:
-        :param List[nx.Graph] trees:
         :rtype dict:
         """
 
@@ -410,6 +274,31 @@ class SmartCampusNetworkxExperiment(object):
         # we'll record reachability for various choices of trees
         result[heuristic] = dict()
         failed_topology = self.get_failed_topology(self.topo.topo, failed_nodes, failed_links)
+
+        # start up and configure RideD middleware for building/choosing trees
+        rided = RideD(self.topo, server, self.ntrees, construction_algorithm=self.mcast_heuristic[0],
+                      const_args=self.mcast_heuristic[1:])
+        # HACK: since we never made an actual API for the controller, we just do this manually...
+        for s in subscribers:
+            rided.add_subscriber(s, PUBLICATION_TOPIC)
+        # Build up the Successfully Traversed Topology (STT) from each publisher
+        # by determining which path the packet would take in the functioning
+        # topology and add its edges to the STT only if that path is
+        # functioning in the failed topology.
+        # BIG OH: O(T) + O(S), where S = |STT|
+        for pub in publishers:
+            path = nx.shortest_path(self.topo.topo, pub, server, weight=DISTANCE_METRIC)
+            rided.set_publisher_route(pub, path)
+            if self.random.random() >= self.publication_error_rate and nx.is_simple_path(failed_topology, path):
+                rided.notify_publication(pub)
+
+        # build and get multicast trees
+        trees = rided.build_mdmts()[PUBLICATION_TOPIC]
+        # record which heuristic we used
+        for tree in trees:
+            tree.graph['heuristic'] = self.get_mcast_heuristic_name()
+            # sanity check that the returned trees reach all destinations
+            assert all(nx.has_path(tree, server, sub) for sub in subscribers)
 
         # ORACLE
         # First, use a copy of whole topology as the 'oracle' heuristic,
@@ -446,8 +335,11 @@ class SmartCampusNetworkxExperiment(object):
         # CHOSEN
         # Finally, check the tree chosen by the edge server heuristic(s)
         # for having the best estimated chance of data delivery
-        best_trees = self.choose_best_trees(failed_topology, server, publishers, subscribers, trees)
-        for choice_method, best_tree in best_trees.items():
+        choices = dict()
+        for method in RideD.TREE_CHOOSING_HEURISTICS:
+            choices[method] = rided.get_best_mdmt(PUBLICATION_TOPIC, method)
+
+        for choice_method, best_tree in choices.items():
             best_tree_idx = trees.index(best_tree)
             reach = reaches[best_tree_idx]
             result[heuristic]['%s-chosen' % choice_method] = reach
@@ -501,7 +393,8 @@ class SmartCampusNetworkxExperiment(object):
         subs_reachable_by_tree.append(float(len(all_subscribers_reachable)) / len(subscribers))
         return subs_reachable_by_tree
 
-    def get_failed_topology(self, topo, failed_nodes, failed_links):
+    @staticmethod
+    def get_failed_topology(topo, failed_nodes, failed_links):
         """Returns a copy of the graph topo with all of the failed nodes
         and links removed."""
         # since we froze the graph we can't just use .copy()

@@ -88,7 +88,7 @@ class SmartCampusFailureModel(object):
                         help='''failure model to apply for choosing component failures (default=%(default)s)''')
 
 if __name__ == '__main__':
-    from networkx_sdn_topology import NetworkxSdnTopology
+    from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
     st = NetworkxSdnTopology()
     fail = SmartCampusFailureModel()
 

@@ -16,7 +16,7 @@ class NetworkxSdnTopology(SdnTopology):
     a particular data model and API (e.g. SDN controller, generic graph, etc.)
     to the SdnTopology tool."""
 
-    def __init__(self, filename='campus_topo.json'):
+    def __init__(self, filename='topos/campus_topo.json'):
         """@:param filename - name of Networkx JSON-formatted topology file to read
          and initialize network topology from."""
         super(NetworkxSdnTopology, self).__init__()
