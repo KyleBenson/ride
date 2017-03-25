@@ -1,0 +1,7 @@
+varied trees (16t_0.10f_400s_200p) took 480 min
+varied fprob (4t_0.05f_400s_200p) took 600 min with only 3 procs
+diverse-paths seems to choke on higher (>800) subscribers
+8t_0.05f_400s_200p_steiner[max/double] took 111mins
+to explore all 3 interconnectivity-varied topos took 244mins
+50 runs of ntrees(and 2 fprobs)/topo sizes took 1415 minutes
+1114m58.668s for 400/800subs
