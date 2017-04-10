@@ -1,0 +1,215 @@
+{
+    "directed": false, 
+    "graph": {
+        "name": "Campus Network Topology"
+    }, 
+    "links": [
+        {
+            "latency": 6.053950951047918, 
+            "source": 0, 
+            "target": 9, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 5.036621259779492, 
+            "source": 1, 
+            "target": 9, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 8.860459604156683, 
+            "source": 2, 
+            "target": 10, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.160241864280827, 
+            "source": 3, 
+            "target": 9, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 6.98770669122502, 
+            "source": 4, 
+            "target": 10, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.983180913573662, 
+            "source": 5, 
+            "target": 17, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 2.3446489632000396, 
+            "source": 6, 
+            "target": 13, 
+            "weight": 1.4
+        }, 
+        {
+            "latency": 2.5862896465787495, 
+            "source": 6, 
+            "target": 14, 
+            "weight": 1.4
+        }, 
+        {
+            "latency": 6.991884177491968, 
+            "source": 7, 
+            "target": 17, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.161106510621944, 
+            "source": 8, 
+            "target": 17, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 10.195499597536587, 
+            "source": 9, 
+            "target": 12, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 8.047262912700386, 
+            "source": 9, 
+            "target": 13, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 5.82038615195013, 
+            "source": 9, 
+            "target": 10, 
+            "weight": 1.8
+        }, 
+        {
+            "latency": 9.123294096287687, 
+            "source": 10, 
+            "target": 12, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 6.822285598197972, 
+            "source": 10, 
+            "target": 11, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 14.548853952076776, 
+            "source": 10, 
+            "target": 14, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 13.942061850652795, 
+            "source": 12, 
+            "target": 13, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 14.355267682316967, 
+            "source": 12, 
+            "target": 14, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 10.585785927660988, 
+            "source": 12, 
+            "target": 15, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 27.395103008623536, 
+            "source": 12, 
+            "target": 16, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 19.88378580320685, 
+            "source": 13, 
+            "target": 14, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 19.479281260609675, 
+            "source": 13, 
+            "target": 15, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 11.070135627271142, 
+            "source": 14, 
+            "target": 15, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 25.250800758393503, 
+            "source": 14, 
+            "target": 16, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 27.618790084077112, 
+            "source": 16, 
+            "target": 17, 
+            "weight": 1.0
+        }
+    ], 
+    "multigraph": false, 
+    "nodes": [
+        {
+            "name": "h1-b0"
+        }, 
+        {
+            "name": "h0-b0"
+        }, 
+        {
+            "name": "h0-b1"
+        }, 
+        {
+            "name": "h2-b0"
+        }, 
+        {
+            "name": "h2-b1"
+        }, 
+        {
+            "name": "h2-m0"
+        }, 
+        {
+            "name": "s0"
+        }, 
+        {
+            "name": "h1-m0"
+        }, 
+        {
+            "name": "h0-m0"
+        }, 
+        {
+            "name": "b0"
+        }, 
+        {
+            "name": "b1"
+        }, 
+        {
+            "name": "h1-b1"
+        }, 
+        {
+            "name": "c3"
+        }, 
+        {
+            "name": "c2"
+        }, 
+        {
+            "name": "c1"
+        }, 
+        {
+            "name": "c0"
+        }, 
+        {
+            "name": "d0"
+        }, 
+        {
+            "name": "m0"
+        }
+    ]
+}
