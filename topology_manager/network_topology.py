@@ -36,6 +36,16 @@ class NetworkTopology(object):
         unless necessary.  Supports various algorithms, several of which may not
         work for k>2."""
 
+        # Need to sanitize the input to ensure that we know about all of the given
+        # destinations or else we'll cause an exception.
+        old_dests = destinations
+        destinations = []
+        for d in old_dests:
+            if d not in self.topo:
+                log.warning("Skipping unknown destination %s in requested multicast tree" % d)
+            else:
+                destinations.append(d)
+
         if algorithm == 'steiner':
             """Default algorithm implemented by networkx that uses sum of
             shortest paths 2*D approximation.  Currently not available in
