@@ -377,6 +377,12 @@ class RideD(object):
         self.subscribers.setdefault(topic_id, []).append(subscriber)
 
     def get_subscribers_for_topic(self, topic_id):
+        """
+        Return a list of all subscribers registered for the given topic.
+        :param str topic_id:
+        :raises KeyError: if the topic isn't registered
+        :return List[str]:
+        """
         return self.subscribers[topic_id]
 
     def set_publisher_route(self, publisher_id, route):

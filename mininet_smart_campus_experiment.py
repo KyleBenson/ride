@@ -408,10 +408,19 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         log.info("*** Experiment complete!\n")
 
         # need to check if the programs have finished before we exit mininet!
-        for p in self.popens:
+        # First, we check the server to see if it even ran properly.
+        ret = self.popens[0].wait()
+        if ret != 0:
+            from seismic_warning_test.seismic_server import SeismicServer
+            if ret == SeismicServer.EXIT_CODE_NO_SUBSCRIBERS:
+                log.error("Server proc exited due to no reachable subscribers: this experiment is a wash!")
+                # TODO: handle this error appropriately: mark results as junk?
+            else:
+                log.error("Server proc exited with code %d" % self.popens[0].returncode)
+        for p in self.popens[1:]:
             ret = p.wait()
             if ret is not None and ret != 0:
-                log.error("Host proc exited with code %d" % p.returncode)
+                log.error("Client proc exited with code %d" % p.returncode)
 
         # TODO: make this optional (maybe accessible via ctrl-c?)
         CLI(self.net)
