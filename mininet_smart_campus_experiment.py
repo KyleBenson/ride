@@ -299,8 +299,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.setup_traffic_generators()
         self.setup_seismic_test(publishers, subscribers, server)
 
-        # apply actual failure model
-        # TODO: schedule these to fail when the earthquake hits so there isn't time for the topology to update on the controller, which would skew the results incorrectly
+        # Apply actual failure model: we schedule these to fail when the earthquake hits
+        # so there isn't time for the topology to update on the controller,
+        # which would skew the results incorrectly.
         for link in failed_links:
             self.net.configLinkStatus(link[0], link[1], 'down')
         for node in failed_nodes:
@@ -391,7 +392,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         assert server_ip != '127.0.0.1', "ERROR: server.IP() returns localhost!"
         for client in sensors.union(subscribers):
             client_id = client.name
-            # TODO: configure raw output directory
             cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d" % \
                   ("-O" if OPTIMISED_PYTHON else "", client_id, delay, quit_time)
             if client in sensors:

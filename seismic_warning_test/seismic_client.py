@@ -21,7 +21,7 @@ from threading import Timer
 
 # Buffer size for receiving packets
 BUFF_SIZE = 4096
-
+DEFAULT_OUTPUT_FILE_BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "events_rcvd")
 
 def parse_args(args):
     ##################################################################################
@@ -41,9 +41,9 @@ def parse_args(args):
     parser.add_argument('--listen', '-l', action="store_true",
                         help='''client will act as a subscriber and listen for incoming messages
                         as well as output statistics at the end.''')
-    parser.add_argument('--file', '-f', type=str, default="output_events_rcvd",
+    parser.add_argument('--file', '-f', type=str, default=DEFAULT_OUTPUT_FILE_BASE,
                         help='''file to write statistics on when picks were sent/recvd to
-                        (Note that it appends a '_' and the id to this string)''')
+                        (default=%(default)s_$ID.json)''')
     parser.add_argument('--id', type=str, default=None,
                         help='''unique identifier of this client (used for
                          naming output files and including in event message;
@@ -51,18 +51,19 @@ def parse_args(args):
 
     parser.add_argument('--delay', '-d', type=float, default=1,
                         help='''delay (in secs) before sending the event
-                        (when the simulated earthquake occurs)''')
+                        (when the simulated earthquake occurs; default=%(default)s)''')
     parser.add_argument('--retransmit', '-r', type=float, default=2,
-                        help='''delay (in secs) before resending the event for reliability''')
+                        help='''delay (in secs) before resending the event for reliability (default=%(default)s)''')
     parser.add_argument('--quit_time', '-q', type=float, default=10,
-                        help='''delay (in secs) before quitting and recording statistics''')
+                        help='''delay (in secs) before quitting and recording statistics (default=%(default)s)''')
 
     parser.add_argument('--recv_port', type=int, default=9998,
-                        help='''UDP port number from which data should be received''')
+                        help='''UDP port number from which data should be received (default=%(default)s)''')
     parser.add_argument('--send_port', type=int, default=9999,
-                        help='''UDP port number to which data should be sent''')
+                        help='''UDP port number to which data should be sent (default=%(default)s)''')
     parser.add_argument('--address', '-a', type=str, default=None,
-                        help='''If specified, enables sending sensor data to the given IP address''')
+                        help='''If specified, client acts as a publisher and sends sensor data
+                        to the given IP address (default=%(default)s)''')
 
     return parser.parse_args(args)
 
@@ -168,7 +169,7 @@ class SeismicClient(asyncore.dispatcher):
         """Records the received picks for consumption by another script
         that will analyze the resulting performance."""
 
-        fname = "_".join([self.config.file, self.config.id])
+        fname = "_".join([self.config.file, self.config.id]) + '.json'
         with open(fname, "w") as f:
             f.write(json.dumps(self.events_rcvd))
 
