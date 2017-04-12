@@ -34,6 +34,8 @@ WITH_LOGS = True  # output seismic client/server stdout to a log file
 NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
 # TODO: use a different address base...
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
+# When True, runs host processes with -00 command for optimized python code
+OPTIMISED_PYTHON = False
 
 class MininetSmartCampusExperiment(SmartCampusExperiment):
     """
@@ -357,7 +359,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         log.info("Seismic server on host %s" % server.name)
 
-        cmd = "python seismic_warning_test/seismic_server.py -a %s --quit_time %d" % (' '.join(self.mcast_address_pool), quit_time)
+        cmd = "python %s seismic_warning_test/seismic_server.py -a %s --quit_time %d" % \
+              ("-O" if OPTIMISED_PYTHON else "", ' '.join(self.mcast_address_pool), quit_time)
         # HACK: we pass the static lists of publishers/subscribers via cmd line so as to avoid having to build an
         # API server for RideD to pull this info from.  ENHANCE: integrate a pub-sub broker agent API on controller.
         cmd += " --subs %s --pubs %s" % (' '.join(self.get_host_dpid(h) for h in subscribers),
@@ -389,7 +392,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         for client in sensors.union(subscribers):
             client_id = client.name
             # TODO: configure raw output directory
-            cmd = "python seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d" % (client_id, delay, quit_time)
+            cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d" % \
+                  ("-O" if OPTIMISED_PYTHON else "", client_id, delay, quit_time)
             if client in sensors:
                 cmd += ' -a %s' % server_ip
             if client in subscribers:
