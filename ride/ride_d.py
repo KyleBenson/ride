@@ -1,9 +1,19 @@
 # Resilient IoT Data Exchange - Dissemination middleware
+import argparse
+
+import topology_manager
+
+CLASS_DESCRIPTION =  """Middleware layer for sending reliable IoT event notifications to a group of subscribers.
+    It configures and chooses from multiple Maximally-Disjoint Multicast Trees (MDMTs) based on
+    knowledge of network state.  This state is based on recently received publications and the
+    routes their packets took, which all comprise the Successfully Traversed Topology (STT)."""
+
 import random
 
 from stt_manager import SttManager
 import networkx as nx
 from topology_manager.sdn_topology import SdnTopology
+import logging as log
 
 class RideD(object):
     """
@@ -31,32 +41,45 @@ class RideD(object):
 
     TREE_CHOOSING_HEURISTICS = ('max-overlap', 'min-missing', 'max-reachable', 'importance')
 
-    def __init__(self, topology_manager, dpid, ntrees=2, choosing_heuristic='importance',
-                 construction_algorithm='red-blue', const_args=()):
+    def __init__(self, topology_manager, dpid, addresses, ntrees=2, tree_choosing_heuristic='importance',
+                 tree_construction_algorithm=('red-blue',), **kwargs):
         """
         :param SdnTopology topology_manager: used as adapter to SDN controller for
          maintaining topology and multicast tree information
-        :param dpid: the data plane ID of the service this m/w runs on.  This will MAY
+        :param dpid: the data plane ID of the server this m/w runs on.  This MAY
         be some routable network address recognized by the SDN controller and MUST be included
         in the topology_manager.  It's the root of the multicast trees.  NOTE: a server
         with multiple interfaces will have to pick one of these (if using addresses for dpid),
         but you should configure your network in such a way that that the dpid can route to any
         of the interfaces along the best available path (e.g. add another IP address exposed on
         all interfaces, which we assume for a VM running the actual server).
+        :param list[str] addresses: pool of IP addresses that we'll assign to MDMTs (NOTE: RIDE-D
+        assumes that these addresses are routable by the networking stack!
+          Use 'ip route [add]' to verify/configure).
         :param int ntrees:
-        :param str choosing_heuristic: which MDMT-choosing heuristic to use
-        :param str construction_algorithm: which MDMT-construction algorithm to use
-        :param tuple const_args: arguments to MDMT construction algorithm
+        :param str tree_choosing_heuristic: which MDMT-choosing heuristic to use
+        :param tuple[str] tree_construction_algorithm: which MDMT-construction algorithm to use (pos 0)
+        followed by any args to that algorithm
+        :param kwargs: ignored (just present so we can pass args from other classes without causing errors)
         """
         super(RideD, self).__init__()
+
+        if len(addresses) != ntrees:
+            raise ValueError("Must specify the same number of addresses as requested #multicast trees!")
+
         self.stt_mgr = SttManager()
 
         self.topology_manager = topology_manager
+        # ENHANCE: rather than manually specifying the DPID, we could iterate over the hosts in the
+        # topology and find the one corresponding to our network stack.  However, the current method
+        # is not only easier and less error-prone, but running part of RIDE-D on the SDN controller
+        # would require directly specifying the server's ID (or having it provide this through some API) anyway.
         self.dpid = dpid
+        self.address_pool = addresses
         self.ntrees = ntrees
-        self.choosing_heuristic = choosing_heuristic
-        self.construction_algorithm = construction_algorithm
-        self.const_args = const_args
+        self.choosing_heuristic = tree_choosing_heuristic
+        self.construction_algorithm = tree_construction_algorithm[0]
+        self.const_args = tree_construction_algorithm[1:]
 
         # maps topic IDs to MDMTs, which are NetworkX graphs having an
         # attribute storing the address (IPv4?) of that tree
@@ -67,6 +90,62 @@ class RideD(object):
 
         # maps topic IDs to the subscribers
         self.subscribers = {}
+
+    @classmethod
+    def get_arg_parser(cls):
+        """
+        Argument parser that can be combined with others when this class is used in a script.
+        Need to not add help options to use that feature, though.
+        :param tuple[argparse.ArgumentParser] parents:
+        :return argparse.ArgumentParser arg_parser:
+        """
+        arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION,
+                                             parents=(topology_manager.sdn_topology.SdnTopology.get_arg_parser(),),
+                                             add_help=False)
+
+        # Algorithmic configuration
+        arg_parser.add_argument('--ntrees', '-t', type=int, default=2,
+                                help='''number of redundant multicast trees to build (default=%(default)s)''')
+        arg_parser.add_argument('--mcast-construction-algorithm', type=str, default=('steiner',), nargs='+',
+                                dest='tree_construction_algorithm',
+                                help='''heuristic algorithm for building multicast trees.  First arg is the heuristic
+                                name; all others are passed as args to the heuristic. (default=%(default)s)''')
+        arg_parser.add_argument('--choosing-heuristic', '-c', default='importance', dest='tree_choosing_heuristic',
+                                help='''multicast tree choosing heuristic to use (default=%(default)s)''')
+
+        # Networking-related configurations
+        arg_parser.add_argument('--dpid', type=str, default='127.0.0.1',
+                                help='''Data Plane ID (DPID) for the server, which is a unique identifier
+                                (typically IP or MAC address) used by the SDN controller to identify
+                                and address packets to the server on which RideD is running. (default=%(default)s)''')
+        arg_parser.add_argument('--addresses', '-a', type=str, nargs='+', default=("127.0.0.1",),
+                            help='''IP address(es) pool for the MDMTs. default=%(default)s''')
+
+        return arg_parser
+
+    @classmethod
+    def build_from_args(cls, args, pre_parsed=False):
+        """Constructs from command line arguments.
+        :param pre_parsed: if False, will first parse the given args using the ArgumentParser;
+        if True, assumes args is the result of such a parsing
+        """
+
+        if not pre_parsed:
+            args = cls.get_arg_parser().parse_args(args)
+
+        # Configure and connect topology adapter before passing to constructor
+        if args.topology_adapter == 'onos':
+            from topology_manager.onos_sdn_topology import OnosSdnTopology
+            topo_mgr = OnosSdnTopology(ip=args.controller_ip, port=args.controller_port)
+        elif args.topology_adapter == 'floodlight':
+            from topology_manager.floodlight_sdn_topology import FloodlightSdnTopology
+            topo_mgr = FloodlightSdnTopology(ip=args.controller_ip, port=args.controller_port)
+        else:
+            raise ValueError("unrecognized SdnTopology type: %s" % args.topology_adapter)
+
+        # convert to plain dict
+        args = vars(args)
+        return cls(topology_manager=topo_mgr, **args)
 
     @staticmethod
     def get_address_for_mdmt(mdmt):
@@ -195,17 +274,36 @@ class RideD(object):
         else:
             raise ValueError("Unrecognized heuristic method type requested: %s" % heuristic)
 
-    def notify_publication(self, publisher, at_time=None):
+    def notify_publication(self, publisher, at_time=None, id_type='dpid'):
         """
         Records that a publication successfully arrived at time at_time.
 
         :param str publisher: publisher identifier (e.g. IP Address)
         :param Datetime at_time: time the publication was received
+        :param str id_type: one of ('ip', 'mac', 'dpid', 'id') that represents what type of identifier publisher is
+         (NOTE: 'id' is an application-layer concept and 'dpid' is the ID that came from the SDN controller)
         :return:
         """
+        log.debug("Received publication notification about publisher %s" % publisher)
 
-        route = self.publisher_routes[publisher]
-        return self.stt_mgr.route_update(route, at_time)
+        # First, convert publisher ID to a DPID
+        if id_type == 'ip':
+            publisher = self.topology_manager.get_host_by_ip(publisher)
+        elif id_type == 'mac':
+            publisher = self.topology_manager.get_host_by_mac(publisher)
+        elif id_type == 'dpid':
+            pass  # already correct
+        elif id_type == 'id':
+            raise NotImplementedError("Currently have no way of gathering application-layer publisher ID")
+        else:
+            raise ValueError("Unrecognized id_type: %s" % id_type)
+
+        try:
+            route = self.publisher_routes[publisher]
+            return self.stt_mgr.route_update(route, at_time)
+        except KeyError:
+            # ignore as we just don't know about this publisher
+            pass
 
     def build_mdmts(self):
         """Build redundant multicast trees over the specified subscribers using
@@ -216,9 +314,35 @@ class RideD(object):
             # ENHANCE: include weight?
             trees = self.topology_manager.get_redundant_multicast_trees(
                 source, subs, self.ntrees, algorithm=self.construction_algorithm, heur_args=self.const_args)
+
+            for address, t in zip(self.address_pool, trees):
+                self.set_address_for_mdmt(t, address)
+
             self.mdmts[topic] = trees
 
         return self.mdmts
+
+    def install_mdmts(self, mdmts):
+        """
+        Installs the given MDMTs by pushing static flow rules to the SDN controller.
+        :param List[nx.Graph] mdmts:
+        """
+
+        for i,t in enumerate(mdmts):
+            ip_address = self.get_address_for_mdmt(t)
+            # TODO: need anything else here?  ip_proto=udp??? , ipv4_src=self.????
+            matches = self.topology_manager.build_matches(ipv4_dst=ip_address)
+            groups, flow_rules = self.topology_manager.build_flow_rules_from_multicast_tree(t, self.dpid, matches, group_id=i+10)
+            for g in groups:
+                self.topology_manager.install_group(g)
+            for fr in flow_rules:
+                # ENHANCE: handle errors
+                # ENHANCE: should store this state e.g. group_id for future modification
+                self.topology_manager.install_flow_rule(fr)
+
+            # Host needs manual routes for the multicast addresses that will send packets out the proper interface.
+            # TODO: maybe we just do this in mininet experiment? add doc to say we expect the route is setup
+            # server.cmd("ip route add 224.0.0.0/4 dev %s" % intf)
 
     def update(self):
         """
@@ -236,18 +360,10 @@ class RideD(object):
         # We'd also need to extend the REST APIs to support updating the topology rather than getting a whole new one.
         # We'd also have to handle dynamic pub/sub join/leave in this class
 
-        # self.build_mdmts()
+        # trees = self.build_mdmts()
+        # self.install_mdmts(trees)
         # return
-        # # TODO: assign ip addresses
-        # # TODO: maybe wrap the below in a check to see if this is actually a live TopoMgr?  or just have a install multicast rules function that no-ops...
-        # # install flow rules for each tree
-        # for t in trees:
-        #     matches = ????
-        #     flow_rules = self.topology_manager.get_flow_rules_from_multicast_tree(t, source, matches)  # group_id????
-        #     for fr in flow_rules:
-        #         # TODO: ensure we don't need to separately install group_rules?  if so we need a refactor of the SdnTopology...
-        #         # ENHANCE: handle errors
-        #         self.topology_manager.install_flow_rule(fr)
+        # # TODO: maybe wrap this in a check to see if this is actually a live TopoMgr?  or just have a install multicast rules function that no-ops in an overridden version...
 
     def add_subscriber(self, subscriber, topic_id):
         """
@@ -265,9 +381,10 @@ class RideD(object):
 
     def set_publisher_route(self, publisher_id, route):
         """
-        Adds the specified subscriber host ID to the list of currently subscribed hosts,
-        which is needed for calculating the multicast trees.
-        :param publisher_id:
+        Adds the specified publisher host ID and its route within the local network
+        to the list of currently publishing hosts,
+        which is needed for calculating the STT.
+        :param publisher_id: publisher's DPID
         :param list route: Each network node hop on the route including source and destination
         :return:
         """
@@ -275,3 +392,6 @@ class RideD(object):
         self.publisher_routes[publisher_id] = route
 
     # TODO: del_subscriber and del_publisher
+    # ENHANCE: rather than having to manually pass the publisher/subscriber IP addresses
+    # to RIDE-D, we could look them up through the topology_manager.  Of course, we'd still
+    # need some ID for them...

@@ -230,7 +230,6 @@ def test_multiple_mcast_trees(st):
 
     clear_tables_and_wait()
 
-    # TODO: >1
     ntrees = 2
     destinations = [id_for_host(2), id_for_host(9), id_for_host(15)]
     root = id_for_host(1)
@@ -282,7 +281,6 @@ def test_flow_helpers(st):
         assert a2 == [{"type": "L2MODIFICATION", "subtype": "ETH_DST", "mac": "00:11:22:33:44:55"}, {"type": "OUTPUT", "port": "2"}]
 
         # matches
-        # TODO: double-check that ONOS accepts ints here
         m1 = st.build_matches(ipv4_src="10.0.0.3", in_port=3)
         # NOTE: need to sort since kwargs aren't ordered
         assert sorted(m1) == sorted([{"type": "IN_PORT", "port": 3}, {"type": "IPV4_SRC", "ip": "10.0.0.3/32"},

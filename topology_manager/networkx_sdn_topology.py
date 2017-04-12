@@ -19,15 +19,12 @@ class NetworkxSdnTopology(SdnTopology):
     def __init__(self, filename='topos/campus_topo.json'):
         """@:param filename - name of Networkx JSON-formatted topology file to read
          and initialize network topology from."""
-        super(NetworkxSdnTopology, self).__init__()
+        super(NetworkxSdnTopology, self).__init__(None)
         self.filename = filename
         self.build_topology(filename)
 
     def get_info(self):
         return nx.info(self.topo)
-
-    def get_hosts(self):
-        return [n for n in self.topo.node if self.is_host(n)]
 
     def get_servers(self):
         return [n for n in self.topo.node if self.is_server(n)]

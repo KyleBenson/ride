@@ -3,7 +3,7 @@ import numbers
 from pprint import pprint
 import re
 
-STATISTICS_DESCRIPTION = '''Gathers statistics from the campus_net_experiment.py output files in order to determine how
+STATISTICS_DESCRIPTION = '''Gathers statistics from the networkx_smart_campus_experiment.py output files in order to determine how
 resilient different multicast tree-generating algorithms are under various scenarios.
 Also handles printing them in an easily-read format as well as creating plots.'''
 

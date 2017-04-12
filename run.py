@@ -16,7 +16,7 @@ from multiprocessing.managers import ValueProxy
 import signal
 from time import sleep
 import traceback
-from campus_net_experiment import SmartCampusNetworkxExperiment
+from networkx_smart_campus_experiment import NetworkxSmartCampusExperiment
 from failure_model import SmartCampusFailureModel
 from itertools import chain
 
@@ -204,7 +204,7 @@ def getargs(output_dirname='', **kwargs):
     topo_fname = _args['topo'][1].split('_')[2].split('.')[0]
     _args['output_filename'] = os.path.join(output_dirname, _args.get('output_filename', 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%0.2fe.json' % \
                                                                       (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
-                                                                       SmartCampusNetworkxExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
+                                                                       NetworkxSmartCampusExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
                                                                        topo_fname, _args.get('publication_error_rate', 0))))
     return _args
 
@@ -264,7 +264,7 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
     if not testing:
         try:
             failure_model = SmartCampusFailureModel(**kwargs)
-            exp = SmartCampusNetworkxExperiment(failure_model=failure_model, **kwargs)
+            exp = NetworkxSmartCampusExperiment(failure_model=failure_model, **kwargs)
             exp.run_all_experiments()
         except BaseException as e:
             err = (e, traceback.format_exc())

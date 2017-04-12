@@ -176,7 +176,7 @@ class SdnTopology(NetworkTopology):
         raise NotImplementedError
 
     def get_hosts(self, attributes=False):
-        return (n for n in self.topo.nodes(data=attributes) if self.is_host(n[0] if attributes else n))
+        return [n for n in self.topo.nodes(data=attributes) if self.is_host(n[0] if attributes else n)]
 
     def get_host(self, host):
         return self.topo.node[host]
