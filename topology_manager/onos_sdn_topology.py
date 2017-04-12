@@ -1,5 +1,4 @@
 import logging as log
-log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 from rest_api.onos_api import OnosRestApi
 from sdn_topology import SdnTopology
@@ -11,9 +10,8 @@ class OnosSdnTopology(SdnTopology):
     installing flow rules."""
 
     def __init__(self, ip='localhost', port='8181'):
-        super(OnosSdnTopology, self).__init__()
-
-        self.rest_api = OnosRestApi(ip, port)
+        rest_api = OnosRestApi(ip, port)
+        super(OnosSdnTopology, self).__init__(rest_api)
 
         self.build_topology()
 
@@ -77,7 +75,7 @@ class OnosSdnTopology(SdnTopology):
 
     # Flow rule helper functions
 
-    def get_flow_rule(self, switch, matches, actions, **kwargs):
+    def build_flow_rule(self, switch, matches, actions, **kwargs):
         """Builds a flow rule that can be installed on the corresponding switch via the RestApi.
 
         @:param switch - the DPID of the switch this flow rule corresponds with
@@ -87,12 +85,12 @@ class OnosSdnTopology(SdnTopology):
 
         @:return rule - dict representing the flow rule that can be installed on the switch"""
 
-        rule = self.__get_flow_rule(switch, **kwargs)
+        rule = self.__build_flow_rule(switch, **kwargs)
         rule['treatment'] = {'instructions': actions}
         rule['selector'] = {'criteria': matches}
         return rule
 
-    def get_matches(self, **kwargs):
+    def build_matches(self, **kwargs):
         """Properly format (for the particular controller) OpenFlow
         packet matching criteria and return the result.
 
@@ -101,9 +99,12 @@ class OnosSdnTopology(SdnTopology):
          (use these exact spellings as a user, but be prepared to convert
          them to your controller's proper spelling if deriving this class)
         @:return matches - object representing matching criteria
-        that can be passed to get_flow_rule(...) in order to format it
+        that can be passed to build_flow_rule(...) in order to format it
         properly for REST API
         """
+
+        # validate eth_type's presence if we're using IP
+        kwargs = super(OnosSdnTopology, self).build_matches(**kwargs)
 
         # ONOS uses a weird REST API format for matches in which they
         # include a key name for the value specified.  Hence, we need
@@ -163,7 +164,7 @@ class OnosSdnTopology(SdnTopology):
         matches = [{"type": k.upper(), key_names[k.upper()]: v} for k,v in kwargs.items()]
         return matches
 
-    def get_actions(self, *args):
+    def build_actions(self, *args):
         actions = []
         for a in args:
             if isinstance(a, str) or len(a) == 1:
@@ -173,7 +174,7 @@ class OnosSdnTopology(SdnTopology):
                 value = a[1]
                 if action_type.startswith("set_"):
                     if "ip" in action_type:
-                        _type = "L4MODIFICATION"
+                        _type = "L3MODIFICATION"
                         value_name = "ip"
                     elif "eth" in action_type:
                         _type = "L2MODIFICATION"
@@ -203,7 +204,7 @@ class OnosSdnTopology(SdnTopology):
 
         return actions
 
-    def get_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
+    def build_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
         bucket = {'treatment': {'instructions': actions}}
         if weight is not None:
             bucket['weight'] = weight
@@ -213,11 +214,13 @@ class OnosSdnTopology(SdnTopology):
             bucket['watchGroup'] = str(watch_group)
         return bucket
 
-    def get_group_flow_rule(self, switch, buckets, group_id='1', group_type='ALL', **kwargs):
+    MAGIC_DELIMETER_appCookie = "0012100"
+
+    def build_group(self, switch, buckets, group_id='1', group_type='ALL', **kwargs):
         """Builds a group flow rule that can be installed on the corresponding switch via the RestApi.
 
         @:param switch - the DPID of the switch this flow rule corresponds with
-        @:param buckets - list of buckets where each bucket is formatted as returned from get_bucket(...)
+        @:param buckets - list of buckets where each bucket is formatted as returned from build_bucket(...)
         @:param type - type of group (all, indirect, select, fast_failover); defaults to 'all'
 
         @:return rule - dict representing the flow rule that can be installed on the switch"""
@@ -225,12 +228,15 @@ class OnosSdnTopology(SdnTopology):
         # These are required fields
         rule = {"type": group_type,
                 "deviceId": switch,
-                "appCookie": "SdnTopology",
-                "groupId": group_id,
+                # Required field that must be a hex string, but must also be unique.
+                # Hence, we make it a combination of the switch DPID and the group_id,
+                # both expressed in hex.
+                "appCookie": "0x%s%s%s" % (switch[3:], self.MAGIC_DELIMETER_appCookie, str(group_id)),
+                "groupId": str(group_id),  # ONOS REST API expects this as a str for some reason
                 "buckets": buckets}
         return rule
 
-    def __get_flow_rule(self, switch, **kwargs):
+    def __build_flow_rule(self, switch, **kwargs):
         """Helper function to assemble fields of a flow common between flow entry types."""
         rule = {"deviceId": switch, "isPermanent": True,
                 "priority": 10}  # priority is required so we set a default here

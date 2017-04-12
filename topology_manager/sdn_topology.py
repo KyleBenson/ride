@@ -1,13 +1,9 @@
+import argparse
 import logging as log
-
-from network_topology import NetworkTopology
-
-# TODO: specific config for module?
-#log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
-
 import json
 import networkx as nx
 
+from network_topology import NetworkTopology
 
 class SdnTopology(NetworkTopology):
     """Generates a networkx topology (undirected graph) from information
@@ -24,8 +20,12 @@ class SdnTopology(NetworkTopology):
     a particular data model and API (e.g. SDN controller, generic graph, etc.)
     to the SdnTopology tool."""
 
-    def __init__(self):
+    def __init__(self, rest_api):
+        """
+        :param rest_api.base_rest_api.BaseRestApi rest_api:
+        """
         super(SdnTopology, self).__init__()
+        self.rest_api = rest_api
 
     def build_topology(self):
         # TODO: refactor this to enable get_switches, get_hosts, get_links, etc? add_ funcs should return the component
@@ -51,9 +51,22 @@ class SdnTopology(NetworkTopology):
         log.info("Final %d nodes: %s" % (self.topo.number_of_nodes(), list(self.topo.nodes(data=True))))
         log.info("Final %d edges: %s" % (self.topo.number_of_edges(), list(self.topo.edges(data=True))))
 
+    @classmethod
+    def get_arg_parser(cls):
+        arg_parser = argparse.ArgumentParser(add_help=False)
+
+        arg_parser.add_argument('--ip', default='127.0.0.1', dest='controller_ip',
+                                help='''IP address of SDN controller we'll use (default=%(default)s)''')
+        arg_parser.add_argument('--port', default=8181, type=int, dest='controller_port',
+                                help='''port number of SDN controller's REST API that we'll use (default=%(default)s)''')
+        arg_parser.add_argument('--topology-adapter', default='onos', dest='topology_adapter',
+                                help='''type of SdnTopology to use as the SDN Controller adapter (default=%(default)s)''')
+
+        return arg_parser
+
     # Generic flow rule generating functions based on the topology
 
-    def get_flow_rules_from_path(self, path):
+    def build_flow_rules_from_path(self, path):
         """Converts a simple path to a list of flow rules that can then
         be installed in the corresponding switches.  The flow rules simply
         match based in in_port."""
@@ -69,13 +82,13 @@ class SdnTopology(NetworkTopology):
             in_port, _ = self.get_ports_for_nodes(switch, src)
             out_port, _ = self.get_ports_for_nodes(switch, dst)
 
-            actions = self.get_actions(("output", out_port))
-            matches = self.get_matches(in_port=in_port)
+            actions = self.build_actions(("output", out_port))
+            matches = self.build_matches(in_port=in_port)
 
-            rules.append(self.get_flow_rule(switch, matches, actions))
+            rules.append(self.build_flow_rule(switch, matches, actions))
         return rules
 
-    def get_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1'):
+    def build_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1'):
         """Converts a multicast tree to a list of flow rules that can then
         be installed in the corresponding switches.  They will be ordered
         with group flows first so iterating over the list to install them
@@ -86,7 +99,7 @@ class SdnTopology(NetworkTopology):
         @:param matches - match rules to be used for matching multicast packets
         @:param group_id - group_id to assign this group rule to on all switches
 
-        @:param flows - list of all flow rules to accomplish the multicast tree"""
+        @:return group_flows, flows - pair of list of all flow rules to accomplish the multicast tree"""
 
         group_flows = []
         flows = []
@@ -103,11 +116,11 @@ class SdnTopology(NetworkTopology):
         def __get_action(_node, _succ):
             port = self.get_ports_for_nodes(_node, _succ)[0]
             if self.is_host(_succ):
-                _action = self.get_actions(("set_ipv4_dst", self.get_ip_address(_succ)),
-                                           ("set_eth_dst", "ff:ff:ff:ff:ff:ff"),
-                                           ("output", port))
+                _action = self.build_actions(("set_ipv4_dst", self.get_ip_address(_succ)),
+                                             ("set_eth_dst", "ff:ff:ff:ff:ff:ff"),
+                                             ("output", port))
             else:
-                _action = self.get_actions(("output", port))
+                _action = self.build_actions(("output", port))
             return _action
 
         bfs = nx.bfs_successors(tree, source)
@@ -120,20 +133,19 @@ class SdnTopology(NetworkTopology):
                 buckets = []
                 for i, succ in enumerate(successors):
                     action = __get_action(node, succ)
-                    buckets.append(self.get_bucket(action))
-                group_flows.append(self.get_group_flow_rule(node, buckets, group_id, 'all'))
-                action = self.get_actions(("group", group_id))
+                    buckets.append(self.build_bucket(action))
+                group_flows.append(self.build_group(node, buckets, group_id, 'ALL'))
+                action = self.build_actions(("group", group_id))
             else:
                 action = __get_action(node, successors[0])
 
             # TODO: update matches with the src port/IP?
 
-            flows.append(self.get_flow_rule(node, matches, action))
+            flows.append(self.build_flow_rule(node, matches, action))
 
             # print node, successors
 
-        group_flows.extend(flows)
-        return group_flows
+        return group_flows, flows
 
     ### Utility helper functions that must be implemented by base classes
 
@@ -157,15 +169,45 @@ class SdnTopology(NetworkTopology):
         """Adds the given host, in its raw input format, to the topology."""
         raise NotImplementedError
 
+    # Host helper functions
+
     def is_host(self, node):
         """Returns True if the given node is a host, False if it is a switch."""
         raise NotImplementedError
 
+    def get_hosts(self, attributes=False):
+        return (n for n in self.topo.nodes(data=attributes) if self.is_host(n[0] if attributes else n))
+
+    def get_host(self, host):
+        return self.topo.node[host]
+
+    def get_host_by_ip(self, ip):
+        candidates = [h for h in self.get_hosts() if self.get_ip_address(h) == ip]
+        if len(candidates) > 1:
+            raise ValueError("Found multiple hosts with IP address %s" % ip)
+        return candidates[0]
+
+    def get_host_by_mac(self, mac):
+        candidates = [h for h in self.get_hosts() if self.get_mac_address(h) == mac]
+        if len(candidates) > 1:
+            raise ValueError("Found multiple hosts with MAC address %s" % mac)
+        return candidates[0]
+
+    def get_mac_address(self, host):
+        """Gets the MAC address associated with the given host in the topology."""
+        mac = self.get_host(host)['mac']
+        if mac is None:
+            raise AttributeError("Host %s has no MAC address!  Did you do ARP?  Or maybe you need to override this method?" % self.topo.node[host])
+        return mac
+
     def get_ip_address(self, host):
         """Gets the IP address associated with the given host in the topology."""
-        ip = self.topo.node[host]['ip']
-        if ip is None:
-            raise AttributeError("Host %s has no IPv4 address!  Did you 'pingall 10' in Mininet?  Or maybe you need to override this method?" % self.topo.node[host])
+        h = None
+        try:
+            h = self.get_host(host)
+            ip = h['ip']
+        except KeyError:
+            raise AttributeError("Host %s has no IPv4 address, just %s!  Did you 'pingall 10' in Mininet?  Or maybe you need to override this method?" % (host, h))
         return ip
 
     def get_ports_for_nodes(self, n1, n2):
@@ -195,24 +237,51 @@ class SdnTopology(NetworkTopology):
         log.debug("Installing flow %s" % rule)
         return self.rest_api.push_flow_rule(rule)
 
+    def get_flow_rules(self, switch=None):
+        """
+        Get all flow rules (optionally only those associated with switch).
+        :param switch:
+        :return:
+        """
+        return self.rest_api.get_flow_rules(switch)
+
+    def get_groups(self, switch=None):
+        """
+        Get all groups (optionally only those associated with switch).
+        :param switch:
+        :return:
+        """
+        return self.rest_api.get_groups(switch)
+
+    def remove_all_flow_rules(self):
+        """
+        Removes all flow rules from all managed devices that have been added using the REST API.
+        :return:
+        """
+        return self.rest_api.remove_all_flow_rules()
+
+    def remove_all_groups(self, switch_id=None):
+        """Remove all groups or optionally all groups from the specified switch."""
+        return self.rest_api.remove_all_groups(switch_id)
+
     def install_group(self, group):
         """Helper function that assumes the data plane device (switch)
         to which this rule will be pushed is included in the rule object."""
         log.debug("Installing group %s" % group)
         return self.rest_api.push_group(group)
 
-    def get_flow_rule(self, switch, matches, actions, **kwargs):
+    def build_flow_rule(self, switch, matches, actions, **kwargs):
         """Builds a flow rule that can be installed on the corresponding switch via the RestApi.
 
         @:param switch - the DPID of the switch this flow rule corresponds with
-        @:param matches - dict<str,str> of matches this flow performs as formatted by get_matches(...)
-        @:param actions - str of OpenFlow actions to be taken as formatted by get_actions(...)
+        @:param matches - dict<str,str> of matches this flow performs as formatted by build_matches(...)
+        @:param actions - str of OpenFlow actions to be taken as formatted by build_actions(...)
         @:param **kwargs - all remaining kwargs are added to the flow rule dict using rule.update()
 
         @:return rule - dict representing the flow rule that can be installed on the switch"""
         raise NotImplementedError
 
-    def get_matches(self, **kwargs):
+    def build_matches(self, **kwargs):
         """Properly format (for the particular controller) OpenFlow
         packet matching criteria and return the result.
 
@@ -221,14 +290,22 @@ class SdnTopology(NetworkTopology):
          (use these exact spellings as a user, but be prepared to convert
          them to your controller's proper spelling if deriving this class)
         @:return matches - object representing matching criteria
-        that can be passed to get_flow_rule(...) in order to format it
+        that can be passed to build_flow_rule(...) in order to format it
         properly for REST API
 
         NOTE: default implementation assumes we can simply return kwargs
+        after verifying that eth_type is present (and properly set) if
+        either ipv4 or ipv6 are used.
         """
+
+        # need to check individual keys as they might be e.g. ipv4_dst
+        if any('ipv4' in k for k in kwargs.keys()) and 'eth_type' not in kwargs:
+            kwargs['eth_type'] = '0x0800'
+        elif any('ipv6' in k for k in kwargs.keys()) and 'eth_type' not in kwargs:
+            kwargs['eth_type'] = '0x86DD'
         return kwargs
 
-    def get_actions(self, *args):
+    def build_actions(self, *args):
         """Properly format (for the particular controller) OpenFlow
         packet actions and return the result.
 
@@ -241,19 +318,20 @@ class SdnTopology(NetworkTopology):
         """
         raise NotImplementedError
 
-    def get_group_flow_rule(self, switch, buckets, group_id='1', group_type='all', **kwargs):
+    def build_group(self, switch, buckets, group_id='1', group_type='all', **kwargs):
         """Builds a group flow rule that can be installed on the corresponding switch via the RestApi.
 
         @:param switch - the DPID of the switch this flow rule corresponds with
-        @:param buckets - list of buckets where each bucket is formatted as returned from get_bucket(...)
+        @:param buckets - list of buckets where each bucket is formatted as returned from build_bucket(...)
+        @:param group_id - ID of the group (specified as a string), with default of '1'
         @:param type - type of group (all, indirect, select, fast_failover); defaults to 'all'
         @:param **kwargs - all remaining kwargs are added to the flow rule dict using rule.update()
 
-        @:return rule - dict representing the flow rule that can be installed on the switch"""
+        @:return rule - dict representing the group that can be installed on the switch"""
         raise NotImplementedError
 
-    def get_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
-        """Formats a dict-like object to use as a bucket within get_group_flow_rule.
+    def build_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
+        """Formats a dict-like object to use as a bucket within build_group.
 
         @:param actions - actions to perform
         @:param weight
@@ -264,7 +342,7 @@ class SdnTopology(NetworkTopology):
         """
         raise NotImplementedError
 
-    def __get_flow_rule(self, switch, **kwargs):
+    def __build_flow_rule(self, switch, **kwargs):
         """Helper function to assemble fields of a flow common between flow entry types.
         In particular, it should fill any fields that are REQUIRED by the controller's REST API.
 

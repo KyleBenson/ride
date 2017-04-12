@@ -70,16 +70,33 @@ class BaseRestApi(object):
     # def get_ports(self, ):
 
     def push_flow_rule(self, rule, switch_id):
-        """Push the specified flow rule to the controller for the specified switch."""
+        """Push the specified flow rule to the controller for the specified switch.
+        NOTE: implementations typically assume that the switch_id is actually included
+        in the rule being passed and so can be assigned that way."""
         raise NotImplementedError
         path = 'path/to/flow/insertion/here'
         return self.set(path, rule)
 
     def get_flow_rules(self, switch_id=None):
-        """Get all flow rules or a specific switch's if specified."""
+        """
+        Get all flow rules or a specific switch's if specified.
+        :return List[dict] flows:
+        """
         raise NotImplementedError
         path = 'path/to/flow/request/here'
         return self.get(path)
+
+    def remove_all_flow_rules(self):
+        """
+        Removes all flow rules from all managed devices that have been added using the REST API.
+        :return:
+        """
+        raise NotImplementedError
+
+    def remove_all_groups(self, switch_id=None):
+        """Remove all groups or optionally all groups from the specified switch."""
+        # TODO: could use the ONOS implementation that iterates over everything as the default.
+        raise NotImplementedError
 
     def push_group(self, group, switch_id):
         """Push the specified group to the controller for the specified switch."""

@@ -1,5 +1,4 @@
 import logging as log
-log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 from rest_api.floodlight_api import FloodlightRestApi
 from sdn_topology import SdnTopology
@@ -14,9 +13,9 @@ class FloodlightSdnTopology(SdnTopology):
     installing flow rules."""
 
     def __init__(self, ip='localhost', port='8080'):
-        super(FloodlightSdnTopology, self).__init__()
+        rest_api = FloodlightRestApi(ip, port)
+        super(FloodlightSdnTopology, self).__init__(rest_api)
 
-        self.rest_api = FloodlightRestApi(ip, port)
         self.unique_counter = 0  # used for e.g. flow entry names
 
         self.build_topology()
@@ -78,7 +77,7 @@ class FloodlightSdnTopology(SdnTopology):
 
     # Flow rule helper functions
 
-    def get_flow_rule(self, switch, matches, actions, **kwargs):
+    def build_flow_rule(self, switch, matches, actions, **kwargs):
         """Builds a flow rule that can be installed on the corresponding switch via the RestApi.
 
         @:param switch - the DPID of the switch this flow rule corresponds with
@@ -88,14 +87,14 @@ class FloodlightSdnTopology(SdnTopology):
 
         @:return rule - dict representing the flow rule that can be installed on the switch"""
 
-        rule = self.__get_flow_rule(switch, **kwargs)
+        rule = self.__build_flow_rule(switch, **kwargs)
         rule['actions'] = actions
         rule.update(matches)
 
         return rule
 
-    def get_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
-        """Formats a dict-like object to use as a bucket within get_group_flow_rule.
+    def build_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
+        """Formats a dict-like object to use as a bucket within build_group.
 
         @:param actions - actions to perform
 
@@ -113,17 +112,17 @@ class FloodlightSdnTopology(SdnTopology):
             bucket['bucket_watch_port'] = watch_port
         return bucket
 
-    def get_group_flow_rule(self, switch, buckets, group_id='1', group_type='all', **kwargs):
+    def build_group(self, switch, buckets, group_id='1', group_type='all', **kwargs):
         """Builds a group flow rule that can be installed on the corresponding switch via the RestApi.
 
         @:param switch - the DPID of the switch this flow rule corresponds with
-        @:param buckets - list of buckets where each bucket is formatted as returned from get_bucket(...)
+        @:param buckets - list of buckets where each bucket is formatted as returned from build_bucket(...)
         @:param type - type of group (all, indirect, select, fast_failover); defaults to 'all'
         @:param **kwargs - all remaining kwargs are added to the flow rule dict using rule.update()
 
         @:return rule - dict representing the flow rule that can be installed on the switch"""
 
-        rule = self.__get_flow_rule(switch, **kwargs)
+        rule = self.__build_flow_rule(switch, **kwargs)
         # Floodlight REST API uses a bucket_id field to prioritize the buckets,
         # but our API keeps them as an ordered list.  Hence, we need to add
         # this field when building the flow rule.
@@ -136,7 +135,7 @@ class FloodlightSdnTopology(SdnTopology):
         rule['group_id'] = group_id
         return rule
 
-    def __get_flow_rule(self, switch, **kwargs):
+    def __build_flow_rule(self, switch, **kwargs):
         """Helper function to assemble fields of a flow common between flow entry types.
         In particular, it assigns a unique name to the flow rule if you did not explicitly."""
 
@@ -151,13 +150,15 @@ class FloodlightSdnTopology(SdnTopology):
                 }
         return rule
 
-    def get_matches(self, **kwargs):
+    def build_matches(self, **kwargs):
+        # validate eth_type's presence
+        kwargs = super(FloodlightSdnTopology, self).build_matches(**kwargs)
         # ensure everything is formatted correctly, including types, for the picky REST API
         if 'in_port' in kwargs:
             kwargs['in_port'] = str(kwargs['in_port'])
         return kwargs
 
-    def get_actions(self, *args):
+    def build_actions(self, *args):
         # Floodlight formats them as e.g. "strip_vlan,set_field=ipv4_dst->10.0.0.1,output=1"
         actions = []
         for a in args:

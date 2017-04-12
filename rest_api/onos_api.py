@@ -18,6 +18,7 @@ Command descriptions:
     ports <device_id>
     flows [device_id]
     post_flow <device_id> <json_flow_rule>
+    del_flows
     groups [device_id [group_key]]
     post_group <device_id> <json_group>
     del_group <device_id> <group_key>
@@ -83,12 +84,22 @@ class OnosRestApi(BaseRestApi):
         return self.set(path, rule)
 
     def get_flow_rules(self, switch_id=None):
-        """Get all flow rules or a specific switch's if specified."""
+        """Get all flow rules or a specific switch's if specified.
+        NOTE: check the flow rule's 'state' field if you previously
+        deleted it and don't expect to see it as sometimes it will
+        be 'PENDING_REMOVE'"""
         path = self.base_path + '/flows'
         if switch_id is not None:
             path += '/%s' % switch_id
-        # ENHANCE: optionally add specific flow rule?  Maybe that gives statistics?
-        return self.get(path)
+        flows = self.get(path)['flows']
+        # Need to filter out any flows that haven't been fully deleted yet to avoid confusing users.
+        flows = [f for f in flows if f['state'] != 'PENDING_REMOVE']
+        return flows
+
+    def remove_all_flow_rules(self):
+        # Can delete all flows by just specifying to delete all rules from the rest api app
+        path = self.base_path + '/flows/application/org.onosproject.rest'
+        return self.remove(path)
 
     def push_group(self, group, switch_id=None):
         """Push the specified group to the controller for the specified switch."""
@@ -104,16 +115,56 @@ class OnosRestApi(BaseRestApi):
         return self.set(path, group)
 
     def get_groups(self, switch_id=None):
-        """Get all groups or a specific switch's if specified."""
+        """
+        Get all groups or a specific switch's if specified.
+        WARNING: do not try to add a group with an ID (appCookie?) matching another group
+         that is currently of 'state' 'PENDING_DELETE' as otherwise your new group will
+         be deleted in a few seconds!
+        :return List[dict] groups:
+        """
         path = self.base_path + '/groups'
         if switch_id is not None:
             path += '/%s' % switch_id
-        # ENHANCE: add specific group ID?  Maybe needed for more detail?
-        return self.get(path)
+        groups = self.get(path)['groups']
+        # ENHANCE: could filter out any groups that haven't been fully deleted yet to avoid confusing users.
+        # The problem is that we cannot add a group with the same ID as one pending deletion as otherwise
+        # the group will just be deleted in a few seconds.
+        # groups = [g for g in groups if g['state'] != 'PENDING_DELETE']
+        return groups
 
+    def get_group_key(self, group):
+        """
+        Gets the unique group key from the given group.
+        :type dict group:
+        :return:
+        """
+        return group['appCookie']
 
-    def delete_group(self, switch_id, group_key):
-        """Get all groups or a specific switch's if specified."""
+    def remove_all_groups(self, switch_id=None):
+        """Remove all groups or optionally all groups from the specified switch."""
+        # we have to do this by iteratively removing each individual group unfortunately
+        # TODO: verify this will delete any flow rules associated with the group!
+
+        if switch_id is None:
+            switches_to_clear = [s['id'] for s in self.get_switches()]
+        else:
+            switches_to_clear = [switch_id]
+
+        ret = True
+        for s in switches_to_clear:
+            groups = self.get_groups(s)
+            group_keys = [self.get_group_key(g) for g in groups]
+            for k in group_keys:
+                r = self.remove_group(s, k)
+                ret = r and ret
+
+        return ret
+
+    def remove_group(self, switch_id, group_key):
+        """Remove the specified group.
+        :param switch_id: switch's DPID
+        :param group_key: controller-specific ID for groups (NOT necessarily the groupId!)
+        """
         path = '%s/groups/%s/%s' % (self.base_path, switch_id, group_key)
         return self.remove(path)
 
@@ -158,12 +209,16 @@ class OnosRestApi(BaseRestApi):
             return self.get_flow_rules(*other_args)
         elif cmd == 'post_flow':
             return self.push_flow_rule(*other_args)
+        elif cmd == 'del_flows':
+            return self.remove_all_flow_rules()
         elif cmd == 'groups':
             return self.get_groups(*other_args)
         elif cmd == 'post_group':
-            return self.push_group(*other_args)
+            return self.push_group(other_args[1], other_args[0])
         elif cmd == 'del_group':
-            return self.delete_group(*other_args)
+            return self.remove_group(*other_args)
+        elif cmd == 'del_groups':
+            return self.remove_all_groups()
         elif cmd == 'paths':
             return self.get_paths(*other_args)
         elif cmd == 'intents':
@@ -171,7 +226,7 @@ class OnosRestApi(BaseRestApi):
         elif cmd == 'post_intent':
             return self.push_intent(*other_args)
         elif cmd == 'apps':
-            return self.get_apps(*other_args)
+            return self.get_apps()
         elif cmd == 'statistics':
             raise NotImplementedError("Still need to implement API at "
                                       "https://github.com/opennetworkinglab/onos/blob/master/web/api/src/main/java/org/onosproject/rest/resources/StatisticsWebResource.java"

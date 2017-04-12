@@ -59,7 +59,13 @@ class FloodlightRestApi(BaseRestApi):
     def get_flow_rules(self, switch_id):
         """Get all static flow rules or a specific switch's if specified."""
         path = '/wm/staticflowpusher/list/%s/json' % switch_id
-        return self.get(path)
+        flows = self.get(path)
+        assert isinstance(flows, list), "return value should be a list of dicts for get_flow_rules: need to fix the API!"
+        return flows
+
+    def remove_all_flow_rules(self):
+        # TODO:
+        raise NotImplementedError
 
     def push_group(self, group, switch_id=None):
         """Push the specified group to the controller for the specified switch."""
