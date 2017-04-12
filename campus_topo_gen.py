@@ -328,7 +328,8 @@ if __name__ == '__main__':
         topologies_to_build = (
             # (20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
             # (200, 20, 20),  # main large topology
-            (10, 4, 2),
+            # (10, 4, 2),
+            (3, 3, 1),
             # (200, 20, 40), (200, 20, 80),
             # (200, 20, 10), (200, 20, 0), (200, 20, 60), # vary ibl on main topology
             # (200, 20, 200), (200, 20, 400), (200, 20, 800), # vary ibl on main topology, with repeats and larger #s
@@ -343,7 +344,7 @@ if __name__ == '__main__':
                                         # core_size=16, links_per_building=4, links_per_server=8,
                                         )
             t.generate()
-            t.write('campus_topo_%db-%dh-%dibl.json' % (nb, nh, nibl))
+            t.write('topos/campus_topo_%db-%dh-%dibl.json' % (nb, nh, nibl))
 
     if test_run:
         g = t.get()
