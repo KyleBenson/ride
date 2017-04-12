@@ -2,6 +2,7 @@
 
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
+import os
 import traceback
 
 from smart_campus_experiment import SmartCampusExperiment
@@ -367,8 +368,14 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                   self.get_host_dpid(self.server), self.controller_ip, self.controller_port)
         if WITH_LOGS:
             cmd += " > logs/srv 2>&1"
+
         log.debug(cmd)
-        p = server.popen(cmd, shell=True)
+        # HACK: Need to set PYTHONPATH since we don't install our Python modules directly and running Mininet
+        # as root strips this variable from our environment.
+        env = os.environ.copy()
+        if 'PYTHONPATH' not in env:
+            env['PYTHONPATH'] = os.path.dirname(os.path.abspath(__file__))
+        p = server.popen(cmd, shell=True, env=env)
         self.popens.append(p)
 
         #  SETUP CLIENTS
@@ -394,7 +401,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # outstanding command at a time and cancels any current
             # ones when net.CLI is called.  Hence, we need popen.
             log.debug(cmd)
-            p = client.popen(cmd, shell=True)
+            p = client.popen(cmd, shell=True, env=env)
             self.popens.append(p)
 
     def teardown_experiment(self):
