@@ -301,7 +301,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         # Apply actual failure model: we schedule these to fail when the earthquake hits
         # so there isn't time for the topology to update on the controller,
-        # which would skew the results incorrectly.
+        # which would skew the results incorrectly. Since it may take a few cycles
+        # to fail a lot of nodes/links, we schedule the failures for a second before.
+        time.sleep(SEISMIC_EVENT_DELAY - 1)
         for link in failed_links:
             self.net.configLinkStatus(link[0], link[1], 'down')
         for node in failed_nodes:
@@ -309,7 +311,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         log.info("*** Waiting for experiment to complete...")
 
-        time.sleep(EXPERIMENT_DURATION)
+        time.sleep(EXPERIMENT_DURATION - SEISMIC_EVENT_DELAY)
 
         # TODO: some sort of meaningful results?  maybe save filenames of the seismic hosts?
         return {}

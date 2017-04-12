@@ -247,8 +247,6 @@ if __name__ == '__main__':
     from_file = False
     draw_trees = True
 
-    log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
-
     if from_file:
         net = NetworkTopology()
         source = "s0"

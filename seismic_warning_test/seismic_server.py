@@ -73,7 +73,7 @@ class SeismicServer(asyncore.dispatcher):
         asyncore.dispatcher.__init__(self)
 
         log_level = log.getLevelName(config.debug.upper())
-        log.basicConfig(format='%(levelname)s:%(message)s', level=log_level)
+        log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
 
         # store configuration options and validate them
         self.config = config
@@ -197,8 +197,6 @@ class SeismicServer(asyncore.dispatcher):
         self.close()
 
 if __name__ == '__main__':
-    log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
-
     args = parse_args(sys.argv[1:])
     client = SeismicServer(args)
     client.run()

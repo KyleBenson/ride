@@ -42,7 +42,7 @@ class SmartCampusExperiment(object):
         self.publication_error_rate = publication_error_rate
 
         log_level = log.getLevelName(debug.upper())
-        log.basicConfig(format='%(levelname)s:%(message)s', level=log_level)
+        log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
 
         # this is used for choosing pubs/subs/servers ONLY
         self.random = random.Random(choice_rand_seed)

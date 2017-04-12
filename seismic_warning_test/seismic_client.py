@@ -7,7 +7,6 @@ a simple JSON format over UDP.'''
 # (c) Kyle Benson 2016
 
 import logging as log
-log.basicConfig(format='%(levelname)s:%(message)s', level=log.DEBUG)
 
 import sys
 import argparse
@@ -175,6 +174,7 @@ class SeismicClient(asyncore.dispatcher):
 
 
 if __name__ == '__main__':
+    log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log.DEBUG)
     args = parse_args(sys.argv[1:])
     client = SeismicClient(args)
     client.run()
