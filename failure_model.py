@@ -9,6 +9,10 @@ DEFAULT_FPROB = 0.1
 
 
 class SmartCampusFailureModel(object):
+    """
+    Used in conjunction with a specified SdnTopology object to apply one of
+    several failure models to the nodes and links in the topology.
+    """
 
     def __init__(self, model=DEFAULT_MODEL, fprob=DEFAULT_FPROB,
                  failure_rand_seed=None, **kwargs):
@@ -20,6 +24,7 @@ class SmartCampusFailureModel(object):
 
     def apply_failure_model(self, topo):
         """Applies the failure model to the topology by choosing failed components.
+        :param SdnTopology topo:
         @:return [failed_nodes], [failed_links]"""
         if self.model == 'uniform':
             return self.apply_uniform_failure_model(topo)
