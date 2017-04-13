@@ -1,4 +1,5 @@
 import json
+import os
 
 import ride
 
@@ -39,6 +40,9 @@ class SmartCampusExperiment(object):
         self.topo = None  # built later in setup_topology()
 
         self.output_filename = output_filename
+        if self.output_filename is None:
+            log.warning("output_filename is None!  Using default of results.json")
+            self.output_filename = 'results.json'
         self.tree_construction_algorithm = tree_construction_algorithm
         self.error_rate = error_rate
 
@@ -74,15 +78,17 @@ class SmartCampusExperiment(object):
 
     @classmethod
     def get_arg_parser(cls, parents=(SmartCampusFailureModel.arg_parser,
-                                     ride.ride_d.RideD.get_arg_parser())):
+                                     ride.ride_d.RideD.get_arg_parser()),
+                       add_help=False):
         """
         Argument parser that can be combined with others when this class is used in a script.
         Need to not add help options to use that feature, though.
         :param tuple[argparse.ArgumentParser] parents:
+        :param add_help: if True, adds help command (set to False if using this arg_parser as a parent)
         :return argparse.ArgumentParser arg_parser:
         """
         arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION,
-                                             parents=parents, add_help=False)
+                                             parents=parents, add_help=add_help)
         # experimental treatment parameters
         arg_parser.add_argument('--nruns', '-r', type=int, default=1,
                             help='''number of times to run experiment (default=%(default)s)''')
@@ -98,14 +104,50 @@ class SmartCampusExperiment(object):
         # experiment interaction control
         arg_parser.add_argument('--debug', '-d', type=str, default='info', nargs='?', const='debug',
                             help='''set debug level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
-        arg_parser.add_argument('--output-file', '-o', type=str, default='results.json', dest='output_filename',
-                            help='''name of output file for recording JSON results (default=%(default)s)''')
+        arg_parser.add_argument('--output-file', '-o', type=str, default=None, dest='output_filename',
+                            help='''name of output file for recording JSON results
+                            (by default we generate a filename located in 'results'
+                            directory, with '.json' extension, that includes a summary of experiment parameters:
+                            see SmartCampusExperiment.build_default_results_file_name())''')
         arg_parser.add_argument('--choice-rand-seed', type=int, default=None, dest='choice_rand_seed',
                             help='''random seed for choices of subscribers & servers (default=%(default)s)''')
         arg_parser.add_argument('--rand-seed', type=int, default=None, dest='rand_seed',
                             help='''random seed used by other classes via calls to random module (default=%(default)s)''')
 
         return arg_parser
+
+    # ENHANCE: maybe a version that uses the members rather than being classmethod?
+    @classmethod
+    def build_default_results_file_name(cls, args, dirname='results'):
+        """
+        :param args: argparse object (or plain dict) with all args info (not specifying ALL args is okay)
+        :param dirname: directory name to place the results files in
+        :return: string representing the output_filename containing a parameter summary for easy identification
+        """
+
+        # Convert argparse object to dict
+        if isinstance(args, argparse.Namespace):
+            args = vars(args)
+
+        defaults = cls.get_arg_parser().parse_args()
+
+        # Extract topology file name
+        try:
+            topo_fname = args.get('topology_filename', defaults.topology_filename)
+            topo_fname = os.path.splitext(os.path.basename(topo_fname).split('_')[2])[0]
+        except IndexError:
+            # topo_fname must not be formatted as expected: just use it plain but remove _'s to avoid confusing code parsing the topo for its params
+            topo_fname = os.path.splitext(os.path.basename(args.get('topology_filename', defaults.topology_filename).replace('_', '')))[0]
+
+        output_filename = 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%0.2fe.json' % \
+                          (args.get('ntrees', defaults.ntrees), args.get('fprob', defaults.fprob),
+                           args.get('nsubscribers', defaults.nsubscribers), args.get('npublishers', defaults.npublishers),
+                           cls.build_mcast_heuristic_name(*args.get('tree_construction_algorithm', defaults.tree_construction_algorithm)),
+                           topo_fname, args.get('error_rate', defaults.error_rate))
+
+        output_filename = os.path.join(dirname, output_filename)
+
+        return output_filename
 
     @classmethod
     def build_from_args(cls, args):
@@ -117,6 +159,10 @@ class SmartCampusExperiment(object):
         args = vars(args)
         failure_model = SmartCampusFailureModel(**args)
         args['failure_model'] = failure_model
+
+        if args['output_filename'] is None:
+            args['output_filename'] = cls.build_default_results_file_name(args)
+
         return cls(**args)
 
     def run_all_experiments(self):

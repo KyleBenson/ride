@@ -39,6 +39,10 @@ MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
 # When True, runs host processes with -00 command for optimized python code
 OPTIMISED_PYTHON = False
 
+# Default values
+DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
+DEFAULT_TOPOLOGY_ADAPTER = 'onos'
+
 class MininetSmartCampusExperiment(SmartCampusExperiment):
     """
     Version of SmartCampusExperiment that runs the experiment in Mininet emulation.
@@ -46,7 +50,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
     """
 
     def __init__(self, controller_ip='127.0.0.1', controller_port=8181,
-                 tree_choosing_heuristic='importance', topology_adapter='onos',  # need to save these to pass to RideD
+                 # need to save these two params to pass to RideD
+                 tree_choosing_heuristic=DEFAULT_TREE_CHOOSING_HEURISTIC,
+                 topology_adapter=DEFAULT_TOPOLOGY_ADAPTER,
                  n_traffic_generators=5, traffic_generator_bandwidth=10,
                  *args, **kwargs):
         """
@@ -94,15 +100,43 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
         self.mcast_address_pool = [str(base_addr + i) for i in range(kwargs['ntrees'])]
 
-    # argument parser that can be combined with others when this class is used in a script
-    # need to not add help options to use that feature, though
-    arg_parser = argparse.ArgumentParser(parents=[SmartCampusExperiment.get_arg_parser()])  #add_help=False ???
-    # experimental treatment parameters: all taken from parents
-    # background traffic generation
-    arg_parser.add_argument('--ngenerators', '-g', default=5, dest='n_traffic_generators', type=int,
-                            help='''number of hosts that generate random traffic to cause congestion (default=%(default)s)''')
-    arg_parser.add_argument('--generator-bandwidth', '-bw', default=10, dest='traffic_generator_bandwidth', type=float,
-                            help='''bandwidth (in Mbps) of iperf for congestion traffic generating hosts (default=%(default)s)''')
+    @classmethod
+    def get_arg_parser(cls, parents=(SmartCampusExperiment.get_arg_parser(),), add_help=True):
+        """
+        Argument parser that can be combined with others when this class is used in a script.
+        Need to not add help options to use that feature, though.
+        :param tuple[argparse.ArgumentParser] parents:
+        :param add_help: if True, adds help command (set to False if using this arg_parser as a parent)
+        :return argparse.ArgumentParser arg_parser:
+        """
+
+        # argument parser that can be combined with others when this class is used in a script
+        # need to not add help options to use that feature, though
+        arg_parser = argparse.ArgumentParser(parents=parents, add_help=add_help)
+        # experimental treatment parameters: all taken from parents
+        # background traffic generation
+        arg_parser.add_argument('--ngenerators', '-g', default=5, dest='n_traffic_generators', type=int,
+                                help='''number of hosts that generate random traffic to cause congestion (default=%(default)s)''')
+        arg_parser.add_argument('--generator-bandwidth', '-bw', default=10, dest='traffic_generator_bandwidth', type=float,
+                                help='''bandwidth (in Mbps) of iperf for congestion traffic generating hosts (default=%(default)s)''')
+        return arg_parser
+
+    @classmethod
+    def build_default_results_file_name(cls, args, dirname='results'):
+        """
+        :param args: argparse object (or plain dict) with all args info (not specifying ALL args is okay)
+        :param dirname: directory name to place the results files in
+        :return: string representing the output_filename containing a parameter summary for easy identification
+        """
+        # HACK: we need to add the additional parameters this experiment version bring in
+        output_filename = super(MininetSmartCampusExperiment, cls).build_default_results_file_name(args, dirname)
+        if isinstance(args, argparse.Namespace):
+            choosing_heuristic = args.tree_choosing_heuristic
+        else:
+            choosing_heuristic = args.get('tree_choosing_heuristic', DEFAULT_TREE_CHOOSING_HEURISTIC)
+        replacement = '_%s.json' % choosing_heuristic
+        output_filename = output_filename.replace('.json', replacement)
+        return output_filename
 
     def set_interrupt_signal(self):
         # ignore it so we can terminate Mininet commands without killing Mininet

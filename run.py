@@ -200,12 +200,9 @@ def getargs(output_dirname='', **kwargs):
     _args['debug'] = debug_level
     _args.update(**kwargs)
 
-    # label the file with a parameter summary and optionally place in a directory
-    topo_fname = _args['topo'][1].split('_')[2].split('.')[0]
-    _args['output_filename'] = os.path.join(output_dirname, _args.get('output_filename', 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%0.2fe.json' % \
-                                                                      (_args['ntrees'], _args['fprob'], _args['nsubscribers'], _args['npublishers'],
-                                                                       NetworkxSmartCampusExperiment.build_mcast_heuristic_name(*_args['mcast_heuristic']),
-                                                                       topo_fname, _args.get('publication_error_rate', 0))))
+    # Build output filename
+    _args['output_filename'] = _args.get('output_filename', NetworkxSmartCampusExperiment.build_default_results_file_name(_args, output_dirname))
+
     return _args
 
 
