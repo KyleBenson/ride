@@ -111,7 +111,11 @@ class SeismicClient(asyncore.dispatcher):
         event['time_sent'] = curr_time
         event['id'] = self.config.id
 
-        self.sendto(json.dumps(event), (self.config.address, self.config.send_port))
+        try:
+            self.sendto(json.dumps(event), (self.config.address, self.config.send_port))
+        except socket.error as e:
+            log.error("problem sending event: %s" % e)
+            self.exit_now(e.errno)
 
         # don't forget to schedule the next time we send aggregated events
         self.next_timer = Timer(self.config.retransmit, self.send_event)
@@ -180,6 +184,9 @@ class SeismicClient(asyncore.dispatcher):
         with open(fname, "w") as f:
             f.write(json.dumps(self.events_rcvd))
 
+    def exit_now(self, error_code=1):
+        # HACK: kill the whole process immediately and include the error code (regular exit only kills thread)
+        os._exit(error_code)
 
 if __name__ == '__main__':
     log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log.DEBUG)

@@ -5,6 +5,8 @@
 import os
 import traceback
 
+import errno
+
 from smart_campus_experiment import SmartCampusExperiment
 
 import logging as log
@@ -435,7 +437,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         for p in self.popens[1:]:
             ret = p.wait()
             if ret is not None and ret != 0:
-                log.error("Client proc exited with code %d" % p.returncode)
+                if ret == errno.ENETUNREACH:
+                    # TODO: handle this error appropriately: record failed clients in results?
+                    log.error("Client proc failed due to unreachable network!")
+                else:
+                    log.error("Client proc exited with code %d" % p.returncode)
 
         # TODO: make this optional (maybe accessible via ctrl-c?)
         CLI(self.net)
