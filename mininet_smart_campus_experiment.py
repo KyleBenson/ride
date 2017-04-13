@@ -75,6 +75,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.switches = []
         self.links = []
         self.server = None
+        self.server_switch = None
         self.net = None
         self.controller = None
         self.nat = None
@@ -187,7 +188,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             _bw = attributes.get('bw', 10)  # in Mbps
             _delay = '%fms' % attributes.get('latency', 10)
             _jitter = '1ms'
-            _loss = self.publication_error_rate
+            _loss = self.error_rate
 
             l = self.net.addLink(self.net.get(from_link), self.net.get(to_link),
                                  cls=TCLink, bw=_bw, delay=_delay, jitter=_jitter, loss=_loss

@@ -24,8 +24,7 @@ class SmartCampusExperiment(object):
                  failure_model=None, topology_filename=None,
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
-                 # TODO: maybe this is specific to netx?  or maybe it's a general error rate...
-                 publication_error_rate=0.0,
+                 error_rate=0.0,
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
         super(SmartCampusExperiment, self).__init__()
@@ -39,7 +38,7 @@ class SmartCampusExperiment(object):
 
         self.output_filename = output_filename
         self.tree_construction_algorithm = tree_construction_algorithm
-        self.publication_error_rate = publication_error_rate
+        self.error_rate = error_rate
 
         log_level = log.getLevelName(debug.upper())
         log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
@@ -64,7 +63,7 @@ class SmartCampusExperiment(object):
                                    'failure_model': self.failure_model.get_params(),
                                    'heuristic': self.get_mcast_heuristic_name(),
                                    'topo': topology_filename,
-                                   'publication_error_rate': self.publication_error_rate,
+                                   'error_rate': self.error_rate,
                                    'choicerandseed': choice_rand_seed,
                                    'randseed': rand_seed,
                                    'failrandseed': kwargs.get('failure_rand_seed', None),
@@ -89,9 +88,8 @@ class SmartCampusExperiment(object):
                             help='''number of multicast subscribers (terminals) to reach (default=%(default)s)''')
         arg_parser.add_argument('--npublishers', '-p', type=int, default=5,
                             help='''number of IoT sensor publishers to contact edge server (default=%(default)s)''')
-        arg_parser.add_argument('--error-rate', type=float, default=0.0, dest='publication_error_rate',
-                            help='''error rate of publications from publishers (chance that we won't
-                            include a publisher in the STT even if it's still connected to server) (default=%(default)s)''')
+        arg_parser.add_argument('--error-rate', type=float, default=0.0, dest='error_rate',
+                            help='''error rate of links (default=%(default)s)''')
         arg_parser.add_argument('--topology-filename', '--topo', type=str, default='topos/campus_topo.json', dest='topology_filename',
                             help='''file name of topology to use (default=%(default)s)''')
 

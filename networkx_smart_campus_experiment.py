@@ -21,6 +21,11 @@ PUBLICATION_TOPIC = 'seismic_alert'
 class NetworkxSmartCampusExperiment(SmartCampusExperiment):
 
     def __init__(self, *args, **kwargs):
+        """
+        :param float error_rate: error rate for PUBLICATIONS ONLY!
+        :param args:
+        :param kwargs:
+        """
         super(NetworkxSmartCampusExperiment, self).__init__(*args, **kwargs)
 
     def record_result(self, result):
@@ -94,7 +99,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         for pub in publishers:
             path = nx.shortest_path(self.topo.topo, pub, server, weight=DISTANCE_METRIC)
             rided.set_publisher_route(pub, path)
-            if self.random.random() >= self.publication_error_rate and nx.is_simple_path(failed_topology, path):
+            if self.random.random() >= self.error_rate and nx.is_simple_path(failed_topology, path):
                 rided.notify_publication(pub)
 
         # build and get multicast trees
