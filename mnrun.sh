@@ -12,3 +12,6 @@ echo "SDN controller at $CONTROLLER_IP"
 sudo ./mininet_smart_campus_experiment.py --ip "$CONTROLLER_IP" $@
 
 sudo mn -c > /dev/null
+
+# iperf seems to hang due to mininet not closing properly 
+sudo pkill iperf
