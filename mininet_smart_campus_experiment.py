@@ -49,23 +49,28 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                  tree_choosing_heuristic='importance', topology_adapter='onos',  # need to save these to pass to RideD
                  n_traffic_generators=5, traffic_generator_bandwidth=10,
                  *args, **kwargs):
-        # TODO: add additional params before committing
         """
         Mininet and the SdnTopology adapter will be started by this constructor.
         NOTE: you must start the remote SDN controller before constructing/running the experiment!
-
+        :param controller_ip: IP address of SDN controller that we point RideD towards: it must be accessible by the server Mininet host!
+        :param controller_port: REST API port of SDN controller
         :param tree_choosing_heuristic: explicit in this version since we are running an
          actual emulation and so cannot check all the heuristics at once
+        :param topology_adapter: type of REST API topology adapter we use: one of 'onos', 'floodlight'
+        :param n_traffic_generators: number of background traffic generators to run iperf on
+        :param traffic_generator_bandwidth: bandwidth (in Mbps; using UDP) to set the iperf traffic generators to
         :param args: see args of superclass
         :param kwargs: see kwargs of superclass
         """
         super(MininetSmartCampusExperiment, self).__init__(*args, **kwargs)
+        # save any additional parameters the Mininet version adds
+        self.results['params']['tree_choosing_heuristic'] = self.tree_choosing_heuristic = tree_choosing_heuristic
+        self.results['params']['n_traffic_generators'] = self.n_traffic_generators = n_traffic_generators
+        self.results['params']['traffic_generator_bandwidth'] = self.traffic_generator_bandwidth = traffic_generator_bandwidth
+
         self.controller_ip = controller_ip
         self.controller_port = controller_port
-        self.tree_choosing_heuristic = tree_choosing_heuristic
         self.topology_adapter = topology_adapter
-        self.n_traffic_generators = n_traffic_generators
-        self.traffic_generator_bandwidth = traffic_generator_bandwidth
         # This gets passed to seismic hosts
         self.debug_level = kwargs.get('debug', 'error')
 
