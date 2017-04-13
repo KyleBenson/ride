@@ -104,18 +104,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
     arg_parser.add_argument('--generator-bandwidth', '-bw', default=10, dest='traffic_generator_bandwidth', type=float,
                             help='''bandwidth (in Mbps) of iperf for congestion traffic generating hosts (default=%(default)s)''')
 
-    def record_result(self, result):
-        """Result is a dict that includes the percentage of subscribers
-        reachable as well as metadata such as run #"""
-        self.results['results'].append(result)
-
-    def output_results(self):
-        """Outputs the results to a file"""
-        print self.output_filename
-        log.info("Results: %s" % json.dumps(self.results, sort_keys=True, indent=2))
-        with open(self.output_filename, "w") as f:
-            json.dump(self.results, f, sort_keys=True, indent=2)
-
     def set_interrupt_signal(self):
         # ignore it so we can terminate Mininet commands without killing Mininet
         # TODO: something else?

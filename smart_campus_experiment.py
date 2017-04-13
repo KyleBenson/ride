@@ -1,3 +1,5 @@
+import json
+
 import ride
 
 CLASS_DESCRIPTION = '''Experiment that models failures in a campus network setting
@@ -173,16 +175,16 @@ class SmartCampusExperiment(object):
             exit(1)
         signal.signal(signal.SIGINT, __sigint_handler)
 
-    @abstractmethod
     def record_result(self, result):
         """Result is a dict that includes the percentage of subscribers
         reachable as well as metadata such as run #"""
-        pass
+        self.results['results'].append(result)
 
-    @abstractmethod
     def output_results(self):
         """Outputs the results to a file"""
-        pass
+        log.info("Results: %s" % json.dumps(self.results, sort_keys=True, indent=2))
+        with open(self.output_filename, "w") as f:
+            json.dump(self.results, f, sort_keys=True, indent=2)
 
     def get_failed_nodes_links(self):
         """Returns which nodes/links failed according to the failure model.

@@ -3,7 +3,6 @@
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
 
-import json
 import logging as log
 
 import numpy as np
@@ -27,17 +26,6 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         :param kwargs:
         """
         super(NetworkxSmartCampusExperiment, self).__init__(*args, **kwargs)
-
-    def record_result(self, result):
-        """Result is a dict that includes the percentage of subscribers
-        reachable as well as metadata such as run #"""
-        self.results['results'].append(result)
-
-    def output_results(self):
-        """Outputs the results to a file"""
-        log.info("Results: %s" % json.dumps(self.results, sort_keys=True, indent=2))
-        with open(self.output_filename, "w") as f:
-            json.dump(self.results, f, sort_keys=True, indent=2)
 
     def setup_topology(self):
         # only need to set this up once
