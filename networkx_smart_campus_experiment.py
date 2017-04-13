@@ -79,7 +79,9 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         failed_topology = self.get_failed_topology(self.topo.topo, failed_nodes, failed_links)
 
         # start up and configure RideD middleware for building/choosing trees
-        rided = RideD(self.topo, server, self.ntrees, construction_algorithm=self.tree_construction_algorithm[0],
+        # We need to specify dummy addresses that won't actually be used for anything.
+        addresses = ["10.0.0.%d" % d for d in range(self.ntrees)]
+        rided = RideD(self.topo, server, addresses, self.ntrees, construction_algorithm=self.tree_construction_algorithm[0],
                       const_args=self.tree_construction_algorithm[1:])
         # HACK: since we never made an actual API for the controller, we just do this manually...
         for s in subscribers:
