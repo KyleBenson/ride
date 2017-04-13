@@ -117,7 +117,6 @@ class SeismicServer(asyncore.dispatcher):
                 log.error("No subscribers reachable by server!  Aborting...")
                 exit(self.EXIT_CODE_NO_SUBSCRIBERS)
 
-
         # queue seismic event aggregation and forwarding
         # need to store references to cancel them when finish() is called
         self.next_timer = Timer(self.config.delay, self.send_events).start()
@@ -133,6 +132,7 @@ class SeismicServer(asyncore.dispatcher):
         Timer(self.config.quit_time, self.finish).start()
 
     def send_events(self):
+        log.debug("Checking for aggregated events...")
         if len(self.events_rcvd) > 0:
             agg_events = dict()
             # aggregated events are expected as an array

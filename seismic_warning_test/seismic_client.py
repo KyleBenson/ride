@@ -51,6 +51,8 @@ def parse_args(args):
                         help='''unique identifier of this client (used for
                          naming output files and including in event message;
                          default=process ID)''')
+    parser.add_argument('--debug', type=str, default='info', nargs='?', const='debug',
+                        help='''set debug level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
 
     parser.add_argument('--delay', '-d', type=float, default=1,
                         help='''delay (in secs) before sending the event
@@ -82,6 +84,9 @@ class SeismicClient(asyncore.dispatcher):
         self.config = config
         if self.config.id is None:
             self.config.id = str(os.getpid())
+
+        log_level = log.getLevelName(config.debug.upper())
+        log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
 
         # self.my_ip = socket.gethostbyname(socket.gethostname())
 
@@ -189,8 +194,7 @@ class SeismicClient(asyncore.dispatcher):
         os._exit(error_code)
 
 if __name__ == '__main__':
-    log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log.DEBUG)
-    log.debug("Client started at time %s" %  time.time())
     args = parse_args(sys.argv[1:])
     client = SeismicClient(args)
+    log.debug("Client started at time %s" %  time.time())
     client.run()

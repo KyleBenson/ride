@@ -66,6 +66,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.topology_adapter = topology_adapter
         self.n_traffic_generators = n_traffic_generators
         self.traffic_generator_bandwidth = traffic_generator_bandwidth
+        # This gets passed to seismic hosts
+        self.debug_level = kwargs.get('debug', 'error')
 
         # These will all be filled in by calling setup_mininet()
         #TODO: do we actually need all these???
@@ -373,8 +375,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         log.info("Seismic server on host %s" % server.name)
 
-        cmd = "python %s seismic_warning_test/seismic_server.py -a %s --quit_time %d" % \
-              ("-O" if OPTIMISED_PYTHON else "", ' '.join(self.mcast_address_pool), quit_time)
+        cmd = "python %s seismic_warning_test/seismic_server.py -a %s --quit_time %d --debug %s" % \
+              ("-O" if OPTIMISED_PYTHON else "", ' '.join(self.mcast_address_pool), quit_time, self.debug_level)
         # HACK: we pass the static lists of publishers/subscribers via cmd line so as to avoid having to build an
         # API server for RideD to pull this info from.  ENHANCE: integrate a pub-sub broker agent API on controller.
         cmd += " --subs %s --pubs %s" % (' '.join(self.get_host_dpid(h) for h in subscribers),
@@ -405,8 +407,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         assert server_ip != '127.0.0.1', "ERROR: server.IP() returns localhost!"
         for client in sensors.union(subscribers):
             client_id = client.name
-            cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d" % \
-                  ("-O" if OPTIMISED_PYTHON else "", client_id, delay, quit_time)
+            cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d --debug %s" % \
+                  ("-O" if OPTIMISED_PYTHON else "", client_id, delay, quit_time, self.debug_level)
             if client in sensors:
                 cmd += ' -a %s' % server_ip
             if client in subscribers:
