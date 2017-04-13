@@ -1,7 +1,11 @@
 __author__ = 'kebenson'
 
 NEW_SCRIPT_DESCRIPTION = '''Simple client that sends a 'pick' indicating a possible seismic event to a server using
-a simple JSON format over UDP.'''
+a simple JSON format over UDP. After starting, the client waits a specified time before the "earthquake happens",
+at which point it will continually send picks every "delay" seconds to the server (if configured as a publisher).
+The client can also be configured as a subscriber (possibly both at the same time), in which case it will listen
+for aggregated events being sent by the server.  It logs all received events to a file when it finally quits at
+the specified "quit time".'''
 
 # @author: Kyle Benson
 # (c) Kyle Benson 2016
@@ -70,6 +74,7 @@ def parse_args(args):
 class SeismicClient(asyncore.dispatcher):
 
     def __init__(self, config):
+        # dispatcher is an 'old-style' class?
         # super(SeismicClient, self).__init__()
         asyncore.dispatcher.__init__(self)
 
@@ -99,8 +104,11 @@ class SeismicClient(asyncore.dispatcher):
         Timer(self.config.quit_time, self.finish).start()
 
     def send_event(self):
+        curr_time = time.time()
+        log.debug("Sending event at time %s" % curr_time)
+
         event = dict()
-        event['time_sent'] = time.time()
+        event['time_sent'] = curr_time
         event['id'] = self.config.id
 
         self.sendto(json.dumps(event), (self.config.address, self.config.send_port))
@@ -175,6 +183,7 @@ class SeismicClient(asyncore.dispatcher):
 
 if __name__ == '__main__':
     log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log.DEBUG)
+    log.debug("Client started at time %s" %  time.time())
     args = parse_args(sys.argv[1:])
     client = SeismicClient(args)
     client.run()

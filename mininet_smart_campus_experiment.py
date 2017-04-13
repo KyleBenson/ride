@@ -297,17 +297,26 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         log.info('*** Network set up!\n*** Configuring experiment...')
 
         self.setup_traffic_generators()
+        # NOTE: it takes a second or two for the clients to actually start up!
+        # log.debug('*** Starting clients at time %s' % time.time())
         self.setup_seismic_test(publishers, subscribers, server)
+        # log.debug('*** Done starting clients at time %s' % time.time())
 
         # Apply actual failure model: we schedule these to fail when the earthquake hits
         # so there isn't time for the topology to update on the controller,
         # which would skew the results incorrectly. Since it may take a few cycles
         # to fail a lot of nodes/links, we schedule the failures for a second before.
+        # ENCHANCE: instead of just 1 sec before, should try to figure out how long
+        # it'll take for different machines/configurations and time it better...
+        log.info('*** Configuration done!  Waiting for earthquake to start...')
         time.sleep(SEISMIC_EVENT_DELAY - 1)
+        log.info('*** Earthquake at %s!  Applying failure model...' % time.time())
         for link in failed_links:
             self.net.configLinkStatus(link[0], link[1], 'down')
         for node in failed_nodes:
             node.stop(deleteIntfs=False)
+
+        # log.debug('*** Failure model finished applying at %s' % time.time())
 
         log.info("*** Waiting for experiment to complete...")
 
