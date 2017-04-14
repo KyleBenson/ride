@@ -119,7 +119,9 @@ class RideD(object):
                                 (typically IP or MAC address) used by the SDN controller to identify
                                 and address packets to the server on which RideD is running. (default=%(default)s)''')
         arg_parser.add_argument('--addresses', '-a', type=str, nargs='+', default=("127.0.0.1",),
-                            help='''IP address(es) pool for the MDMTs. default=%(default)s''')
+                                help='''IP address(es) pool for the MDMTs. WARNING: RideD does not currently
+                                support multiple topics fully!  Need to first add ability to use different
+                                addresses and GroupIDs for different topics... default=%(default)s''')
 
         return arg_parser
 
