@@ -3,6 +3,7 @@
 
 # Workspace files
 networkx
+mininet
 *.json
 *.progress
 logs/
