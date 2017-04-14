@@ -97,8 +97,7 @@ class NetworkTopology(object):
 
             for u,v in self.topo.edges():
                 del self.topo[u][v]['_temp_mcast_weight']
-
-            return trees
+            results = trees
 
         elif algorithm == 'diverse-paths':
             """This algorithm builds multiple trees by getting multiple paths
@@ -148,7 +147,6 @@ class NetworkTopology(object):
                         non_terminal_leaves = [n for n in new_t.nodes() if\
                                                (new_t.degree(n) == 1 and n not in destinations and n != source)]
                     results[i] = new_t
-            return results
 
         elif algorithm == 'red-blue':
             """SkeletonList red-blue paths construction based off
@@ -197,16 +195,19 @@ class NetworkTopology(object):
             assert not any(r.is_directed() for r in results)
             if not all(nx.is_tree(r) for r in results):
                 log.warn("Non-tree generated for red-blue!")
-            return results
 
         elif algorithm == 'ilp':
             """Our (UCI-DSM group) proposed ILP-based heuristic."""
             from redundant_multicast_algorithms import ilp_redundant_multicast
-            return ilp_redundant_multicast(self.topo, source, destinations, k)
+            results = ilp_redundant_multicast(self.topo, source, destinations, k)
 
         else:
             raise ValueError("Unkown multicast tree generation algorithm %s" % algorithm)
 
+        # Finally, we need to make a new graph copy for each of the trees since we used
+        # subgraph to build them, which means they share the same 'graph' object, which
+        # means they will overwrite each other's attributes when doing e.g. g.graph['address'] = ip_addr
+        return [nx.Graph(t) for t in results]
 
     def get_multicast_tree(self, source, destinations, algorithm='steiner'):
         """Uses networkx algorithms to build a multicast tree for the given source node and
