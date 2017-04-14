@@ -17,6 +17,8 @@ import time
 import asyncore
 import socket
 import json
+import signal
+import os
 from threading import Timer
 
 import ride
@@ -131,6 +133,12 @@ class SeismicServer(asyncore.dispatcher):
         # worrying about flushing the buffer
         Timer(self.config.quit_time, self.finish).start()
 
+        # Sending SIGINT results in the process hanging in the asyncore loop for a bit
+        def __sigint_handler(sig, frame):
+            self.exit_now()
+        signal.signal(signal.SIGINT, __sigint_handler)
+
+
     def send_events(self):
         log.debug("Checking for aggregated events...")
         if len(self.events_rcvd) > 0:
@@ -195,6 +203,10 @@ class SeismicServer(asyncore.dispatcher):
         # need to cancel the next timer or the loop could keep going
         self.next_timer.cancel()
         self.close()
+
+    def exit_now(self, error_code=1):
+        # HACK: kill the whole process immediately and include the error code (regular exit only kills thread)
+        os._exit(error_code)
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])

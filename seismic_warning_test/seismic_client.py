@@ -19,6 +19,7 @@ import asyncore
 import socket
 import json
 import os
+import signal
 from threading import Timer
 
 
@@ -109,6 +110,11 @@ class SeismicClient(asyncore.dispatcher):
 
         # record statistics after experiment finishes then clean up
         Timer(self.config.quit_time, self.finish).start()
+
+        # Sending SIGINT results in the process hanging in the asyncore loop for a bit
+        def __sigint_handler(sig, frame):
+            self.exit_now()
+        signal.signal(signal.SIGINT, __sigint_handler)
 
     def send_event(self):
         curr_time = time.time()
