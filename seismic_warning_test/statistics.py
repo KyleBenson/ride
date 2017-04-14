@@ -81,7 +81,9 @@ class SeismicStatistics(object):
         # since there isn't really anything we can do at this point to fix it...
 
         latencies = []
-        for client in group.values():
+        for results in group.values():
+            # TODO: what to do with sent events?
+            client = results['events_rcvd']
             for (sensor, results) in client.items():
                 hosts_rcvd.add(sensor)
                 latencies.append(results['time_rcvd'] - results['time_sent'])

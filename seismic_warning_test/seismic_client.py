@@ -4,7 +4,7 @@ NEW_SCRIPT_DESCRIPTION = '''Simple client that sends a 'pick' indicating a possi
 a simple JSON format over UDP. After starting, the client waits a specified time before the "earthquake happens",
 at which point it will continually send picks every "delay" seconds to the server (if configured as a publisher).
 The client can also be configured as a subscriber (possibly both at the same time), in which case it will listen
-for aggregated events being sent by the server.  It logs all received events to a file when it finally quits at
+for aggregated events being sent by the server.  It logs all sent/received events to a file when it finally quits at
 the specified "quit time".'''
 
 # @author: Kyle Benson
@@ -24,7 +24,7 @@ from threading import Timer
 
 # Buffer size for receiving packets
 BUFF_SIZE = 4096
-DEFAULT_OUTPUT_FILE_BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "events_rcvd")
+DEFAULT_OUTPUT_FILE_BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "events")
 
 def parse_args(args):
     ##################################################################################
@@ -45,7 +45,7 @@ def parse_args(args):
                         help='''client will act as a subscriber and listen for incoming messages
                         as well as output statistics at the end.''')
     parser.add_argument('--file', '-f', type=str, default=DEFAULT_OUTPUT_FILE_BASE,
-                        help='''file to write statistics on when picks were sent/recvd to
+                        help='''file to write traces (when picks were sent/recvd) to
                         (default=%(default)s_$ID.json)''')
     parser.add_argument('--id', type=str, default=None,
                         help='''unique identifier of this client (used for
@@ -93,6 +93,8 @@ class SeismicClient(asyncore.dispatcher):
         # Stores received UNIQUE events indexed by their 'id'
         # Includes the time they were received at
         self.events_rcvd = dict()
+        # Stores every event sent
+        self.events_sent = []
 
         # TODO: need to record time we started the quake somehow?
 
@@ -116,6 +118,8 @@ class SeismicClient(asyncore.dispatcher):
         event['time_sent'] = curr_time
         event['id'] = self.config.id
 
+        self.events_sent.append(event)
+
         try:
             self.sendto(json.dumps(event), (self.config.address, self.config.send_port))
         except socket.error as e:
@@ -127,7 +131,12 @@ class SeismicClient(asyncore.dispatcher):
         self.next_timer.start()
 
     def process_event(self, event):
-        """Helper function for handle_read()"""
+        """
+        Helper function for handle_read(). Stores the first event received
+        from each other host ID and keeps a counter of how many copies
+        were received.
+        :param event: dict representing a sent event
+        """
         if event['id'] not in self.events_rcvd:
             event['time_rcvd'] = time.time()
             event['copies_rcvd'] = 1
@@ -177,8 +186,7 @@ class SeismicClient(asyncore.dispatcher):
             # This just means we don't send data
             pass
 
-        if self.config.listen:
-            self.record_stats()
+        self.record_stats()
         self.close()
 
     def record_stats(self):
@@ -187,7 +195,8 @@ class SeismicClient(asyncore.dispatcher):
 
         fname = "_".join([self.config.file, self.config.id]) + '.json'
         with open(fname, "w") as f:
-            f.write(json.dumps(self.events_rcvd))
+            all_events = {'events_rcvd': self.events_rcvd, 'events_sent': self.events_sent}
+            f.write(json.dumps(all_events))
 
     def exit_now(self, error_code=1):
         # HACK: kill the whole process immediately and include the error code (regular exit only kills thread)
