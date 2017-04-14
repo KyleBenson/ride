@@ -3,7 +3,6 @@
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
 import os
-import traceback
 
 import errno
 
@@ -26,7 +25,9 @@ from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from topology_manager.test_sdn_topology import mac_for_host  # used for manual MAC assignment
 
 EXPERIMENT_DURATION = 35  # in seconds
+# EXPERIMENT_DURATION = 10  # for testing
 SEISMIC_EVENT_DELAY = 25  # seconds before the 'earthquake happens', i.e. sensors start sending data
+# SEISMIC_EVENT_DELAY = 5  # for testing
 IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
 OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at the default port
 IP_SUBNET = '10.0.0.0/24'  # subnet for all hosts
@@ -85,11 +86,16 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.hosts = []
         self.switches = []
         self.links = []
-        self.server = None
-        self.server_switch = None
         self.net = None
         self.controller = None
         self.nat = None
+        # These are definitely needed
+        self.server = None
+        self.server_switch = None
+        # Save Popen objects to later ensure procs terminate before exiting Mininet
+        # or we'll end up with hanging procs.
+        self.popens = []
+        self.iperfs = []
 
         # HACK: Mininet doesn't exit properly for some reason so we can't do >1 run...
         if self.nruns > 1:
@@ -373,12 +379,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # can listen for each iperf client.
         for n, g in enumerate(generators):
             log.info("iperf from %s to %s" % (g, srv))
-            g.popen('iperf -p %d -t %d -u -b %dM -c %s &' % (IPERF_BASE_PORT + n, EXPERIMENT_DURATION,
-                                                             self.traffic_generator_bandwidth, srv.IP()))
-            srv.popen('iperf -p %d -t %d -u -s &' % (IPERF_BASE_PORT + n, EXPERIMENT_DURATION))
+            # can't do self.net.iperf([g,s]) as there's no option to put it in the background
+            i = g.popen('iperf -p %d -t %d -u -b %dM -c %s &' % (IPERF_BASE_PORT + n, EXPERIMENT_DURATION,
+                                                                 self.traffic_generator_bandwidth, srv.IP()))
+            self.iperfs.append(i)
+            srv.popen('iperf -p %d -u -s &' % (IPERF_BASE_PORT + n))
+            self.iperfs.append(i)
 
-            # can't do this as there's no option to put it in the background
-            # self.net.iperf([g,s])
 
     def setup_seismic_test(self, sensors, subscribers, server):
         """
@@ -392,9 +399,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         :param List[Host] subscribers:
         :param Host server:
         """
-
-        # Save Popen objects to later ensure procs terminate
-        self.popens = []
 
         delay = SEISMIC_EVENT_DELAY  # seconds before sensors start picking
         quit_time = EXPERIMENT_DURATION
@@ -452,7 +456,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             self.popens.append(p)
 
     def teardown_experiment(self):
-        log.info("*** Experiment complete!\n")
+        log.info("*** Experiment complete! Waiting for all host procs to exit...")
 
         # need to check if the programs have finished before we exit mininet!
         # First, we check the server to see if it even ran properly.
@@ -472,15 +476,17 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                     log.error("Client proc failed due to unreachable network!")
                 else:
                     log.error("Client proc exited with code %d" % p.returncode)
+        for p in self.iperfs:
+            p.wait()
 
         # TODO: make this optional (maybe accessible via ctrl-c?)
         CLI(self.net)
 
-        # TODO: figure out why this gives a 'OSError: File name too long'
+        # BUG: This might error if a process (e.g. iperf) didn't finish exiting.
         try:
             self.net.stop()
         except OSError as e:
-            print traceback.format_exc()
+            log.error("Stopping Mininet failed, but we'll keep going.  Reason: %s" % e)
 
     def get_host_dpid(self, host):
         """
