@@ -48,6 +48,14 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
     """
     Version of SmartCampusExperiment that runs the experiment in Mininet emulation.
     This includes some background traffic and....
+
+    It outputs the following files (where * is a string representing a summary of experiment parameters):
+      - results_*.json : the results file output by this experiment that contains all of the parameters
+          and information about publishers/subscribers/the following output locations for each experimental run
+      - outputs_*/client_events_{$HOST_ID}.json : contains events sent/recvd by seismic client
+      - logs_*/{$HOST_ID} : log files storing seismic client/server's stdout/stderr
+      NOTE: the folder hierarchy is important as the results_*.json file contains relative paths pointing
+          to the other files from its containing directory.
     """
 
     def __init__(self, controller_ip='127.0.0.1', controller_port=8181,
@@ -71,6 +79,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         """
         super(MininetSmartCampusExperiment, self).__init__(*args, **kwargs)
         # save any additional parameters the Mininet version adds
+        self.results['params']['experiment_type'] = 'mininet'
         self.results['params']['tree_choosing_heuristic'] = self.tree_choosing_heuristic = tree_choosing_heuristic
         self.results['params']['n_traffic_generators'] = self.n_traffic_generators = n_traffic_generators
         self.results['params']['traffic_generator_bandwidth'] = self.traffic_generator_bandwidth = traffic_generator_bandwidth
@@ -291,6 +300,10 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         finally tears it down before returning the results.
         (Assumes Mininet has already been started).
 
+        Returned results is a dict containing the 'logs_dir' and 'outputs_dir' for
+        this run as well as lists of 'subscribers' and 'publishers' (their app IDs
+        (Mininet node names), which will appear in the name of their output file).
+
         :param List[Node] failed_nodes:
         :param List[str] failed_links:
         :param Host server:
@@ -337,7 +350,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.setup_traffic_generators()
         # NOTE: it takes a second or two for the clients to actually start up!
         # log.debug('*** Starting clients at time %s' % time.time())
-        self.setup_seismic_test(publishers, subscribers, server)
+        logs_dir, outputs_dir = self.setup_seismic_test(publishers, subscribers, server)
         # log.debug('*** Done starting clients at time %s' % time.time())
 
         # Apply actual failure model: we schedule these to fail when the earthquake hits
@@ -360,8 +373,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         time.sleep(EXPERIMENT_DURATION - SEISMIC_EVENT_DELAY)
 
-        # TODO: some sort of meaningful results?  maybe save filenames of the seismic hosts?
-        return {}
+        return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
+                'publishers': [p.name for p in publishers],
+                'subscribers': [s.name for s in subscribers]}
 
     def setup_traffic_generators(self):
         """Each traffic generating host starts an iperf process aimed at
@@ -398,10 +412,33 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         :param List[Host] sensors:
         :param List[Host] subscribers:
         :param Host server:
+        :returns logs_dir, outputs_dir: the directories (relative to the experiment output
+         file) in which the logs and output files, respectively, are stored for this run
         """
 
         delay = SEISMIC_EVENT_DELAY  # seconds before sensors start picking
         quit_time = EXPERIMENT_DURATION
+
+        # The logs and output files go in nested directories rooted
+        # at the same level as the whole experiment's output file.
+        # We typically name the output file as results_$PARAMS.json, so cut off the front and extension
+        root_dir = os.path.dirname(self.output_filename)
+        base_dirname = os.path.splitext(os.path.basename(self.output_filename))[0]
+        if base_dirname.startswith('results_'):
+            base_dirname = base_dirname[8:]
+        if WITH_LOGS:
+            logs_dir = os.path.join(root_dir, 'logs_%s' % base_dirname, 'run%d' % self.current_run_number)
+            try:
+                os.makedirs(logs_dir)
+            except OSError:
+                pass
+        else:
+            logs_dir = None
+        outputs_dir =  os.path.join(root_dir, 'outputs_%s' % base_dirname, 'run%d' % self.current_run_number)
+        try:
+            os.makedirs(outputs_dir)
+        except OSError:
+            pass
 
         # SETUP SERVER
 
@@ -418,7 +455,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                % (self.ntrees, ' '.join(self.tree_construction_algorithm), self.tree_choosing_heuristic,
                   self.get_host_dpid(self.server), self.controller_ip, self.controller_port)
         if WITH_LOGS:
-            cmd += " > logs/srv 2>&1"
+            cmd += " > %s 2>&1" % os.path.join(logs_dir, 'srv')
 
         log.debug(cmd)
         # HACK: Need to set PYTHONPATH since we don't install our Python modules directly and running Mininet
@@ -439,14 +476,15 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         assert server_ip != '127.0.0.1', "ERROR: server.IP() returns localhost!"
         for client in sensors.union(subscribers):
             client_id = client.name
-            cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d --debug %s" % \
-                  ("-O" if OPTIMISED_PYTHON else "", client_id, delay, quit_time, self.debug_level)
+            cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d --debug %s --file %s" % \
+                  ("-O" if OPTIMISED_PYTHON else "", client_id, delay, quit_time, self.debug_level,
+                   os.path.join(outputs_dir, 'client_events'))  # the client appends its ID automatically to the file name
             if client in sensors:
                 cmd += ' -a %s' % server_ip
             if client in subscribers:
                 cmd += ' -l'
             if WITH_LOGS:
-                cmd += " > logs/%s 2>&1" % client_id
+                cmd += " > %s 2>&1" % os.path.join(logs_dir, client_id)
 
             # the node.sendCmd option in mininet only allows a single
             # outstanding command at a time and cancels any current
@@ -454,6 +492,12 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             log.debug(cmd)
             p = client.popen(cmd, shell=True, env=env)
             self.popens.append(p)
+
+        # make the paths relative to the root directory in which the whole experiment output file is stored
+        # as otherwise the paths are dependent on where the cwd is
+        logs_dir = os.path.relpath(logs_dir, root_dir)
+        outputs_dir = os.path.relpath(outputs_dir, root_dir)
+        return logs_dir, outputs_dir
 
     def teardown_experiment(self):
         log.info("*** Experiment complete! Waiting for all host procs to exit...")

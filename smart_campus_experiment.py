@@ -32,6 +32,7 @@ class SmartCampusExperiment(object):
                  **kwargs):
         super(SmartCampusExperiment, self).__init__()
         self.nruns = nruns
+        self.current_run_number = None
         self.ntrees = ntrees
         self.nsubscribers = nsubscribers
         self.npublishers = npublishers
@@ -73,6 +74,8 @@ class SmartCampusExperiment(object):
                                    'choicerandseed': choice_rand_seed,
                                    'randseed': rand_seed,
                                    'failrandseed': kwargs.get('failure_rand_seed', None),
+                                   # NOTE: subclasses should store their type here!
+                                   'experiment_type': None
                                    }
                         }
 
@@ -186,6 +189,7 @@ class SmartCampusExperiment(object):
         # start the actual experimentation
         for r in range(self.nruns):
             log.info("Starting run %d" % r)
+            self.current_run_number = r
             self.setup_topology()
             subs = self.choose_subscribers()
             pubs = self.choose_publishers()

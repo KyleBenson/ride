@@ -26,6 +26,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         :param kwargs:
         """
         super(NetworkxSmartCampusExperiment, self).__init__(*args, **kwargs)
+        self.results['experiment_type'] = 'networkx'
 
     def setup_topology(self):
         # only need to set this up once
