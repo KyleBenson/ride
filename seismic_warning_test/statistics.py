@@ -12,27 +12,6 @@ import os
 import json
 
 
-def parse_args(args):
-##################################################################################
-#################      ARGUMENTS       ###########################################
-# ArgumentParser.add_argument(name or flags...[, action][, nargs][, const][, default][, type][, choices][, required][, help][, metavar][, dest])
-# action is one of: store[_const,_true,_false], append[_const], count
-# nargs is one of: N, ?(defaults to const when no args), *, +, argparse.REMAINDER
-# help supports %(var)s: help='default value is %(default)s'
-##################################################################################
-
-    parser = argparse.ArgumentParser(description=STATISTICS_DESCRIPTION,
-                                     #formatter_class=argparse.RawTextHelpFormatter,
-                                     #epilog='Text to display at the end of the help print',
-                                     )
-
-    parser.add_argument('--dirs', '-d', type=str, nargs="+", default=['output'],
-                        help='''directories containing files from which to read outputs
-                        (default=%(default)s)''')
-
-    return parser.parse_args(args)
-
-
 class SeismicStatistics(object):
     """Gathers statistics from the output files in order to determine how long it
     took the events to reach the interested clients. Also handles printing them in
@@ -47,22 +26,67 @@ class SeismicStatistics(object):
     -- We should then plot the CDF of these averages to see how well the experiment performed
     """
 
-    def __init__(self, config):
+    def __init__(self, dirs):
+        """
+        Constructor.
+        :param dirs: list of directories to parse all the contained results files in
+        :type List[str] dirs:
+        """
         super(self.__class__, self).__init__()
-        self.config = config
+        self.dirs = dirs
 
         # store all the parsed stats indexed by directory name, then by filename
         self.stats = dict()
 
-    def parse_all(self):
-        for dirname in self.config.dirs:
-            self.parse_dir(dirname)
+    @classmethod
+    def get_arg_parser(cls):
+        ##################################################################################
+        #################      ARGUMENTS       ###########################################
+        # ArgumentParser.add_argument(name or flags...[, action][, nargs][, const][, default][, type][, choices][, required][, help][, metavar][, dest])
+        # action is one of: store[_const,_true,_false], append[_const], count
+        # nargs is one of: N, ?(defaults to const when no args), *, +, argparse.REMAINDER
+        # help supports %(var)s: help='default value is %(default)s'
+        ##################################################################################
+
+        parser = argparse.ArgumentParser(description=STATISTICS_DESCRIPTION,
+                                         # formatter_class=argparse.RawTextHelpFormatter,
+                                         # epilog='Text to display at the end of the help print',
+                                         )
+
+        parser.add_argument('--dirs', '-d', type=str, nargs="+", default=['output'],
+                            help='''directories containing files from which to read outputs
+                            (default=%(default)s)''')
+
+        return parser
+
+    @classmethod
+    def build_from_args(cls, args):
+        parser = cls.get_arg_parser()
+        args = parser.parse_args(args)
+        args = vars(args)
+        return cls(**args)
+
+    def parse_all(self, dirs_to_parse=None, stats=None):
+        """
+        Parse all of the requested directories, save the stats as self.stats, and return them.
+        :param dirs_to_parse: list of directories to parse (self.dirs if None)
+        :param stats: dict in which to store the parsed stats (self.stats if None)
+        :return stats: parsed stats dict
+        """
+        if dirs_to_parse is None:
+            dirs_to_parse = self.dirs
+        if stats is None:
+            stats = self.stats
+        for dirname in dirs_to_parse:
+            stats[dirname] = self.parse_dir(dirname)
+        return stats
 
     def parse_dir(self, dirname):
-        self.stats[dirname] = dict()
+        results = dict()
         for filename in os.listdir(dirname):
             parsed = self.parse_file(os.path.join(dirname, filename))
-            self.stats[dirname][filename] = parsed
+            results[filename] = parsed
+        return results
 
     def parse_file(self, fname):
         with open(fname) as f:
@@ -70,8 +94,9 @@ class SeismicStatistics(object):
 
     def get_latencies(self, group):
         """Averages the latencies over this group of results (directory).
-        @:param group - dictionary of {filename: parsed_results} pairs
-        @:return latencies, num_sensors
+        :param group: dictionary of {filename: parsed_results} pairs representing the
+        results of a single experiment in terms of seismic client outputs
+        :return latencies, num_sensors
         """
 
         # track which hosts anyone received data from to establish an upper bound
@@ -90,14 +115,48 @@ class SeismicStatistics(object):
 
         return np.array(latencies), len(hosts_rcvd)
 
+    def calculate_nsubscribers(self, group):
+        """
+        Calculates the number of subscribers present in the given group
+         by looking at how many parsed results files contain the role 'subscriber'.
+        :param group: dictionary of {filename: parsed_results} pairs representing the
+        results of a single experiment in terms of seismic client outputs
+        :return:
+        """
+        return sum('subscriber' in results['roles'] for results in group.values())
+
+    def get_reachability(self, group, nsubscribers=None):
+        """
+        Gets the 'reachability' of the group, which is the normalized # sensors
+        that received any aggregated results messages, which are assumed to actually
+        be some kind of alert.  Thus, this doesn't consider receiving the 'original'
+        event, but just the aggregated one from the server.
+        :param group: dictionary of {filename: parsed_results} pairs representing the
+        results of a single experiment in terms of seismic client outputs
+        :param int nsubscribers: # subscribers being considered (if None, calculates
+        it via calculate_nsubscribers(group))
+        :return:
+        """
+
+        # First, we need to determine nsubscribers if not specified
+        if nsubscribers is None:
+            nsubscribers = self.calculate_nsubscribers(group)
+
+        # Now we just count the # subscribers that actually received events and then normalize
+        reachability = sum(len(results['events_rcvd']) > 0 for results in group.values())
+        reachability /= float(nsubscribers)
+        assert reachability <= 1.0, "reachability should be in range [0,1]!!"
+        return reachability
+
     def plot_cdf(self, num_bins=10):
-        '''Plots the CDF of the number of seismic events
-        received at interested clients. Averaged over all subscribers.'''
+        """Plots the CDF of the number of seismic events received over time
+         at interested clients. Averaged over all subscribers."""
 
         # TODO: is this assuming that all sensors are also subscribers????
 
         # Can't just normalize because some experiments may have overall
         # better performance than others (or even different # sensors).
+        # TODO: actual count of # sensors based on publisher info / roles
         # Instead, we estimate the total # sensors by counting all unique occurrences,
         # and then each actual subscriber contributes its appropriate weight of counts
         # to each bin.  This results in the total counts being the number of subscribers.
@@ -124,9 +183,12 @@ class SeismicStatistics(object):
 
 
     def plot_time(self):
-        '''Plots the events' latencies over time.  Useful for
+        """Plots the events' latencies over time.  Useful for
         determining if event processing slows down over time or spikes
-        at a certain point.'''
+        at a certain point.  CURRENTLY NOT IMPLEMENTED"""
+
+        raise NotImplementedError
+        # TODO: fix the code below as it appears to have been copy/pasted from a different analyzer file
 
         # Rather than raw datetimes, we want to use the total seconds since the
         # simulation's start
@@ -141,8 +203,8 @@ class SeismicStatistics(object):
         plt.show()
 
     def print_statistics(self):
-        '''Prints summary statistics for all groups, in particular
-        the mean latency and standard deviation.'''
+        """Prints summary statistics for all groups, in particular
+        the mean latency and standard deviation."""
 
         for group_name, group in self.stats.items():
             latencies, _ = self.get_latencies(group)
@@ -155,8 +217,7 @@ class SeismicStatistics(object):
     #     return s
 
 if __name__ == '__main__':
-    args = parse_args(sys.argv[1:])
-    stats = SeismicStatistics(args)
+    stats = SeismicStatistics.build_from_args(sys.argv[1:])
     stats.parse_all()
     stats.print_statistics()
     stats.plot_cdf()

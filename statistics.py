@@ -3,6 +3,8 @@ import numbers
 from pprint import pprint
 import re
 
+from seismic_warning_test.statistics import SeismicStatistics
+
 STATISTICS_DESCRIPTION = '''Gathers statistics from the networkx_smart_campus_experiment.py output files in order to determine how
 resilient different multicast tree-generating algorithms are under various scenarios.
 Also handles printing them in an easily-read format as well as creating plots.'''
@@ -121,7 +123,7 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
-class SeismicStatistics(object):
+class SmartCampusStatistics(object):
     """Parse results and visualize reachability rate."""
 
     def __init__(self, config):
@@ -137,6 +139,10 @@ class SeismicStatistics(object):
 
         # store all the parsed stats indexed by x-axis parameter values
         self.stats = dict()
+
+        # This will be set when parsing files to determine the type of experimental
+        # results file we're working with.  Can be either 'mininet' or 'networkx'
+        self.experiment_type = None
 
         # Determine how we name the metrics as we gather them up.
         # If <=1 tree choice heuristic is requested, the name will
@@ -258,14 +264,59 @@ class SeismicStatistics(object):
             _parsed = re.match('(\d+)b-(\d+)h-(\d+)ibl', param_value).groups()
             param_value = (int(_parsed[0]), int(_parsed[1]), int(_parsed[2]))
 
-        # HACK: topo is stored as a list, so convert it to a tuple
-        # Actually maybe we want to just extract the [1:] strings?
+        # Extract the properly-formatted results dict
+        if data['params']['experiment_type'] == 'networkx':
+            results = data['results']
+            assert self.experiment_type is None or self.experiment_type == 'networkx',\
+                "experiment_type changed between parsed files!"
+            self.experiment_type = 'networkx'
+        elif data['params']['experiment_type'] == 'mininet':
+            # For results from a Mininet experiment, we need to parse the specified client files.
+            results = self.parse_mininet_results(data, fname)
+            assert self.experiment_type is None or self.experiment_type == 'mininet',\
+                "experiment_type changed between parsed files!"
+            self.experiment_type = 'mininet'
+        else:
+            log.error("unrecognized 'experiment_type' %s. Aborting." % data['experiment_type'])
+            exit(1)
 
+        # This aggregates together the files grouped by param_value
         try:
-            self.stats.setdefault(param_value, []).extend(data['results'])
+            self.stats.setdefault(param_value, []).extend(results)
         except TypeError:
             # if something is stored as a list, convert it to a tuple
-            self.stats.setdefault(tuple(param_value), []).extend(data['results'])
+            self.stats.setdefault(tuple(param_value), []).extend(results)
+
+    def parse_mininet_results(self, data, filename):
+        """
+        Parses the specified json data from a Mininet experiment results file by
+        parsing the seismic client files specified by this file and converting
+        them into a format expected by this analyzer.
+        :param data: raw json dict taken directly from the results file
+        :param filename: path to the parsed file where 'data' was read from
+        :return: list of dicts of just the reachability results for each run
+        """
+
+        results = []
+        for run in data['results']:
+            # The outputs_dir is specified relative to the results file we're currently processing
+            this_path = os.path.dirname(os.path.abspath(filename))
+            dirname = os.path.join(this_path, run['outputs_dir'])
+            # log.debug("parsing seismic results in dir %s" % dirname)
+            parser = SeismicStatistics(dirs=[dirname])
+            parser.parse_all()
+            group = parser.stats[dirname]
+
+            # Get the reachability for this experimental run and store it in a results dict
+            # formatted like the ones from networkx experiments.
+            reach = parser.get_reachability(group, nsubscribers=len(run['subscribers']))
+            res = {data['params']['heuristic']:
+                       {'mean': reach}
+                   }
+            results.append(res)
+
+        # log.debug("mininet results parsed: %s" % results)
+        return results
 
 
     def gather_yvalues_from_raw_results(self, results):
@@ -751,7 +802,7 @@ class SeismicStatistics(object):
 def run_tests():
     dummy_args = parse_args([])
     dummy_args.debug = 'debug'
-    stats = SeismicStatistics(dummy_args)
+    stats = SmartCampusStatistics(dummy_args)
     # create some dummy results with really simple values for testing
     nresults = 4
     test_heuristics = ["steiner", "red-blue", "fake_heuristic"]
@@ -862,7 +913,7 @@ if __name__ == '__main__':
         exit()
 
     args = parse_args(sys.argv[1:])
-    stats = SeismicStatistics(args)
+    stats = SmartCampusStatistics(args)
     stats.parse_all()
-    stats.print_statistics()
+    # stats.print_statistics()
     stats.plot_reachability()
