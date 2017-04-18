@@ -99,8 +99,11 @@ class SeismicClient(asyncore.dispatcher):
 
         # TODO: need to record time we started the quake somehow?
 
+        self.is_subscriber = self.config.listen
+
         # queue seismic event reporting
-        if self.config.address is not None:
+        self.is_publisher = self.config.address is not None
+        if self.is_publisher:
             self.next_timer = Timer(self.config.delay, self.send_event)
             self.next_timer.start()
 
@@ -192,17 +195,24 @@ class SeismicClient(asyncore.dispatcher):
             # This just means we don't send data
             pass
 
-        self.record_stats()
+        self.record_results()
         self.close()
 
-    def record_stats(self):
+    def record_results(self):
         """Records the received picks for consumption by another script
         that will analyze the resulting performance."""
 
         fname = "_".join([self.config.file, self.config.id]) + '.json'
         with open(fname, "w") as f:
-            all_events = {'events_rcvd': self.events_rcvd, 'events_sent': self.events_sent}
-            f.write(json.dumps(all_events))
+            # Save the roles this client played so we know how to interpret the results.
+            roles = []
+            if self.is_publisher:
+                roles.append('publisher')
+            if self.is_subscriber:
+                roles.append('subscriber')
+
+            results = {'events_rcvd': self.events_rcvd, 'events_sent': self.events_sent, 'roles': roles}
+            f.write(json.dumps(results))
 
     def exit_now(self, error_code=1):
         # HACK: kill the whole process immediately and include the error code (regular exit only kills thread)
