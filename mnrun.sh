@@ -10,8 +10,3 @@ rm logs/* > /dev/null 2>&1
 CONTROLLER_IP=`hostname -I | awk '{print $1}'`
 echo "SDN controller at $CONTROLLER_IP"
 sudo ./mininet_smart_campus_experiment.py --ip "$CONTROLLER_IP" $@
-
-sudo mn -c > /dev/null 2>&1
-
-# iperf seems to hang due to mininet not closing properly 
-sudo pkill iperf > /dev/null 2>&1

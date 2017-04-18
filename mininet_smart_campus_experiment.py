@@ -6,6 +6,8 @@ import os
 
 import errno
 
+from subprocess import Popen
+
 from smart_campus_experiment import SmartCampusExperiment
 
 import logging as log
@@ -39,6 +41,7 @@ NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
 # When True, runs host processes with -00 command for optimized python code
 OPTIMISED_PYTHON = False
+SLEEP_TIME_BETWEEN_RUNS = 5  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
 
 # Default values
 DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
@@ -98,18 +101,19 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.net = None
         self.controller = None
         self.nat = None
-        # These are definitely needed
+
         self.server = None
         self.server_switch = None
         # Save Popen objects to later ensure procs terminate before exiting Mininet
         # or we'll end up with hanging procs.
         self.popens = []
-        self.iperfs = []
+        # Need to save client/server iperf procs separately as we need to terminate the server ones directly.
+        self.client_iperfs = []
+        self.server_iperfs = []
 
-        # HACK: Mininet doesn't exit properly for some reason so we can't do >1 run...
-        if self.nruns > 1:
-            log.warning("nruns > 1 not currently supported for Mininet experiment.  Only doing 1 run...")
-            self.nruns = 1
+        # We'll drop to a CLI after the experiment completes for
+        # further poking around if we're only doing a single run.
+        self.show_cli = self.nruns == 1
 
         # HACK: We just manually allocate IP addresses rather than adding a controller API to request them.
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
@@ -127,6 +131,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         # argument parser that can be combined with others when this class is used in a script
         # need to not add help options to use that feature, though
+        # TODO: document some behavior that changes with the Mininet version:
+        # -- shows the mininet CLI at the end of the experiment iff nruns==1
+        # -- pubs/subs are actual client processes
         arg_parser = argparse.ArgumentParser(parents=parents, add_help=add_help)
         # experimental treatment parameters: all taken from parents
         # background traffic generation
@@ -379,8 +386,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
     def setup_traffic_generators(self):
         """Each traffic generating host starts an iperf process aimed at
-         (one of) the server(s) in order to generate random traffic and create
-         congestion in the experiment.  Traffic is a mix of UDP and TCP."""
+        (one of) the server(s) in order to generate random traffic and create
+        congestion in the experiment.  Traffic is all UDP because it sets the bandwidth.
+
+        NOTE: iperf v2 added the capability to tell the server when to exit after some time.
+        However, we explicitly terminate the server anyway to avoid incompatibility issues."""
 
         generators = self._get_mininet_nodes(self._choose_random_hosts(self.n_traffic_generators))
 
@@ -396,9 +406,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # can't do self.net.iperf([g,s]) as there's no option to put it in the background
             i = g.popen('iperf -p %d -t %d -u -b %dM -c %s &' % (IPERF_BASE_PORT + n, EXPERIMENT_DURATION,
                                                                  self.traffic_generator_bandwidth, srv.IP()))
-            self.iperfs.append(i)
-            srv.popen('iperf -p %d -u -s &' % (IPERF_BASE_PORT + n))
-            self.iperfs.append(i)
+            self.client_iperfs.append(i)
+            i = srv.popen('iperf -p %d -t %d -u -s &' % (IPERF_BASE_PORT + n, EXPERIMENT_DURATION))
+            self.server_iperfs.append(i)
 
 
     def setup_seismic_test(self, sensors, subscribers, server):
@@ -520,17 +530,36 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                     log.error("Client proc failed due to unreachable network!")
                 else:
                     log.error("Client proc exited with code %d" % p.returncode)
-        for p in self.iperfs:
+        # Clients should terminate automatically, but the server won't do so unless
+        # a high enough version of iperf is used so we just do it explicitly.
+        for p in self.client_iperfs:
             p.wait()
+        for p in self.server_iperfs:
+            try:
+                p.kill()
+                p.wait()
+            except OSError:
+                pass  # must have already terminated
+        self.popens = []
+        self.server_iperfs = []
+        self.client_iperfs = []
 
-        # TODO: make this optional (maybe accessible via ctrl-c?)
-        CLI(self.net)
+        log.debug("*** All processes exited!  Cleaning up Mininet...")
+
+        if self.show_cli:
+            CLI(self.net)
 
         # BUG: This might error if a process (e.g. iperf) didn't finish exiting.
         try:
             self.net.stop()
         except OSError as e:
             log.error("Stopping Mininet failed, but we'll keep going.  Reason: %s" % e)
+
+        # We seem to still have process leakage even after the previous call to stop Mininet,
+        # so let's do an explicit clean between each run.
+        p = Popen('sudo mn -c > /dev/null 2>&1', shell=True)
+        p.wait()
+        time.sleep(SLEEP_TIME_BETWEEN_RUNS)
 
     def get_host_dpid(self, host):
         """
