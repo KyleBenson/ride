@@ -10,6 +10,7 @@ import argparse
 import sys
 import os
 import json
+import logging as log
 
 
 class SeismicStatistics(object):
@@ -26,7 +27,7 @@ class SeismicStatistics(object):
     -- We should then plot the CDF of these averages to see how well the experiment performed
     """
 
-    def __init__(self, dirs):
+    def __init__(self, dirs, debug='info'):
         """
         Constructor.
         :param dirs: list of directories to parse all the contained results files in
@@ -37,6 +38,9 @@ class SeismicStatistics(object):
 
         # store all the parsed stats indexed by directory name, then by filename
         self.stats = dict()
+
+        log_level = log.getLevelName(debug.upper())
+        log.basicConfig(format='%(levelname)s:%(message)s', level=log_level)
 
     @classmethod
     def get_arg_parser(cls):
@@ -56,6 +60,8 @@ class SeismicStatistics(object):
         parser.add_argument('--dirs', '-d', type=str, nargs="+", default=['output'],
                             help='''directories containing files from which to read outputs
                             (default=%(default)s)''')
+        parser.add_argument('--debug', '--verbose', '-v', type=str, default='info', nargs='?', const='debug',
+                            help='''set verbosity level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
 
         return parser
 
@@ -169,11 +175,14 @@ class SeismicStatistics(object):
 
         for (group_name, group) in self.stats.items():
             latencies, nsensors = self.get_latencies(group)
-            # adjust the weight as per above paragraph
-            weight_adjustment = [1.0/nsensors/len(group)] * len(latencies)
-            counts, bin_edges = np.histogram(latencies, bins=num_bins, weights=weight_adjustment)
-            cdf = np.cumsum(counts)
-            plt.plot(bin_edges[1:], cdf, label=group_name)
+            try:
+                # adjust the weight as per above paragraph
+                weight_adjustment = [1.0/nsensors/len(group)] * len(latencies)
+                counts, bin_edges = np.histogram(latencies, bins=num_bins, weights=weight_adjustment)
+                cdf = np.cumsum(counts)
+                plt.plot(bin_edges[1:], cdf, label=group_name)
+            except ZeroDivisionError:
+                log.error("Group %s (%d sensors) had ZeroDivisionError and was skipped. len(group)=%d" % (group_name, nsensors, len(group)))
 
         plt.xlabel("time(secs)")
         # TODO: put x scale as log? maybe y too?
