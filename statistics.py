@@ -787,10 +787,12 @@ class SmartCampusStatistics(object):
 
             print "reach_dicts:"
             for heur, reach_dict in reachabilities_dict.items():
+                default_array = np.array([])
                 assert all(isinstance(v, np.ndarray) for v in reach_dict.values())
-                log.info(msg % (group_name, heur, reach_dict['mean'].mean(),
-                                reach_dict['stdev'].mean(), reach_dict['min'].mean(),
-                                reach_dict['max'].mean()))
+                log.info(msg % (group_name, heur, reach_dict.get('mean', default_array).mean(),
+                                reach_dict.get('stdev', default_array).mean(),
+                                reach_dict.get('min', default_array).mean(),
+                                reach_dict.get('max', default_array).mean()))
 
             print "reach_arrays:"
             for heur, reach_array in reachabilities_array.items():
@@ -915,5 +917,5 @@ if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
     stats = SmartCampusStatistics(args)
     stats.parse_all()
-    # stats.print_statistics()
+    stats.print_statistics()
     stats.plot_reachability()
