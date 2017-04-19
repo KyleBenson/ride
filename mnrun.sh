@@ -3,8 +3,6 @@
 echo "Resetting ONOS, Mininet, and log files to start fresh..." 
 tools/onos_reset.sh > /dev/null 2>&1
 sudo mn -c > /dev/null 2>&1
-mkdir logs > /dev/null 2>&1
-rm logs/* > /dev/null 2>&1
 
 # use first non-loopback interface as IP address of SDN Controller (we run it locally)
 CONTROLLER_IP=`hostname -I | awk '{print $1}'`
