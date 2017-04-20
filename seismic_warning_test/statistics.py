@@ -99,29 +99,30 @@ class SeismicStatistics(object):
             return json.loads(f.read())
 
     def get_latencies(self, group):
-        """Averages the latencies over this group of results (directory).
+        """Returns the latencies (delta from time originally sent by publisher until
+        when the subscriber received the event) for this group of results
+        (directory of client outputs).
         :param group: dictionary of {filename: parsed_results} pairs representing the
         results of a single experiment in terms of seismic client outputs
-        :return latencies, num_sensors
+        :return latencies, num_sensors: where len(latencies) = num_sensors * num_subscribers,
+         assuming all subscribers received all publications
+        :rtype: np.array[float], int
         """
-
-        # track which hosts anyone received data from to establish an upper bound
-        hosts_rcvd = set()
-        # QUESTION: should we get the min of all time_sents in order to avoid
-        # inaccuracy due to clients starting at different times?  Probably not
-        # since there isn't really anything we can do at this point to fix it...
 
         latencies = []
         for results in group.values():
             # TODO: what to do with sent events?
             client = results['events_rcvd']
-            for (sensor, results) in client.items():
-                hosts_rcvd.add(sensor)
-                latencies.append(results['time_rcvd'] - results['time_sent'])
+            for (sensor, res) in client.items():
+                time_rcvd = res['time_rcvd']
+                time_sent = res['time_sent']
+                latencies.append(time_rcvd - time_sent)
 
-        return np.array(latencies), len(hosts_rcvd)
+        nsensors = self.calculate_npublishers(group)
+        return np.array(latencies), nsensors
 
-    def calculate_nsubscribers(self, group):
+    @staticmethod
+    def calculate_nsubscribers(group):
         """
         Calculates the number of subscribers present in the given group
          by looking at how many parsed results files contain the role 'subscriber'.
@@ -130,6 +131,17 @@ class SeismicStatistics(object):
         :return:
         """
         return sum('subscriber' in results['roles'] for results in group.values())
+
+    @staticmethod
+    def calculate_npublishers(group):
+        """
+        Calculates the number of subscribers present in the given group
+         by looking at how many parsed results files contain the role 'subscriber'.
+        :param group: dictionary of {filename: parsed_results} pairs representing the
+        results of a single experiment in terms of seismic client outputs
+        :return:
+        """
+        return sum('publisher' in results['roles'] for results in group.values())
 
     def get_reachability(self, group, nsubscribers=None):
         """
@@ -141,12 +153,14 @@ class SeismicStatistics(object):
         results of a single experiment in terms of seismic client outputs
         :param int nsubscribers: # subscribers being considered (if None, calculates
         it via calculate_nsubscribers(group))
-        :return:
+        :return: reachability
+        :rtype float:
         """
 
         # First, we need to determine nsubscribers if not specified
         if nsubscribers is None:
             nsubscribers = self.calculate_nsubscribers(group)
+            assert nsubscribers > 0, "0 subscribers for group: %s" % group
 
         # Now we just count the # subscribers that actually received events and then normalize
         reachability = sum(len(results['events_rcvd']) > 0 for results in group.values())
@@ -158,29 +172,21 @@ class SeismicStatistics(object):
         """Plots the CDF of the number of seismic events received over time
          at interested clients. Averaged over all subscribers."""
 
-        # TODO: is this assuming that all sensors are also subscribers????
-
-        # Can't just normalize because some experiments may have overall
-        # better performance than others (or even different # sensors).
-        # TODO: actual count of # sensors based on publisher info / roles
-        # Instead, we estimate the total # sensors by counting all unique occurrences,
-        # and then each actual subscriber contributes its appropriate weight of counts
-        # to each bin.  This results in the total counts being the number of subscribers.
-        # So then we could further reduce the contributed weights by the # subs in order
-        # to get the total being 1.0 iff all subs eventually received all events.
-
         # TODO: use these markers
         # markers = 'x.*+do^s1_|'
         # plot(..., marker=markers[i%len(markers)])
 
         for (group_name, group) in self.stats.items():
-            latencies, nsensors = self.get_latencies(group)
+            latencies, npublishers = self.get_latencies(group)
+            nsubscribers = self.calculate_nsubscribers(group)
+            log.debug("Group %s has %d sensors" % (group_name, npublishers))
             try:
-                # adjust the weight as per above paragraph
-                weight_adjustment = [1.0/nsensors/len(group)] * len(latencies)
+                # Adjust the weight to account for the fact that each latency is a delta
+                # for a publisher->subscriber "cross-product" combination.
+                weight_adjustment = [1.0/npublishers/nsubscribers] * len(latencies)
                 counts, bin_edges = np.histogram(latencies, bins=num_bins, weights=weight_adjustment)
                 cdf = np.cumsum(counts)
-                plt.plot(bin_edges[1:], cdf, label=group_name)
+                plt.plot(bin_edges[1:], cdf, label=self.get_label_for_group(group_name))
             except ZeroDivisionError:
                 log.error("Group %s (%d sensors) had ZeroDivisionError and was skipped. len(group)=%d" % (group_name, nsensors, len(group)))
 
@@ -188,8 +194,18 @@ class SeismicStatistics(object):
         # TODO: put x scale as log? maybe y too?
         plt.ylabel("avg % readings rcvd")
         plt.title('Sensor readings received over time')
+        plt.legend(loc=0)  # loc=0 --> auto
         plt.show()
 
+    def get_label_for_group(self, group_name):
+        """
+        Returns a human-readable label for the given group_name, which is assumed
+        to be a path to the directory containing the client output files.  Hence
+        we just return the last part of that path.
+        :param group_name:
+        :return:
+        """
+        return os.path.split(group_name)[-1]
 
     def plot_time(self):
         """Plots the events' latencies over time.  Useful for
@@ -209,6 +225,7 @@ class SeismicStatistics(object):
         plt.xlabel("time(s)")
         plt.ylabel("latency(ms)")
         plt.title('Event latency over time')
+        plt.legend(loc=0)  # loc=0 --> auto
         plt.show()
 
     def print_statistics(self):
@@ -217,7 +234,10 @@ class SeismicStatistics(object):
 
         for group_name, group in self.stats.items():
             latencies, _ = self.get_latencies(group)
-            print "Group %s's Mean: %fs; stdev: %fs" % (group_name, np.mean(latencies), np.std(latencies))
+            print "Group %s's latency Mean: %fs; stdev: %fs" % (group_name, np.mean(latencies), np.std(latencies))
+
+            reach = self.get_reachability(group)
+            print "Group %s's reachability: %f" % (group_name, reach)
 
     # could use this if we ever put the events into some kind of object
     # def __repr__(self):
