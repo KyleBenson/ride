@@ -87,7 +87,7 @@ class SeismicClient(asyncore.dispatcher):
             self.config.id = str(os.getpid())
 
         log_level = log.getLevelName(config.debug.upper())
-        log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
+        log.basicConfig(format='%(levelname)s:%(module)s(' + str(self.config.id) + '):%(message)s', level=log_level)
 
         # self.my_ip = socket.gethostbyname(socket.gethostname())
 
@@ -121,7 +121,7 @@ class SeismicClient(asyncore.dispatcher):
 
     def send_event(self):
         curr_time = time.time()
-        log.debug("Sending event at time %s" % curr_time)
+        log.info("Sending event at time %s" % curr_time)
 
         event = dict()
         event['time_sent'] = curr_time
@@ -183,10 +183,13 @@ class SeismicClient(asyncore.dispatcher):
     def run(self):
         try:
             asyncore.loop()
-        except:
-            # seems as though this just crashes sometimes when told to quit
-            log.error("Error in SeismicClient.run() can't recover...")
-            return
+        except Exception as e:
+            # seems as though this just crashes sometimes when told to quit,
+            # so we close the client immediately after outputting results to
+            # prevent hanging procs.
+            log.error("Error in SeismicClient.run() can't recover: %s" % e)
+            self.record_results()
+            self.exit_now(e[0])
 
     def finish(self):
         try:
