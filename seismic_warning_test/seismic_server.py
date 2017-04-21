@@ -204,6 +204,9 @@ class SeismicServer(asyncore.dispatcher):
         self.next_timer.cancel()
         self.close()
 
+        # TODO: clear out all the routes we added without deleting ALL flows.
+        # This will require storing some metadata about the flows/groups we added.
+
     def exit_now(self, error_code=1):
         # HACK: kill the whole process immediately and include the error code (regular exit only kills thread)
         os._exit(error_code)
