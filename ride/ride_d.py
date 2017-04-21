@@ -1,6 +1,8 @@
 # Resilient IoT Data Exchange - Dissemination middleware
 import argparse
 
+import time
+
 import topology_manager
 
 CLASS_DESCRIPTION =  """Middleware layer for sending reliable IoT event notifications to a group of subscribers.
@@ -327,24 +329,30 @@ class RideD(object):
     def install_mdmts(self, mdmts):
         """
         Installs the given MDMTs by pushing static flow rules to the SDN controller.
+        WARNING: the IP addresses of the mdmts must be routable by the host!  Make sure
+        you add them e.g. "ip route add 224.0.0.0/4 dev eth0"
         :param List[nx.Graph] mdmts:
         """
 
+        # NOTE: We need to give the group a chance to be registered or else the flow rule will hang
+        # as PENDING_ADD.  Thus, we install the groups immediately but then do the flows after all
+        # groups were installed in order to give the controller time to commit them.
+        flows = []
+
         for i,t in enumerate(mdmts):
             ip_address = self.get_address_for_mdmt(t)
+            log.debug("Installing MDMT for %s" % ip_address)
             # TODO: need anything else here?  ip_proto=udp??? , ipv4_src=self.????
             matches = self.topology_manager.build_matches(ipv4_dst=ip_address)
             groups, flow_rules = self.topology_manager.build_flow_rules_from_multicast_tree(t, self.dpid, matches, group_id=i+10)
             for g in groups:
+                # log.debug("Installing group: %s" % self.topology_manager.rest_api.pretty_format_parsed_response(g))
                 self.topology_manager.install_group(g)
-            for fr in flow_rules:
-                # ENHANCE: handle errors
-                # ENHANCE: should store this state e.g. group_id for future modification
-                self.topology_manager.install_flow_rule(fr)
+            flows.extend(flow_rules)
 
-            # Host needs manual routes for the multicast addresses that will send packets out the proper interface.
-            # TODO: maybe we just do this in mininet experiment? add doc to say we expect the route is setup
-            # server.cmd("ip route add 224.0.0.0/4 dev %s" % intf)
+        time.sleep(2)
+        for fr in flows:
+            self.topology_manager.install_flow_rule(fr)
 
     def update(self):
         """
