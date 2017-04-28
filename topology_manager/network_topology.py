@@ -230,11 +230,11 @@ class NetworkTopology(object):
 
         return dsm_algs.get_redundant_paths(self.topo, source, destination, k)
 
-    def get_path(self, source, destination):
-        """Gets shortest path by weight attribute between the nodes.
+    def get_path(self, source, destination, weight='weight'):
+        """Gets shortest path by the optionally specified weight attribute between the nodes.
         @:return a sequence of nodes representing the shortest path"""
 
-        return nx.shortest_path(self.topo, source=source, target=destination)
+        return nx.shortest_path(self.topo, source=source, target=destination, weight=weight)
 
     def draw_multicast_trees(self, trees):
         """Draws the trees as graphs overlaid on the original topology"""
