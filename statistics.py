@@ -277,7 +277,7 @@ class SmartCampusStatistics(object):
                 "experiment_type changed between parsed files!"
             self.experiment_type = 'mininet'
         else:
-            log.error("unrecognized 'experiment_type' %s. Aborting." % data['experiment_type'])
+            log.error("unrecognized 'experiment_type' %s. Aborting." % data['params']['experiment_type'])
             exit(1)
 
         # This aggregates together the files grouped by param_value

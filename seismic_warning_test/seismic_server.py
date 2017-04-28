@@ -50,10 +50,11 @@ def parse_args(args):
     parser.add_argument('--quit_time', '-q', type=float, default=30,
                         help='''delay (in secs) before quitting''')
     parser.add_argument('--no-ride', action='store_false', dest='with_ride',
-                        help='''disable use of RIDE middleware, in which case addresses
-                        argument is used as the single address to which aggregated data is sent''')
+                        help='''disable use of RIDE middleware, in which case aggregated data
+                         is sent to subscribers' unicast IP addresses (specified in --subs).''')
     parser.add_argument('--debug', '-d', type=str, default='info', nargs='?', const='debug',
-                            help='''set debug level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
+                        help='''set debug level for logging facility (default=%(default)s,
+                         %(const)s when specified with no arg)''')
 
     # networking configuration
     parser.add_argument('--recv_port', type=int, default=9999,
@@ -62,8 +63,11 @@ def parse_args(args):
                         help='''UDP port number to which data should be sent''')
 
     # data exchange configuration
-    parser.add_argument('--pubs', nargs='+', default=[], help='''list of publisher DPIDs''')
-    parser.add_argument('--subs', nargs='+', default=[], help='''list of subscriber DPIDs''')
+    parser.add_argument('--pubs', nargs='+', default=[],
+                        help='''list of publisher DPIDs (not used if configured without RIDE)''')
+    parser.add_argument('--subs', nargs='+', default=[],
+                        help='''list of subscriber DPIDs (if configured with RIDE) or their IP addresses
+                         (if configured without RIDE).''')
 
     return parser.parse_args(args)
 
@@ -83,41 +87,69 @@ class SeismicServer(asyncore.dispatcher):
         # Stores received events indexed by their 'id'
         self.events_rcvd = dict()
 
-        # Set up RideD resilient multicast middleware
-        self.rided = None
-        if config.with_ride:
-            self.rided = ride.ride_d.RideD.build_from_args(config, pre_parsed=True)
-            # HACK: need to populate with pubs/subs so we just do this manually rather
-            # than rely on a call to some REST API server/data exchange agent.
-            for sub in config.subs:
-                # HACK: similar to the try statement below, we should only register subscribers
-                # that are reachable in our topology view or we'll cause errors later...
-                try:
-                    self.rided.topology_manager.get_path(sub, config.dpid)
-                    self.rided.add_subscriber(sub, topic_id=PUBLICATION_TOPIC)
-                except:
-                    log.warning("Route between subscriber %s and server %s not found: skipping" % (sub, config.dpid))
-            for pub in config.pubs:
-                # HACK: we get the shortest path (as per networkx) and set that as a static route
-                # to prevent the controller from changing the path later since we don't dynamically
-                # update the routes currently.
-                try:
-                    route = self.rided.topology_manager.get_path(pub, config.dpid)
-                    flow_rules = self.rided.topology_manager.build_flow_rules_from_path(route)
-                    for r in flow_rules:
-                        self.rided.topology_manager.install_flow_rule(r)
-                    self.rided.set_publisher_route(pub, route)
-                except:
-                    log.warning("Route between publisher %s and server %s not found: skipping" % (pub, config.dpid))
-            # BUGFIX: if all subscribers are unreachable in the topology due to failure updates
-            # propagating to the controller, we won't have registered any subs for the topic.
+        #### BEGIN RIDE-D CONFIGURATION
+
+        # Set up RideD resilient multicast middleware if enabled. If disabled, we still need
+        # to build a RideD object in order to set up static unicast routes for subscribers in order
+        # to avoid controller recovering failed paths quickly due to Mininet's zero latency
+        # control plane network.  Either way, we set static routes for publishers in
+        # order to ensure we know what route their publications took.
+        self.rided = ride.ride_d.RideD.build_from_args(config, pre_parsed=True)
+
+        for sub in config.subs:
+            # HACK: similar to the try statement below, we should only register subscribers
+            # that are reachable in our topology view or we'll cause errors later...
             try:
-                self.rided.get_subscribers_for_topic(PUBLICATION_TOPIC)
-                mdmts = self.rided.build_mdmts()[PUBLICATION_TOPIC]
-                self.rided.install_mdmts(mdmts)
-            except KeyError:
-                log.error("No subscribers reachable by server!  Aborting...")
-                exit(self.EXIT_CODE_NO_SUBSCRIBERS)
+                route = self.rided.topology_manager.get_path(config.dpid, sub, weight='latency')
+                self.rided.add_subscriber(sub, topic_id=PUBLICATION_TOPIC)
+
+                # Set static unicast routes to subscribers for non-ride config.
+                try:
+                    # NOTE: because we only set static routes when not using RideD, this shouldn't
+                    # interfere with other routes set for multicast usage.
+                    if not config.with_ride:
+                        log.debug("Installing static route for subscriber: %s" % route)
+                        flow_rules = self.rided.topology_manager.build_flow_rules_from_path(route)
+                        for r in flow_rules:
+                            self.rided.topology_manager.install_flow_rule(r)
+                except Exception as e:
+                    log.error("Error installing flow rules for static subscriber routes: %s" % e)
+            except Exception as e:
+                log.warning("Route between subscriber %s and server %s not found: skipping... Error: %s" % (sub, config.dpid, e))
+
+        for pub in config.pubs:
+            # HACK: we get the shortest path (as per networkx) and set that as a static route
+            # to prevent the controller from changing the path later since we don't dynamically
+            # update the routes currently.
+            try:
+                route = self.rided.topology_manager.get_path(pub, config.dpid, weight='latency')
+                log.debug("Installing static route publisher subscriber: %s" % route)
+                flow_rules = self.rided.topology_manager.build_flow_rules_from_path(route)
+                for r in flow_rules:
+                    self.rided.topology_manager.install_flow_rule(r)
+                self.rided.set_publisher_route(pub, route)
+            except Exception as e:
+                log.warning("Route between publisher %s and server %s not found: skipping... Error: %s" % (pub, config.dpid, e))
+
+        # BUGFIX: if all subscribers are unreachable in the topology due to failure updates
+        # propagating to the controller, we won't have registered any subs for the topic.
+        try:
+            self.rided.get_subscribers_for_topic(PUBLICATION_TOPIC)
+        except KeyError:
+            log.error("No subscribers reachable by server!  Aborting...")
+            exit(self.EXIT_CODE_NO_SUBSCRIBERS)
+
+        # Set up multicast trees!
+        if config.with_ride:
+            self.addresses = self.config.addresses
+            mdmts = self.rided.build_mdmts()[PUBLICATION_TOPIC]
+            self.rided.install_mdmts(mdmts)
+        # Because we potentially use different IDs to identify hosts than IP address,
+        # we need to do a conversion here if we're not using RideD.
+        else:
+            self.addresses = [self.rided.topology_manager.get_ip_address(s) for s in self.config.subs]
+
+        #### END RIDE-D CONFIGURATION
 
         # queue seismic event aggregation and forwarding
         # need to store references to cancel them when finish() is called
@@ -146,14 +178,20 @@ class SeismicServer(asyncore.dispatcher):
             # aggregated events are expected as an array
             agg_events['events'] = [v for v in self.events_rcvd.values()]
             agg_events['id'] = 'aggregator'
+            data = json.dumps(agg_events)
 
-            if self.rided:
-                address = self.rided.get_best_multicast_address(PUBLICATION_TOPIC)
+            # Gather subscriber IP addresses if using unicast or just use single multicast
+            # one if configured with RIDE.
+            if self.config.with_ride:
+                addresses = [self.rided.get_best_multicast_address(PUBLICATION_TOPIC)]
+                # ENHANCE: add some unicast addresses for those we think are unreachable via multicast
             else:
-                address = self.config.addresses[0]
-            # TODO: test and determine whether or not we need to lock the data structures
-            self.sendto(json.dumps(agg_events), (address, self.config.send_port))
-            log.info("Aggregated events sent to %s" % address)
+                addresses = self.addresses
+
+            for address in addresses:
+                # TODO: test and determine whether or not we need to lock the data structures
+                self.sendto(data, (address, self.config.send_port))
+                log.info("Aggregated events sent to %s" % address)
 
         # don't forget to schedule the next time we send aggregated events
         self.next_timer = Timer(self.config.delay, self.send_events)
@@ -187,7 +225,7 @@ class SeismicServer(asyncore.dispatcher):
 
         # Need to notify RideD that we received a successful publication.
         # TODO: may need to wrap this with mutex
-        if self.rided:
+        if self.config.with_ride:
             publisher = ip
             self.rided.notify_publication(publisher, id_type='ip')
 

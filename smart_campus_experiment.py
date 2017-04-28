@@ -50,7 +50,7 @@ class SmartCampusExperiment(object):
         log_level = log.getLevelName(debug.upper())
         log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
 
-        # this is used for choosing pubs/subs/servers ONLY
+        # this is used for choosing pubs/subs/servers/other hosts ONLY
         self.random = random.Random(choice_rand_seed)
         # this RNG is used for everything else (tie-breakers, algorithms, etc.)
         random.seed(rand_seed)
@@ -271,7 +271,6 @@ class SmartCampusExperiment(object):
         return sample
 
     def choose_server(self):
-        # TODO: maybe this just needs to be an explicit argument...  or an attribute of the graph topology itself?
         server = self.random.choice(self.topo.get_servers())
         log.debug("Server: %s" % server)
         return server

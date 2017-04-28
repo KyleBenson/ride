@@ -69,8 +69,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                  # need to save these two params to pass to RideD
                  tree_choosing_heuristic=DEFAULT_TREE_CHOOSING_HEURISTIC,
                  topology_adapter=DEFAULT_TOPOLOGY_ADAPTER,
-                 n_traffic_generators=5, traffic_generator_bandwidth=10,
-                 show_cli=False,
+                 n_traffic_generators=0, traffic_generator_bandwidth=10,
+                 show_cli=False, comparison=None,
                  *args, **kwargs):
         """
         Mininet and the SdnTopology adapter will be started by this constructor.
@@ -82,9 +82,18 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         :param topology_adapter: type of REST API topology adapter we use: one of 'onos', 'floodlight'
         :param n_traffic_generators: number of background traffic generators to run iperf on
         :param traffic_generator_bandwidth: bandwidth (in Mbps; using UDP) to set the iperf traffic generators to
+        :param show_cli: display the Mininet CLI in between each run (useful for debugging)
+        :param comparison: disable RIDE-D and use specified comparison strategy (unicast or oracle)
         :param args: see args of superclass
         :param kwargs: see kwargs of superclass
         """
+
+        # We want this parameter overwritten in results file for the proper configuration.
+        self.comparison = comparison
+        if comparison is not None:
+            assert comparison in ('oracle', 'unicast'), "Uncrecognized comparison method: %s" % comparison
+            kwargs['tree_construction_algorithm'] = (comparison,)
+
         super(MininetSmartCampusExperiment, self).__init__(*args, **kwargs)
         # save any additional parameters the Mininet version adds
         self.results['params']['experiment_type'] = 'mininet'
@@ -141,7 +150,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         arg_parser = argparse.ArgumentParser(parents=parents, add_help=add_help)
         # experimental treatment parameters: all taken from parents
         # background traffic generation
-        arg_parser.add_argument('--ngenerators', '-g', default=5, dest='n_traffic_generators', type=int,
+        arg_parser.add_argument('--ngenerators', '-g', default=0, dest='n_traffic_generators', type=int,
                                 help='''number of hosts that generate random traffic to cause congestion (default=%(default)s)''')
         arg_parser.add_argument('--generator-bandwidth', '-bw', default=10, dest='traffic_generator_bandwidth', type=float,
                                 help='''bandwidth (in Mbps) of iperf for congestion traffic generating hosts (default=%(default)s)''')
@@ -149,6 +158,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                 help='''force displaying the Mininet CLI after running the experiment. Normally it is
                                  only displayed iff nruns==1. This is useful for debugging problems as it prevents
                                 the OVS/controller state from being wiped after the experiment.''')
+        arg_parser.add_argument('--comparison', default=None,
+                                help='''use the specified comparison strategy rather than RIDE-D.  Can be one of:
+                                 unicast (send individual unicast packets to each subscriber),
+                                 oracle (modifies experiment duration to allow server to retransmit aggregated
+                                 packets enough times that the SDN controller should detect failures and recover paths).''')
 
         return arg_parser
 
@@ -315,6 +329,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         be the server.
         :return Host server:
         """
+        # HACK: call the super version of this so that we increment the random number generator correctly
+        super(MininetSmartCampusExperiment, self).choose_server()
         return self.server
 
     def get_failed_nodes_links(self):
@@ -476,20 +492,29 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         except OSError:
             pass
 
-        # SETUP SERVER
+        ####################
+        ### SETUP SERVER
+        ####################
 
         log.info("Seismic server on host %s" % server.name)
 
         cmd = "python %s seismic_warning_test/seismic_server.py -a %s --quit_time %d --debug %s" % \
               ("-O" if OPTIMISED_PYTHON else "", ' '.join(self.mcast_address_pool), quit_time, self.debug_level)
+
         # HACK: we pass the static lists of publishers/subscribers via cmd line so as to avoid having to build an
         # API server for RideD to pull this info from.  ENHANCE: integrate a pub-sub broker agent API on controller.
-        cmd += " --subs %s --pubs %s" % (' '.join(self.get_host_dpid(h) for h in subscribers),
-                                         ' '.join(self.get_host_dpid(h) for h in sensors))
+        # NOTE: we pass the subscribers' DPIDs and the server will handle converting them to appropriate IDs (e.g. IP address)
+        subs = ' '.join(self.get_host_dpid(h) for h in subscribers)
+        pubs = ' '.join(self.get_host_dpid(h) for h in sensors)
+        if self.comparison:
+            cmd += " --no-ride "
+        cmd += " --subs %s --pubs %s" % (subs, pubs)
+
         # Add RideD arguments to the server command.
         cmd += " --ntrees %d --mcast-construction-algorithm %s --choosing-heuristic %s --dpid %s --ip %s --port %d"\
                % (self.ntrees, ' '.join(self.tree_construction_algorithm), self.tree_choosing_heuristic,
                   self.get_host_dpid(self.server), self.controller_ip, self.controller_port)
+
         if WITH_LOGS:
             cmd += " > %s 2>&1" % os.path.join(logs_dir, 'srv')
 
@@ -502,7 +527,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         p = server.popen(cmd, shell=True, env=env)
         self.popens.append(p)
 
-        #  SETUP CLIENTS
+        ####################
+        ###  SETUP CLIENTS
+        ####################
 
         sensors = set(sensors)
         subscribers = set(subscribers)
