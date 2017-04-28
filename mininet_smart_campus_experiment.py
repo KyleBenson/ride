@@ -546,6 +546,10 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 except Exception as e:
                     log.error("Error installing flow rules for static subscriber routes: %s" % e)
                     raise e
+        # For the oracle comparison config we just extend the quit time so the controller has plenty
+        # of time to detect and recover from the failures.
+        elif self.comparison is not None and self.comparison == 'oracle':
+            quit_time += 20
 
         cmd = "python %s seismic_warning_test/seismic_server.py -a %s --quit_time %d --debug %s" % \
               ("-O" if OPTIMISED_PYTHON else "", ' '.join(self.mcast_address_pool), quit_time, self.debug_level)
@@ -582,10 +586,17 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         sensors = set(sensors)
         subscribers = set(subscribers)
+        # BUGFIX HACK: server only sends data to subs if it receives any, so we run an extra
+        # sensor client on the server host so the server process always receives at least one
+        # publication when doing oracle comparison.  Otherwise, if no publications reach it
+        # the oracle reachability is 0 when it may actually be 1.0!
+        if self.comparison is not None and self.comparison == 'oracle':
+            sensors.add(server)
 
         log.info("Running seismic test client on %d subscribers and %d sensors" % (len(subscribers), len(sensors)))
         server_ip = server.IP()
         assert server_ip != '127.0.0.1', "ERROR: server.IP() returns localhost!"
+
         for client in sensors.union(subscribers):
             client_id = client.name
             cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d --debug %s --file %s" % \
