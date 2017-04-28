@@ -194,6 +194,12 @@ class OnosRestApi(BaseRestApi):
         path = self.base_path + '/applications'
         return self.get(path)
 
+    def get_statistics(self):
+        """Get port statistics of all devices."""
+        # TODO: support rest of ONOS REST API for statistics (need to feed args to this function)
+        path = self.base_path + '/statistics/ports'
+        return self.get(path)
+
     # ENHANCE: could add flow objectives, meters, component configuration
 
     def run_command(self, cmd, other_args):
@@ -228,9 +234,7 @@ class OnosRestApi(BaseRestApi):
         elif cmd == 'apps':
             return self.get_apps()
         elif cmd == 'statistics':
-            raise NotImplementedError("Still need to implement API at "
-                                      "https://github.com/opennetworkinglab/onos/blob/master/web/api/src/main/java/org/onosproject/rest/resources/StatisticsWebResource.java"
-                                      " and https://github.com/opennetworkinglab/onos/blob/master/web/api/src/main/resources/definitions/StatisticsFlowsLink.json")
+            return self.get_statistics()
         else:
             print usage_desc
             exit(0)
