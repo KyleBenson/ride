@@ -59,7 +59,7 @@ class SdnTopology(NetworkTopology):
                                 help='''IP address of SDN controller we'll use (default=%(default)s)''')
         arg_parser.add_argument('--port', default=8181, type=int, dest='controller_port',
                                 help='''port number of SDN controller's REST API that we'll use (default=%(default)s)''')
-        arg_parser.add_argument('--topology-adapter', default='onos', dest='topology_adapter',
+        arg_parser.add_argument('--topology-adapter', default='onos', dest='topology_adapter_type',
                                 help='''type of SdnTopology to use as the SDN Controller adapter (default=%(default)s)''')
 
         return arg_parser

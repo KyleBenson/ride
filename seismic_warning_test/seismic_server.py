@@ -90,9 +90,7 @@ class SeismicServer(asyncore.dispatcher):
         #### BEGIN RIDE-D CONFIGURATION
 
         # Set up RideD resilient multicast middleware if enabled. If disabled, we still need
-        # to build a RideD object in order to set up static unicast routes for subscribers in order
-        # to avoid controller recovering failed paths quickly due to Mininet's zero latency
-        # control plane network.  Either way, we set static routes for publishers in
+        # to build a RideD object in order to set static routes for publishers in
         # order to ensure we know what route their publications took.
         self.rided = ride.ride_d.RideD.build_from_args(config, pre_parsed=True)
 
@@ -100,27 +98,16 @@ class SeismicServer(asyncore.dispatcher):
             # HACK: similar to the try statement below, we should only register subscribers
             # that are reachable in our topology view or we'll cause errors later...
             try:
-                route = self.rided.topology_manager.get_path(config.dpid, sub, weight='latency')
+                self.rided.topology_manager.get_path(config.dpid, sub)
                 self.rided.add_subscriber(sub, topic_id=PUBLICATION_TOPIC)
-
-                # Set static unicast routes to subscribers for non-ride config.
-                try:
-                    # NOTE: because we only set static routes when not using RideD, this shouldn't
-                    # interfere with other routes set for multicast usage.
-                    if not config.with_ride:
-                        log.debug("Installing static route for subscriber: %s" % route)
-                        flow_rules = self.rided.topology_manager.build_flow_rules_from_path(route)
-                        for r in flow_rules:
-                            self.rided.topology_manager.install_flow_rule(r)
-                except Exception as e:
-                    log.error("Error installing flow rules for static subscriber routes: %s" % e)
             except Exception as e:
                 log.warning("Route between subscriber %s and server %s not found: skipping... Error: %s" % (sub, config.dpid, e))
 
         for pub in config.pubs:
             # HACK: we get the shortest path (as per networkx) and set that as a static route
             # to prevent the controller from changing the path later since we don't dynamically
-            # update the routes currently.
+            # update the routes currently.  We need to know the path so can't just do this in
+            # the experiment as we do with subscribers (until we add an API for sharing this info).
             try:
                 route = self.rided.topology_manager.get_path(pub, config.dpid, weight='latency')
                 log.debug("Installing static route publisher subscriber: %s" % route)

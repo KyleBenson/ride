@@ -9,7 +9,7 @@ import re
 
 from subprocess import Popen
 
-from smart_campus_experiment import SmartCampusExperiment
+from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
 
 import logging as log
 import json
@@ -103,7 +103,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         self.controller_ip = controller_ip
         self.controller_port = controller_port
-        self.topology_adapter = topology_adapter
+        self.topology_adapter_type = topology_adapter
+        # set later as it needs resetting between runs and must be created after the network starts up
+        self.topology_adapter = None
         # This gets passed to seismic hosts
         self.debug_level = kwargs.get('debug', 'error')
 
@@ -216,8 +218,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                          )
 
         # import the switches, hosts, and server(s) from our specified file
-        topo = NetworkxSdnTopology(self.topology_filename)
-        self.topo = topo
+        self.topo = NetworkxSdnTopology(self.topology_filename)
 
         def __get_mac_for_switch(switch):
             # BUGFIX: need to manually specify the mac to set DPID properly or Mininet
@@ -234,7 +235,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             mac = first_letter + '0:00:00' + mac[3:]
             return str(mac)
 
-        for switch in topo.get_switches():
+        for switch in self.topo.get_switches():
             mac = __get_mac_for_switch(switch)
             s = self.net.addSwitch(switch, dpid=mac, cls=OVSKernelSwitch)
             log.debug("adding switch %s at DPID %s" % (switch, s.dpid))
@@ -245,11 +246,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             host_num, building_type, building_num = re.match('h(\d+)-([mb])(\d+)', host).groups()
             return "10.%d.%s.%s" % (131 if building_type == 'b' else 200, building_num, host_num)
 
-        for host in topo.get_hosts():
+        for host in self.topo.get_hosts():
             h = self.net.addHost(host, ip=__get_ip_for_host(host))
             self.hosts.append(h)
 
-        for server in topo.get_servers():
+        for server in self.topo.get_servers():
             # HACK: we actually add a switch in case the server is multi-homed since it's very
             # difficult to work with multiple interfaces on a host (e.g. ONOS can only handle
             # a single MAC address per host).
@@ -261,7 +262,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             self.server = s
             self.net.addLink(self.server_switch, self.server)
 
-        for link in topo.get_links():
+        for link in self.topo.get_links():
             from_link = link[0]
             to_link = link[1]
             log.debug("adding link from %s to %s" % (from_link, to_link))
@@ -394,6 +395,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # is used by the controller (ONOS) to learn hosts' IP addresses
         self.net.staticArp()
 
+        self.setup_topology_manager()
+
         log.info('*** Network set up!\n*** Configuring experiment...')
 
         self.setup_traffic_generators()
@@ -425,6 +428,24 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
                 'publishers': [p.name for p in publishers],
                 'subscribers': [s.name for s in subscribers]}
+
+    def setup_topology_manager(self):
+        """
+        Starts a SdnTopology for the given controller (topology_manager) type.  Used for setting
+        routes, clearing flows, etc.
+        :return:
+        """
+        SdnTopologyAdapter = None
+        if self.topology_adapter_type == 'onos':
+            from topology_manager.onos_sdn_topology import OnosSdnTopology as SdnTopologyAdapter
+        elif self.topology_adapter_type == 'floodlight':
+            from topology_manager.floodlight_sdn_topology import FloodlightSdnTopology as SdnTopologyAdapter
+        else:
+            log.error("Unrecognized topology_adapter_type type %s.  Can't reset controller between runs or manipulate flows properly!")
+            exit(102)
+
+        if SdnTopologyAdapter is not None:
+            self.topology_adapter = SdnTopologyAdapter(ip=self.controller_ip, port=self.controller_port)
 
     def setup_traffic_generators(self):
         """Each traffic generating host starts an iperf process aimed at
@@ -497,6 +518,34 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         ####################
 
         log.info("Seismic server on host %s" % server.name)
+
+        # First, we need to set static unicast routes to subscribers for unicast comparison config.
+        # This HACK avoids the controller recovering failed paths too quickly due to Mininet's zero latency
+        # control plane network.
+        # NOTE: because we only set static routes when not using RideD multicast, this shouldn't
+        # interfere with other routes.
+        if self.comparison is not None and self.comparison == 'unicast':
+            for sub in subscribers:
+                try:
+                    # HACK: we get the route from the NetworkxTopology in order to have the same
+                    # as other experiments, but then need to convert these paths into one
+                    # recognizable by the actual SDN Controller Topology manager.
+                    # HACK: since self.server is a new Mininet Host not in original topo, we do this:
+                    original_server_name = self.topo.get_servers()[0]
+                    route = self.topo.get_path(original_server_name, sub.name, weight=DISTANCE_METRIC)
+                    # Next, convert the NetworkxTopology nodes to the proper ID
+                    route = self._get_mininet_nodes(route)
+                    route = [self.get_node_dpid(n) for n in route]
+                    # Then we need to modify the route to account for the real Mininet server 'hs0'
+                    route.insert(0, self.get_host_dpid(self.server))
+                    log.debug("Installing static route for subscriber %s: %s" % (sub, route))
+
+                    flow_rules = self.topology_adapter.build_flow_rules_from_path(route)
+                    for r in flow_rules:
+                        self.topology_adapter.install_flow_rule(r)
+                except Exception as e:
+                    log.error("Error installing flow rules for static subscriber routes: %s" % e)
+                    raise e
 
         cmd = "python %s seismic_warning_test/seismic_server.py -a %s --quit_time %d --debug %s" % \
               ("-O" if OPTIMISED_PYTHON else "", ' '.join(self.mcast_address_pool), quit_time, self.debug_level)
@@ -605,18 +654,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             CLI(self.net)
 
         # Clear out all the flows/groups from controller
-        SdnTopologyAdapter = None
-        if self.topology_adapter == 'onos':
-            from topology_manager.onos_sdn_topology import OnosSdnTopology as SdnTopologyAdapter
-        elif self.topology_adapter == 'floodlight':
-            from topology_manager.floodlight_sdn_topology import FloodlightSdnTopology as SdnTopologyAdapter
-        else:
-            log.error("Unrecognized topology_adapter type %s.  Can't reset controller between runs!")
-
-        if SdnTopologyAdapter is not None:
+        if self.topology_adapter is not None:
             log.debug("Removing groups and flows via REST API.  This could take a while while we wait for the transactions to commit...")
-            topo_adapter = SdnTopologyAdapter(ip=self.controller_ip, port=self.controller_port)
-            topo_adapter.remove_all_flow_rules()
+            self.topology_adapter.remove_all_flow_rules()
 
             # We loop over doing this because we want to make sure the groups have been fully removed
             # before continuing to the next run or we'll have serious problems.
@@ -624,9 +664,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # filtering only those added by REST API, hence only looping over groups for now...
             ngroups = 1
             while ngroups > 0:
-                topo_adapter.remove_all_groups()
+                self.topology_adapter.remove_all_groups()
                 time.sleep(1)
-                leftover_groups = topo_adapter.get_groups()
+                leftover_groups = self.topology_adapter.get_groups()
                 ngroups = len(leftover_groups)
                 # len(leftover_groups) == 0, "Not all groups were cleared after experiment! Still left: %s" % leftover_groups
 
@@ -651,14 +691,43 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         :param Host host:
         :return:
         """
-        if self.topology_adapter == 'onos':
+        if self.topology_adapter_type == 'onos':
             # TODO: verify this vibes with ONOS properly; might need VLAN??
             dpid = host.defaultIntf().MAC().upper() + '/None'
-        elif self.topology_adapter == 'floodlight':
+        elif self.topology_adapter_type == 'floodlight':
             dpid = host.IP()
         else:
-            raise ValueError("Unrecognized topology adapter type %s" % self.topology_adapter)
+            raise ValueError("Unrecognized topology adapter type %s" % self.topology_adapter_type)
         return dpid
+
+    def get_switch_dpid(self, switch):
+        """
+        Returns the data plane ID for the given switch that is recognized by the
+        particular SDN controller currently in use.
+        :param Switch switch:
+        :return:
+        """
+        if self.topology_adapter_type == 'onos':
+            dpid = 'of:' + switch.dpid
+        elif self.topology_adapter_type == 'floodlight':
+            raise NotImplementedError()
+        else:
+            raise ValueError("Unrecognized topology adapter type %s" % self.topology_adapter_type)
+        return dpid
+
+    def get_node_dpid(self, node):
+        """
+        Returns the data plane ID for the given node by determining whether it's a
+        Switch or Host first.
+        :param node:
+        :return:
+        """
+        if isinstance(node, Switch):
+            return self.get_switch_dpid(node)
+        elif isinstance(node, Host):
+            return self.get_host_dpid(node)
+        else:
+            raise TypeError("Unrecognized node type for: %s" % node)
 
 if __name__ == "__main__":
     import sys

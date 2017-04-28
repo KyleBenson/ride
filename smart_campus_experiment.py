@@ -19,6 +19,7 @@ from abc import abstractmethod, ABCMeta
 
 import networkx as nx
 from failure_model import SmartCampusFailureModel
+DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
 class SmartCampusExperiment(object):
     __metaclass__ = ABCMeta
@@ -279,7 +280,7 @@ class SmartCampusExperiment(object):
     def setup_topology(self):
         """
         Construct and configure appropriately the topology based on the previously
-        specified topology_adapter and topology_filename.
+        specified topology_adapter_type and topology_filename.
         :return:
         """
         pass

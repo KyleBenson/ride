@@ -8,12 +8,11 @@ import logging as log
 import numpy as np
 import networkx as nx
 
-from smart_campus_experiment import SmartCampusExperiment, random
+from smart_campus_experiment import SmartCampusExperiment, random, DISTANCE_METRIC
 from ride.ride_d import RideD
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 
 COST_METRIC = 'weight'  # for links only
-DISTANCE_METRIC = 'latency'  # for shortest path calculations
 PUBLICATION_TOPIC = 'seismic_alert'
 
 
