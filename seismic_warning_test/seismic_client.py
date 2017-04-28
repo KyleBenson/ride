@@ -133,6 +133,8 @@ class SeismicClient(asyncore.dispatcher):
             self.sendto(json.dumps(event), (self.config.address, self.config.send_port))
         except socket.error as e:
             log.error("problem sending event: %s" % e)
+            # Record empty results so we have an accurate idea of which clients participated.
+            self.record_results()
             self.exit_now(e.errno)
 
         # don't forget to schedule the next time we send aggregated events
