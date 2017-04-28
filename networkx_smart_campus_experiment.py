@@ -8,7 +8,7 @@ import logging as log
 import numpy as np
 import networkx as nx
 
-from smart_campus_experiment import SmartCampusExperiment
+from smart_campus_experiment import SmartCampusExperiment, random
 from ride.ride_d import RideD
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 
@@ -26,7 +26,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         :param kwargs:
         """
         super(NetworkxSmartCampusExperiment, self).__init__(*args, **kwargs)
-        self.results['experiment_type'] = 'networkx'
+        self.results['params']['experiment_type'] = 'networkx'
 
     def setup_topology(self):
         # only need to set this up once
@@ -88,7 +88,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         for pub in publishers:
             path = nx.shortest_path(self.topo.topo, pub, server, weight=DISTANCE_METRIC)
             rided.set_publisher_route(pub, path)
-            if self.random.random() >= self.error_rate and nx.is_simple_path(failed_topology, path):
+            if random.random() >= self.error_rate and nx.is_simple_path(failed_topology, path):
                 rided.notify_publication(pub)
 
         # build and get multicast trees
