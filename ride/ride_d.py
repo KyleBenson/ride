@@ -138,14 +138,14 @@ class RideD(object):
             args = cls.get_arg_parser().parse_args(args)
 
         # Configure and connect topology adapter before passing to constructor
-        if args.topology_adapter == 'onos':
+        if args.topology_adapter_type == 'onos':
             from topology_manager.onos_sdn_topology import OnosSdnTopology
             topo_mgr = OnosSdnTopology(ip=args.controller_ip, port=args.controller_port)
-        elif args.topology_adapter == 'floodlight':
+        elif args.topology_adapter_type == 'floodlight':
             from topology_manager.floodlight_sdn_topology import FloodlightSdnTopology
             topo_mgr = FloodlightSdnTopology(ip=args.controller_ip, port=args.controller_port)
         else:
-            raise ValueError("unrecognized SdnTopology type: %s" % args.topology_adapter)
+            raise ValueError("unrecognized SdnTopology type: %s" % args.topology_adapter_type)
 
         # convert to plain dict
         args = vars(args)
