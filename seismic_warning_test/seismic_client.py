@@ -20,7 +20,7 @@ import socket
 import json
 import os
 import signal
-from threading import Timer
+from threading import Timer, Lock
 
 
 # Buffer size for receiving packets
@@ -101,15 +101,22 @@ class SeismicClient(asyncore.dispatcher):
 
         self.is_subscriber = self.config.listen
 
+        # TODO: re-enable the lock if we use something other than asyncore.loop since that
+        # doesn't seem like we can lock it's internal methods.
+        # We use this lock to prevent corruption of the socket e.g. calling finish at the
+        # same time as handle_read
+        # self.lock = Lock()
+        # self.is_active = True
+
+        # setup UDP network socket to listen for events on and send them via
+        self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.bind(('', self.config.recv_port))
+
         # queue seismic event reporting
         self.is_publisher = self.config.address is not None
         if self.is_publisher:
             self.next_timer = Timer(self.config.delay, self.send_event)
             self.next_timer.start()
-
-        # setup UDP network socket to listen for events on and send them via
-        self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.bind(('', self.config.recv_port))
 
         # record statistics after experiment finishes then clean up
         Timer(self.config.quit_time, self.finish).start()
@@ -120,6 +127,8 @@ class SeismicClient(asyncore.dispatcher):
         signal.signal(signal.SIGINT, __sigint_handler)
 
     def send_event(self):
+        self.next_timer = None
+
         curr_time = time.time()
         log.info("Sending event at time %s" % curr_time)
 
@@ -128,6 +137,11 @@ class SeismicClient(asyncore.dispatcher):
         event['id'] = self.config.id
 
         self.events_sent.append(event)
+
+        # self.lock.acquire()
+        # if not self.is_active:
+        #     self.lock.release()
+        #     return
 
         try:
             self.sendto(json.dumps(event), (self.config.address, self.config.send_port))
@@ -140,6 +154,7 @@ class SeismicClient(asyncore.dispatcher):
         # don't forget to schedule the next time we send aggregated events
         self.next_timer = Timer(self.config.retransmit, self.send_event)
         self.next_timer.start()
+        # self.lock.release()
 
     def process_event(self, event):
         """
@@ -162,11 +177,30 @@ class SeismicClient(asyncore.dispatcher):
         we've received a duplicate.
         """
 
-        if not self.config.listen:
+        # self.lock.acquire()
+        if not self.config.listen:  # or not self.is_active:
+            # self.lock.release()
             return
 
-        data = self.recv(BUFF_SIZE)
-        # ENHANCE: handle packets too large to fit in this buffer
+        # TODO: handle possibility of having two packets at same time
+        try:
+            # To handle larger packets we need to repeatedly read a buffer and
+            # append it to the final data buffer.
+            data = bytearray()
+            buf = bytearray(b' ' * BUFF_SIZE)
+            bytes_read = BUFF_SIZE
+            while bytes_read == BUFF_SIZE:
+                bytes_read = self.socket.recv_into(buf, nbytes=BUFF_SIZE)
+                data.extend(buf[:bytes_read])
+            # Convert to str for JSONification
+            data = str(data)
+
+        except Exception as e:
+            log.error("problem calling 'recv' in handle_read: %s" % e)
+            return
+
+        # self.lock.release()
+
         try:
             event = json.loads(data)
             log.info("received event %s" % event)
@@ -179,21 +213,27 @@ class SeismicClient(asyncore.dispatcher):
             else:
                 self.process_event(event)
 
-        except ValueError:
-            log.error("Error parsing JSON from %s" % data)
+        except ValueError as e:
+            log.error("Error parsing JSON from %s: %s" % (data, e))
 
     def run(self):
         try:
-            asyncore.loop()
-        except Exception as e:
+            asyncore.loop(timeout=1)
+        except BaseException as e:
             # seems as though this just crashes sometimes when told to quit,
             # so we close the client immediately after outputting results to
             # prevent hanging procs.
+            # This happens after 'finish()' is called, so it is probably due to
+            # the socket being closed and the loop()'s poll function trying to
+            # touch this closed socket since we call finish() in a separate thread
+            # due to using Timer.  Unclear how to fix it without a complete overhaul...
             log.error("Error in SeismicClient.run() can't recover: %s" % e)
             self.record_results()
             self.exit_now(e[0])
 
     def finish(self):
+        # self.lock.acquire()
+
         try:
             self.next_timer.cancel()
         except AttributeError:
@@ -202,6 +242,8 @@ class SeismicClient(asyncore.dispatcher):
 
         self.record_results()
         self.close()
+        # self.is_active = False
+        # self.lock.release()
 
     def record_results(self):
         """Records the received picks for consumption by another script
