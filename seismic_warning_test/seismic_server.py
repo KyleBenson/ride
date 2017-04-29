@@ -177,6 +177,7 @@ class SeismicServer(asyncore.dispatcher):
 
             for address in addresses:
                 # TODO: test and determine whether or not we need to lock the data structures
+                # TODO: need to look at # bytes sent (return value) and ensure we've sent everything
                 self.sendto(data, (address, self.config.send_port))
                 log.info("Aggregated events sent to %s" % address)
 
