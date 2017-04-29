@@ -590,10 +590,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         subscribers = set(subscribers)
         # BUGFIX HACK: server only sends data to subs if it receives any, so we run an extra
         # sensor client on the server host so the server process always receives at least one
-        # publication when doing oracle comparison.  Otherwise, if no publications reach it
-        # the oracle reachability is 0 when it may actually be 1.0!
-        if self.comparison is not None and self.comparison == 'oracle':
-            sensors.add(server)
+        # publication.  Otherwise, if no publications reach it the reachability is 0 when it
+        # may actually be 1.0! This is used mainly for comparison vs. NetworkxSmartCampusExperiment.
+        sensors.add(server)
 
         log.info("Running seismic test client on %d subscribers and %d sensors" % (len(subscribers), len(sensors)))
         server_ip = server.IP()
