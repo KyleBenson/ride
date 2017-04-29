@@ -176,11 +176,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         :return: string representing the output_filename containing a parameter summary for easy identification
         """
         # HACK: we need to add the additional parameters this experiment version bring in
+        # We add them at the end, though we'll replace the choosing_heuristic with the comparison metric if specified.
         output_filename = super(MininetSmartCampusExperiment, cls).build_default_results_file_name(args, dirname)
         if isinstance(args, argparse.Namespace):
-            choosing_heuristic = args.tree_choosing_heuristic
+            choosing_heuristic = args.tree_choosing_heuristic if args.comparison is None else args.comparison
         else:
-            choosing_heuristic = args.get('tree_choosing_heuristic', DEFAULT_TREE_CHOOSING_HEURISTIC)
+            choosing_heuristic = args.get('tree_choosing_heuristic', DEFAULT_TREE_CHOOSING_HEURISTIC)\
+                if args.get('comparison', None) is None else args['comparison']
         replacement = '_%s.json' % choosing_heuristic
         output_filename = output_filename.replace('.json', replacement)
         return output_filename

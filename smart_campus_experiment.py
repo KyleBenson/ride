@@ -234,6 +234,8 @@ class SmartCampusExperiment(object):
     def output_results(self):
         """Outputs the results to a file"""
         log.info("Results: %s" % json.dumps(self.results, sort_keys=True, indent=2))
+        if os.path.exists(self.output_filename):
+            log.warning("Output file being overwritten: %s" % self.output_filename)
         with open(self.output_filename, "w") as f:
             json.dump(self.results, f, sort_keys=True, indent=2)
 
