@@ -133,7 +133,8 @@ class SmartCampusExperiment(object):
         if isinstance(args, argparse.Namespace):
             args = vars(args)
 
-        defaults = cls.get_arg_parser().parse_args()
+        # Pass empty args to get the default configurations.
+        defaults = cls.get_arg_parser().parse_args(args=[])
 
         # Extract topology file name
         try:
