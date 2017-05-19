@@ -265,19 +265,21 @@ class SmartCampusStatistics(object):
             param_value = (int(_parsed[0]), int(_parsed[1]), int(_parsed[2]))
 
         # Extract the properly-formatted results dict
-        if data['params']['experiment_type'] == 'networkx':
+        # NOTE: old netx simulations didn't include this field!
+        this_experiment_type = data['params'].get('experiment_type', 'networkx')
+        if this_experiment_type == 'networkx':
             results = data['results']
             assert self.experiment_type is None or self.experiment_type == 'networkx',\
                 "experiment_type changed between parsed files!"
             self.experiment_type = 'networkx'
-        elif data['params']['experiment_type'] == 'mininet':
+        elif this_experiment_type == 'mininet':
             # For results from a Mininet experiment, we need to parse the specified client files.
             results = self.parse_mininet_results(data, fname)
             assert self.experiment_type is None or self.experiment_type == 'mininet',\
                 "experiment_type changed between parsed files!"
             self.experiment_type = 'mininet'
         else:
-            log.error("unrecognized 'experiment_type' %s. Aborting." % data['params']['experiment_type'])
+            log.error("unrecognized 'experiment_type' %s. Aborting." % this_experiment_type)
             exit(1)
 
         # This aggregates together the files grouped by param_value
