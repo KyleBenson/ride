@@ -9,43 +9,61 @@ ones we're currently doing so we can easily re-run them.
 """
 
 import random
+import subprocess
 import sys, os
+import getpass
 from os import getpid
 from multiprocessing import Pool, Manager
 from multiprocessing.managers import ValueProxy
 import signal
 from time import sleep
 import traceback
-from networkx_smart_campus_experiment import NetworkxSmartCampusExperiment
 from failure_model import SmartCampusFailureModel
 from itertools import chain
 
 # when True, this flag causes run.py to only print out the commands rather than run them each
-#testing = True
+# testing = True
 testing = False
-# debug_level = 'debug'  # for the actual experiment
-debug_level = 'warn'
+debug_level = 'debug'  # for the actual experiment
+# debug_level = 'warn'
 verbose = True
-print_cmd = False
-nruns = 20
+print_cmd = True
+nruns = 5
 reverse_cmds = False
+using_mininet = True
+if using_mininet:
+    from mininet_smart_campus_experiment import MininetSmartCampusExperiment as TheSmartCampusExperiment
+    # Since Mininet runs as root, we need a way of invoking ONOS commands as the ONOS user
+    # to reset the controller in between executions.  This is a HACK as we couldn't get the
+    # shell to execute with vagrant's proper env variables that let us use the 'onos' command,
+    # which would let us just call 'tools/onos_reset.sh'
+    controller_reset_cmd = "su -c 'ssh -p 8101 vagrant@localhost wipe-out please' vagrant"
+else:
+    from networkx_smart_campus_experiment import NetworkxSmartCampusExperiment as TheSmartCampusExperiment
+controller_ip = "10.0.2.15"
+if using_mininet and getpass.getuser() != 'root':
+    print "ERROR: Mininet must be run as root!"
+    exit(1)
 
 DEFAULT_PARAMS = {
     'fprob': 0.1,
     'ntrees': 4,
-    'nsubscribers': 400,
-    # 'nsubscribers': 40,
-    'npublishers': 200,
-    # 'npublishers': 20,
-    'topo': ['networkx', 'campus_topo_200b-20h-20ibl.json'],
-    #'topo': ['networkx', 'campus_topo_20b-8h-3ibl.json'],
+    # 'nsubscribers': 400,
+    'nsubscribers': 40,
+    # 'npublishers': 200,
+    'npublishers': 20,
+    # 'topology_filename': 'topos/campus_topo_200b-20h-20ibl.json',
+    # 'topology_filename': 'topos/campus_topo_20b-8h-3ibl.json',
+    'topology_filename': 'topos/campus_topo.json',
     # always a list of tuples!  we run all of them for each treatment and
     # each heuristic optionally takes arguments
-    #'mcast_heuristic': [('steiner',), ('diverse-paths',), ('red-blue',)],
-    'mcast_heuristic': [('steiner',), ('red-blue',)],  # skip diverse-paths since it's slowest
-    #'mcast_heuristic': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
-    #'mcast_heuristic': [('diverse-paths',)],  # diverse-paths is really slow and steiner almost always performs worse
-    # 'mcast_heuristic': [('steiner', 'max'), ('steiner', 'double')],
+    #'tree_construction_algorithm': [('steiner',), ('diverse-paths',), ('red-blue',)],
+    'tree_construction_algorithm': [('steiner',), ('red-blue',)],  # skip diverse-paths since it's slowest
+    #'tree_construction_algorithm': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
+    #'tree_construction_algorithm': [('diverse-paths',)],  # diverse-paths is really slow and steiner almost always performs worse
+    # 'tree_construction_algorithm': [('steiner', 'max'), ('steiner', 'double')],
+    # Default values for Mininet-based experiment
+    # TODO:
 }
 
 # we'll explore each of these when running experiments
@@ -63,8 +81,10 @@ nhosts = [{'nsubscribers': s, 'npublishers': p, "choicerandseed": -5732823796696
 # nhosts = [{'nsubscribers': s, 'npublishers': p,
 #            "choicerandseed": 7683823364746221991, "failrandseed": -7234762391813259413, "randseed": 737923788253431206,}
 #           for s,p in [(400, 800), (400, 25), (800, 200), (800, 50), (800, 800), (800, 1600)]]
-ntrees = [1, 2, 4, 8, 16]
-fprobs = [0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5]
+# ntrees = [1, 2, 4, 8, 16]
+# fprobs = [0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5]
+ntrees = [1,2,4]
+fprobs = [0.1, 0.2, 0.3]
 # nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
 ntrees.reverse()
 
@@ -91,27 +111,27 @@ def get_nhosts_treatment(nsubs, npubs):
 # same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
-    'ilp': [{'mcast_heuristic': [('ilp',), ('steiner',), ('diverse-paths',), ('red-blue',)],
-             'npublishers': p, 'nsubscribers': p*2, 'ntrees': t, 'fprob': f,
-             'topo': ['networkx', 'campus_topo_10b-4h-2ibl.json'],
-             }
-            for p in [5, 10]
-            for t in [2, 4]
-            for f in [0.1, 0.2]
-            ]
+    # 'ilp': [{'mcast_heuristic': [('ilp',), ('steiner',), ('diverse-paths',), ('red-blue',)],
+    #          'npublishers': p, 'nsubscribers': p*2, 'ntrees': t, 'fprob': f,
+    #          'topology_filename': 'topos/campus_topo_10b-4h-2ibl.json',
+    #          }
+    #         for p in [5, 10]
+    #         for t in [2, 4]
+    #         for f in [0.1, 0.2]
+    #         ]
 
-    #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
-        #"failrandseed": -5644075521501607418,
-        #"randseed": -4277241514845461664} for t in ntrees],
+    'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
+        "failrandseed": -5644075521501607418,
+        "randseed": -4277241514845461664} for t in ntrees],
     # look at varying fprobs too as 0.1 may be too low for >2-4 trees
-    # 'ntrees': [{'ntrees': t, 'foprob': f} for t in ntrees for f in [0.2, 0.4]],
-    # 'fprob': fprobs,
+    # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
+    'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
     # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
     # 'steiner-double': [{'ntrees': t, 'fprob': f} for t in [8, 4, 2] for f in fprobs[:3]]
     # vary topology for inter-building connectivity
-    #'topo-sizes': [{'topo': ['networkx', 'campus_topo_%db-%dh-%dibl.json' % (nbuilds, nhosts, ibl)],
+    #'topo-sizes': [{'topology_filename': 'topos/campus_topo_%db-%dh-%dibl.json' % (nbuilds, nhosts, ibl),
                     #'npublishers': nbuilds, 'nsubscribers': nbuilds*2,
                     # 'output_filename': "%db-%dh-%d.json" % (nbuilds, nhosts, ibl),
                     #}
@@ -123,10 +143,10 @@ EXPERIMENTAL_TREATMENTS = {
             #[(80, 16, 8), (200, 40, 20), (400,80,400)]  # see if nhosts makes a difference
             # did the 400b topo have 8 cores?
         #],  # (200, 20, 20)
-    #'topo-ibl': [{'topo': ['networkx', 'campus_topo_200b-20h-%dibl.json' % ibl],
+    #'topo-ibl': [{'topology_filename': 'topos/campus_topo_200b-20h-%dibl.json' % ibl,
                   #} for ibl in [0, 10, 20, 40, 60, 80, 200, 400, 800]],
     # vary topology size (need to vary nhosts along with it)
-    # 'topo-redundant': [{'topo': ['networkx', fname]} for fname in
+    # 'topo-redundant': [{'topology_filename': 'topos/' + fname} for fname in
     #                    ['campus_topo_200b-20h-1000ibl-redundant.json', 'campus_topo_200b-20h-1000ibl-redundant2.json']]
     # 'publication_error_rate': [{'publication_error_rate': r, "choicerandseed": -5732823796696650875,
     #                             "failrandseed": 2648076232431673581,  # seeds are from results3/nhosts
@@ -173,10 +193,10 @@ def makecmds(output_dirname=''):
                 args2[param] = treat
 
             # We always want to run all the heuristics for each treatment
-            for heur in args2.get('mcast_heuristic', DEFAULT_PARAMS['mcast_heuristic']):
+            for heur in args2.get('tree_construction_algorithm', (DEFAULT_PARAMS['tree_construction_algorithm'],)):
                 # Again, make a copy to avoid overwriting params
                 args3 = args2.copy()
-                args3['mcast_heuristic'] = heur
+                args3['tree_construction_algorithm'] = heur
 
                 # make the directory tell which treatment is being explored currently
                 this_dirname = os.path.join(output_dirname, param)
@@ -201,8 +221,7 @@ def getargs(output_dirname='', **kwargs):
     _args.update(**kwargs)
 
     # Build output filename
-    _args['output_filename'] = _args.get('output_filename', NetworkxSmartCampusExperiment.build_default_results_file_name(_args, output_dirname))
-
+    _args['output_filename'] = _args.get('output_filename', TheSmartCampusExperiment.build_default_results_file_name(_args, output_dirname))
     return _args
 
 
@@ -260,8 +279,20 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
     err = None
     if not testing:
         try:
+            if using_mininet:
+                # Clean SDN Controller (ONOS) and Mininet just in case
+                ignore_output = ' > /dev/null 2>&1'
+                p = subprocess.Popen('%s %s' % (controller_reset_cmd, ignore_output), shell=True)
+                p.wait()
+                p = subprocess.Popen('sudo mn -c %s' % ignore_output, shell=True)
+                p.wait()
+
+                # Need to set params used for real system configs.
+                # ENHANCE: include port #, topology_adapter_type, etc...
+                kwargs['controller_ip'] = controller_ip
+
             failure_model = SmartCampusFailureModel(**kwargs)
-            exp = NetworkxSmartCampusExperiment(failure_model=failure_model, **kwargs)
+            exp = TheSmartCampusExperiment(failure_model=failure_model, **kwargs)
             exp.run_all_experiments()
         except BaseException as e:
             err = (e, traceback.format_exc())
@@ -284,6 +315,7 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
     if err is not None:
         raise err[0]
 
+
 if __name__ == '__main__':
 
     # store files in a directory if requested
@@ -296,8 +328,9 @@ if __name__ == '__main__':
         except OSError:
             pass
 
-    # use a process pool to run jobs in parallel
-    using_pool = nprocs != 1
+    # use a process pool to run jobs in parallel for the Networkx Experiment
+    using_pool = (nprocs != 1 and not using_mininet)
+    assert not (using_pool and using_mininet), "Can't use proc pool and Mininet in same exp!"
     # track the returned (empty) results to see if any processes crash
     results = []
     if using_pool:
