@@ -33,6 +33,44 @@ export HEURISTIC=red-blue;
 # never got this working right
 #export SAVEFIG=--skip-plot\ -s\
 
+##############################
+## What actually went in Middleware paper submission:
+
+# use these for everything unless otherwise specified
+export RESULTS_ROOT=old_results_networkx
+export RESULTS_DIR="$RESULTS_ROOT/results4"
+export FPROB=0.10
+export CHOICES="-c importance-chosen max-overlap-chosen max-reachable-chosen min-missing-chosen"
+
+# To improve readability, we removed the legends and included them as separate subfigures.
+# First, generate a plot for the group of subfigures (3 groups), cut out the legend as another subfigure,
+# then re-generate without the legend.
+export LEGEND="--legend "
+export LEGEND=""
+
+# ntrees for constr. algs.
+./statistics.py -st max mean min -x ntrees -xl '#MDMTs (k)' -f $RESULTS_DIR/ntrees/results_*t_"$FPROB"f*.json -c --title $LEGEND
+# fprob
+./statistics.py -c -st max mean min -d $RESULTS_DIR/fprob/ --title -xl "failure probability" $LEGEND
+
+# ntrees for selection policies
+# all 3 construction algorithms for this one:
+export ALGORITHM=red-blue #results4
+export ALGORITHM=diverse-paths #results2
+export ALGORITHM=steiner
+./statistics.py -x ntrees -xl '#MDMTs (k)' -f $RESULTS_DIR/ntrees/results_*t_"$FPROB"f*_"$ALGORITHM"_*.json -i unicast oracle $ALGORITHM $CHOICES -st max mean --title $LEGEND
+
+# npublishers for red-blue
+export RESULTS_DIR="$RESULTS_ROOT/results3"
+./statistics.py -x npublishers -xl '#sensor-publishers' -f $RESULTS_DIR/nhosts/results_*_200s_*p*_red-blue_*.json -i unicast oracle red-blue -st max mean --title $CHOICES $LEGEND
+
+
+# publication loss rate
+export RESULTS_DIR="$RESULTS_ROOT/results4"
+./statistics.py -i unicast red-blue -st max -xl "publication loss rate" -x publication_error_rate -d $RESULTS_DIR/pub*rate/ --title $CHOICES $LEGEND
+
+##############################
+
 
 # NHOSTS
 # we want to display the choosing heuristics as npubs should affect their reach

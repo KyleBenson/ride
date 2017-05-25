@@ -26,6 +26,14 @@ AVAILABLE_METRICS = {'run', 'nhops', 'overlap', 'cost'}
 CONSTRUCTION_HEURISTICS = ['red-blue', 'steiner', 'diverse-paths', 'ilp',
                            'steiner[double]', 'steiner[max]',]
 CHOICE_HEURISTICS = ['min-missing-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'importance-chosen']
+# This is used to convert original internal names of heuristics/algorithms/stats into
+# more intuitive labels for displaying plots in papers, presentations, etc.
+LABEL_TRANSFORMATION_MAP = {'min-missing-chosen': 'min-missing-links',
+                            'max-overlap-chosen': 'max-overlap-links',
+                            'max-reachable-chosen': 'max-reachable-subscribers',
+                            'importance-chosen': 'max-links-importance',
+                            # stats
+                            'max': 'best', 'min': 'worst', 'mean': 'rand'}
 
 # placeholder used when missing values for a particular group-curve/xvalue combination
 # we need this because we build len(xvalues)-length lists representing the yvalues
@@ -145,14 +153,17 @@ class SmartCampusStatistics(object):
         self.experiment_type = None
 
         # Determine how we name the metrics as we gather them up.
-        # If <=1 tree choice heuristic is requested, the name will
-        # be solely the tree construction heuristic.
-        # If <=1 tree construction heuristic (other than oracle/unicast)
-        # is requested, the name will be solely the tree choice heuristic.
-        # When both of these cases apply, we only use the heuristic name.
-        # If we requested plotting certain statistical metrics (min, mean, etc.),
-        # we should always include choice names or else it won't be clear what
-        # value is being referred to by the heuristic's name.
+        # If exactly 1 tree selection policy is requested, the name will
+        # be solely the tree construction algorithm.
+        # If <=1 tree construction algorithm (other than oracle/unicast)
+        # is requested, the name will be solely the tree selection policy.
+        # When both of these cases apply, we only use the construction algorithm name.
+        # If we requested plotting >1 certain statistical metrics (min, mean, etc.),
+        # we should always include selection policy names or else it won't be clear what
+        # value is being referred to by just the construction algorithm's name.
+        # NOTE: there are some XXX HACKS floating around in which these get used
+        # as we parse/build the results based on certain parameters. There's also a place
+        # where we SET one of the parameters so consider fixing things up later...
         omnipresent_heuristics = {'oracle', 'unicast'}
         self.include_choice_name = True
         self.include_construction_name = True
@@ -161,10 +172,11 @@ class SmartCampusStatistics(object):
         # if we're plotting stats other than just mean, we should label them as such even if just one of them
         if self.config.stats_to_plot is not None:
             self.include_stats_name = True
-        if self.config.include_choices is not None and len(self.config.include_choices) <= 1\
+        if self.config.include_choices is not None and len(self.config.include_choices) == 1\
                 and not self.include_stats_name:
             # if we label with stats we should definitely include choice name even if only one to avoid confusion
             self.include_choice_name = False
+        # Recall that we keep the construction algorithm name if we don't use the selection name.
         elif self.config.include_heuristics is not None and \
                         len(set(self.config.include_heuristics) - omnipresent_heuristics) <= 1:
             self.include_construction_name = False
@@ -691,86 +703,140 @@ class SmartCampusStatistics(object):
             plt.savefig(self.config.save, bbox_inches=0)  # may need to use 'tight' on some systems for bbox
 
     def get_curve_style(self, group_name):
-        """ We want to plot each group (heuristic) with different markers / colors, but
-        consistently color heuristics/groups to easily compare them.
+        """ We want to plot each group with different markers / colors / linestyles, but
+        consistently color them for easy comparison.  We also try to ensure different
+        linestyles so the groups are still distinguishable if the plot is in grayscale
+        (i.e. a reader prints the paper).
         :param group_name:
         :return dict: containing label, marker, color, and linestyle
         """
 
-        # markers = 'x.*+do^s1_|'  # set explicityly currently
         colors = 'rbgy'  # 'rbgycm'  # c/m are reserved!
-        linestyles = ['solid','dashed','dashdot','dotted']
+        linestyles = ['dashed','dashdot','dotted', 'solid',]  # don't change this order!!!
+        # some of them were reserved for stats/unicast/oracle, here's all of them: 'x.*+do^s1_|'
+        markers = 'x.+1_'  # set explicitly currently with some of these reserved
+        # Stats get specific markers and linestyles (note the use of indices)
+        marker_map = {'max': '*', 'mean': 'd', 'min': '^', 'std': 's'}
+        linestyle_map = {'max': 0, 'mean': 1, 'min': 2, 'std': 3}
+        # Used to verify if a parameter inside parentheses is stats or not
+        valid_stats = marker_map
 
-        # We determine what groups have been requested to be varied
-        # and assign them consistent values based on the arguments'
-        ret =  {'label': group_name}
+        color = None
+        linestyle = None
+        marker = None
 
-        # COLORS go with construction heuristics
         # First, return immediately for these special cases to avoid trying to include markers or linestyles on them
+        ret =  {'label': group_name}
         if group_name == 'unicast':
             ret['color'] = 'c'
+            ret['marker'] = '|'
             return ret
         elif group_name == 'oracle':
             ret['color'] = 'm'
+            ret['marker'] = 'o'
             return ret
-        # Next, always assign colors if we're explicitly labelling which construction algorithm was used
-        elif self.include_construction_name:
-            heur_name = group_name.split(' ')[0]
-            color_idx = CONSTRUCTION_HEURISTICS.index(heur_name)
-            color = colors[color_idx % (len(colors))]
-        else:
-            color = None
 
-        # LINESTYLES go with tree-choosing heuristics
-        # TODO: make this use markers instead if we add more tree-choosing heuristics?
-        linestyle = None
-        if self.include_choice_name and 'chosen' in group_name or group_name == 'all':
-            # NOTE: only try to slice the choice name out if the group name has multiple parts!
-            if '(' in group_name:
-                choice_name = group_name[group_name.find('(')+1 : group_name.find(')')]
-            else:
-                choice_name = group_name
-                assert not self.include_construction_name, "we don't currently support any construction algorithms with 'chosen' in the name: time to fix this"
-            linestyle_idx = CHOICE_HEURISTICS.index(choice_name)
-            linestyle = linestyles[linestyle_idx % len(linestyles)]
+        # Next, determine what type of group name this is and parse it if necessary.
+        const_alg = None
+        select_policy = None
+        stat_name = None
 
-        # MARKERS go with stats (min, max, etc.)
-        # NOTE: we do not assign a marker AND a linestyle to the same curve as they're different labels!
-        # TODO: change that fact if we add more choice heuristics as it'll result in re-used colors anyway
-        marker = None
-        marker_map = {'max': '*', 'mean': 'd', 'min': '^', 'std': 's'}
-        if self.include_stats_name and linestyle is None:
-            # NOTE: only try to slice the choice name out if the group name has multiple parts!
-            if '(' in group_name:
-                stat_name = group_name[group_name.find('(')+1 : group_name.find(')')]
+        # We always put the construction algorithm first if it's included.
+        if self.include_construction_name:
+            const_alg = group_name.split(' ')[0]
+
+        # If the group name has another parameter we need to disambiguate it.
+        name_second_part = None
+        if '(' in group_name:
+            name_second_part = group_name[group_name.find('(') + 1: group_name.find(')')]
+            if name_second_part == 'all':
+                log.error("currently unsupported group name parameter 'all' found!!!")
+                exit(1)
+
+        if self.include_choice_name:
+            if name_second_part is None and group_name in CHOICE_HEURISTICS:
+                select_policy = group_name
+            elif name_second_part is not None and name_second_part in CHOICE_HEURISTICS:
+                select_policy = name_second_part
             else:
-                assert not self.include_construction_name
+                # it must have been a:
+                assert self.include_stats_name,\
+                    "error disambiguating group name %s's parameter %s" % (group_name, name_second_part)
+
+        if self.include_stats_name:
+            if name_second_part is None and group_name in valid_stats:
                 stat_name = group_name
+            elif name_second_part is not None and name_second_part in valid_stats:
+                stat_name = name_second_part
+            else:
+                # it must have been a:
+                assert self.include_choice_name,\
+                    "error disambiguating group name %s's parameter %s" % (group_name, name_second_part)
 
+        ###############################################################
+        ## TIME TO ASSIGN CURVE STYLES!
+
+        # COLORS go with construction heuristics first
+        if const_alg is not None:
+            color_idx = CONSTRUCTION_HEURISTICS.index(const_alg)
+            color = colors[color_idx % (len(colors))]
+
+        # LINESTYLES typically go with tree-selection policies esp. to distinguish them for
+        # different construction algorithms.  Otherwise, we always use them so that
+        # a grayscale (e.g. printout) of the figures will be more distinguishable.
+        linestyle_idx = 3  # should default to 'solid'
+        if select_policy:
+            linestyle_idx = CHOICE_HEURISTICS.index(select_policy)
+        elif const_alg:
+            linestyle_idx = CONSTRUCTION_HEURISTICS.index(const_alg)
+        # Only assign them to stats if that's all we're displaying as otherwise it's hard to
+        # tell what's a stat vs. special config vs. selection policy
+        elif stat_name and not self.include_choice_name:
+            linestyle_idx = linestyle_map[stat_name]
+
+        linestyle = linestyles[linestyle_idx % len(linestyles)]
+
+        # MARKERS typically go with stats (min, max, etc.)
+        if stat_name:
             # HACK: to ignore (all)
             if stat_name in marker_map:
                 marker = marker_map[stat_name]
                 # this only used if we're going to convert marker to a color
                 marker_idx = self.config.stats_to_plot.index(stat_name)
-
-        # Colors are the best way to distinguish curves, so default to that
-        # if we didn't include many heuristics.
-        if color is None:
-            # NOTE: prioritize using colors for tree-choices and using our hard-coded markers for stats
-            if linestyle is not None:
-                color = colors[linestyle_idx % len(colors)]
-                linestyle = None
-            elif marker is not None:
-                if self.include_choice_name:
-                    color = 'k'  # need to ensure a color chosen or pyplot will assign them for you
-                else:
-                    color = colors[marker_idx % len(colors)]
-                    marker = None
             else:
-                # didn't assigned colors, markers, OR linestyles
-                color = 'k'
-                log.warn("didn't assigned colors, markers, OR linestyles: this is not well-supported; defaulting to black")
+                log.warning("stat_name %s not found!  not assigning a marker to it..." % stat_name)
+
+        ###############################################################
+        ## Do some cleanup and return the style
+
+        # Need to ensure a color is chosen
+        if color is None:
+            # This must mean we aren't distinguishing construction algorithms, so what to distinguish?
+            # It must be stats or selection policies, so ensure that they have a marker / linestyle:
+            # stats and special configs will have solid lines in this case.
+
+            # Keeps stats as black solid lines since they're pretty obvious in grayscale
+            if marker is not None:
+                color = 'k'  # need to ensure a color chosen or pyplot will assign them for you
+            # For selection policies, give it a marker AND a color
+            else:
+                color = colors[linestyle_idx % len(colors)]
+                marker = markers[linestyle_idx % len(markers)]
         assert color, "need to ensure a color chosen or pyplot will assign them for you"
+
+        # Re-label the group from the internal implementation to something more
+        # intuitive for presenting results.
+        new_label = 'RIDE-D-%s'
+        if name_second_part:
+            new_label += ' (%s)'
+        new_label_parts = []
+        if const_alg:
+            new_label_parts.append(const_alg)
+        if select_policy:
+            new_label_parts.append(LABEL_TRANSFORMATION_MAP.get(select_policy, select_policy))
+        if stat_name:
+            new_label_parts.append(LABEL_TRANSFORMATION_MAP.get(stat_name, stat_name))
+        ret['label'] = new_label % tuple(new_label_parts)
 
         ret['color'] = color
         if marker is not None:
