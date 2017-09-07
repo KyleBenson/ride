@@ -43,10 +43,10 @@ class RideD(object):
 
     TREE_CHOOSING_HEURISTICS = ('max-overlap', 'min-missing', 'max-reachable', 'importance')
 
-    def __init__(self, topology_manager, dpid, addresses, ntrees=2, tree_choosing_heuristic='importance',
+    def __init__(self, topology_mgr, dpid, addresses, ntrees=2, tree_choosing_heuristic='importance',
                  tree_construction_algorithm=('red-blue',), **kwargs):
         """
-        :param SdnTopology topology_manager: used as adapter to SDN controller for
+        :param SdnTopology topology_mgr: used as adapter to SDN controller for
          maintaining topology and multicast tree information
         :param dpid: the data plane ID of the server this m/w runs on.  This MAY
         be some routable network address recognized by the SDN controller and MUST be included
@@ -71,12 +71,30 @@ class RideD(object):
 
         self.stt_mgr = SttManager()
 
-        self.topology_manager = topology_manager
+        if not isinstance(topology_mgr, SdnTopology):
+            # only adapter type specified: use default other args
+            if isinstance(topology_mgr, basestring):
+                self.topology_manager = topology_manager.build_topology_adapter(topology_adapter_type=topology_mgr)
+            # we expect a dict to have the kwargs
+            elif isinstance(topology_mgr, dict):
+                self.topology_manager = topology_manager.build_topology_adapter(**topology_mgr)
+            # hopefully it's a tuple!
+            else:
+                try:
+                    self.topology_manager = topology_manager.build_topology_adapter(*topology_mgr)
+                except TypeError:
+                    raise TypeError("topology_mgr parameter is not of type SdnTopology and couldn't extract further parameters from it!")
+
+        # ENHANCE: verify that it's a SdnTopology?  maybe accept a dict of args to its constructor?
+        else:
+            self.topology_manager = topology_mgr
+
         # ENHANCE: rather than manually specifying the DPID, we could iterate over the hosts in the
         # topology and find the one corresponding to our network stack.  However, the current method
         # is not only easier and less error-prone, but running part of RIDE-D on the SDN controller
         # would require directly specifying the server's ID (or having it provide this through some API) anyway.
         self.dpid = dpid
+        # ENHANCE: who manages pool of IP addresses for MDMTs?  would need some controller API perhaps...
         self.address_pool = addresses
         self.ntrees = ntrees
         self.choosing_heuristic = tree_choosing_heuristic
@@ -137,18 +155,8 @@ class RideD(object):
         if not pre_parsed:
             args = cls.get_arg_parser().parse_args(args)
 
-        # Configure and connect topology adapter before passing to constructor
-        if args.topology_adapter_type == 'onos':
-            from topology_manager.onos_sdn_topology import OnosSdnTopology
-            topo_mgr = OnosSdnTopology(ip=args.controller_ip, port=args.controller_port)
-        elif args.topology_adapter_type == 'floodlight':
-            from topology_manager.floodlight_sdn_topology import FloodlightSdnTopology
-            topo_mgr = FloodlightSdnTopology(ip=args.controller_ip, port=args.controller_port)
-        else:
-            raise ValueError("unrecognized SdnTopology type: %s" % args.topology_adapter_type)
-
-        # convert to plain dict
-        args = vars(args)
+        topo_mgr = topology_manager.build_topology_adapter(args.topology_adapter_type, args.controller_ip, args.controller_port)
+        args = vars(args) # convert to plain dict
         return cls(topology_manager=topo_mgr, **args)
 
     @staticmethod
