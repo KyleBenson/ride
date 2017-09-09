@@ -1,5 +1,6 @@
 import argparse
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 import json
 import networkx as nx
 
