@@ -15,7 +15,8 @@ import random
 from stt_manager import SttManager
 import networkx as nx
 from topology_manager.sdn_topology import SdnTopology
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 
 class RideD(object):
     """
@@ -46,7 +47,7 @@ class RideD(object):
     def __init__(self, topology_mgr, dpid, addresses, ntrees=2, tree_choosing_heuristic='importance',
                  tree_construction_algorithm=('red-blue',), **kwargs):
         """
-        :param SdnTopology topology_mgr: used as adapter to SDN controller for
+        :param SdnTopology|str topology_mgr: used as adapter to SDN controller for
          maintaining topology and multicast tree information
         :param dpid: the data plane ID of the server this m/w runs on.  This MAY
         be some routable network address recognized by the SDN controller and MUST be included
@@ -318,8 +319,11 @@ class RideD(object):
             pass
 
     def build_mdmts(self):
-        """Build redundant multicast trees over the specified subscribers using
-        the requested heuristic algorithm."""
+        """
+        Build redundant multicast trees over the specified subscribers using
+        the requested heuristic algorithm.
+        :return: an updated self.mdmts
+        """
 
         source = self.get_server_id()
         for topic, subs in self.subscribers.items():
@@ -369,19 +373,19 @@ class RideD(object):
         trees if necessary.
         :return:
         """
-        raise NotImplementedError
 
-        # NO UPDATES TO ACTUALLY GATHER HERE:
-        # TODO: since we currently assume static pubs/subs/routes/topology, need to handle them dynamically
-        # This requires some interaction with the controller/data exchange beyond that provided by
-        # a regular controller and its REST APIs: e.g. who manages pool of IP addresses for MDMTs?
-        # We'd also need to extend the REST APIs to support updating the topology rather than getting a whole new one.
-        # We'd also have to handle dynamic pub/sub join/leave in this class
+        # ENHANCE: extend the REST APIs to support updating the topology rather than getting a whole new one.
+        self.topology_manager.build_topology()
+        # TODO: maybe we should only save the built MDMTs as we add their flow rules? this could ensure that any MDMT we try to use will at least be fully-installed...
+        # could even use a thread lock to block until the first one is installed
 
-        # trees = self.build_mdmts()
-        # self.install_mdmts(trees)
-        # return
-        # # TODO: maybe wrap this in a check to see if this is actually a live TopoMgr?  or just have a install multicast rules function that no-ops in an overridden version...
+        trees = self.build_mdmts()
+        # TODO: perhaps we need to remove old flows before installing these ones? we should just overwrite them for the most part...
+        # ENHANCE: not re-install ones that are the same?
+        if trees:
+            for mdmts in trees.values():
+                self.install_mdmts(mdmts)
+        # ENHANCE: retrieve publication routes rather than rely on them being manually set...
 
     def add_subscriber(self, subscriber, topic_id):
         """
