@@ -9,9 +9,15 @@ import re
 
 from subprocess import Popen
 
+import topology_manager
 from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
 
 import logging as log
+# Disable some of the more verbose and unnecessary loggers
+for _logger_name in ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool'):
+    l = log.getLogger(_logger_name)
+    l.setLevel(log.NOTSET)
+
 import json
 import argparse
 import time
@@ -27,9 +33,9 @@ from mininet.link import TCLink, Intf
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from topology_manager.test_sdn_topology import mac_for_host  # used for manual MAC assignment
 
-EXPERIMENT_DURATION = 35  # in seconds
+EXPERIMENT_DURATION = 50  # in seconds
 # EXPERIMENT_DURATION = 10  # for testing
-SEISMIC_EVENT_DELAY = 25  # seconds before the 'earthquake happens', i.e. sensors start sending data
+SEISMIC_EVENT_DELAY = 30  # seconds before the 'earthquake happens', i.e. sensors start sending data
 # SEISMIC_EVENT_DELAY = 5  # for testing
 IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
 OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at the default port
@@ -46,6 +52,20 @@ MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
 # When True, runs host processes with -00 command for optimized python code
 OPTIMISED_PYTHON = False
 SLEEP_TIME_BETWEEN_RUNS = 5  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
+
+### Configurations for actually running SCALE as the test client applications
+# Make sure you setup a virtual environment called 'scale_client' for this user!
+SCALE_USER = 'vagrant'
+# XXX: HACK: since Mininet runs as root and we use virtual environments, we have to run the client
+# within the venv but at the right location, under the right user, with the right PYTHONPATH,
+# all as a large complicated command passed as a string to 'su'...
+# WARNING: this took a long time to get actually working as the quotes are quite finicky... careful modifying!
+# TODO: disable these when not testing...
+SCALE_EXTRA_ARGS = " --enable-log-module coapthon " \
+                   "--disable-log-module topology_manager.sdn_topology urllib3.connectionpool " \
+                   "--raise-errors "
+SCALE_CLIENT_BASE_COMMAND = 'su -c "pushd .; export WORKON_HOME=~/.venvs; source ~/.local/bin/virtualenvwrapper.sh; workon ride_scale_client; popd;' \
+                            ' python %s -m scale_client %s %%s" ' % ("-O" if OPTIMISED_PYTHON else "", SCALE_EXTRA_ARGS) + SCALE_USER
 
 # Default values
 DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
@@ -437,17 +457,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         routes, clearing flows, etc.
         :return:
         """
-        SdnTopologyAdapter = None
-        if self.topology_adapter_type == 'onos':
-            from topology_manager.onos_sdn_topology import OnosSdnTopology as SdnTopologyAdapter
-        elif self.topology_adapter_type == 'floodlight':
-            from topology_manager.floodlight_sdn_topology import FloodlightSdnTopology as SdnTopologyAdapter
-        else:
-            log.error("Unrecognized topology_adapter_type type %s.  Can't reset controller between runs or manipulate flows properly!")
-            exit(102)
-
-        if SdnTopologyAdapter is not None:
-            self.topology_adapter = SdnTopologyAdapter(ip=self.controller_ip, port=self.controller_port)
+        self.topology_adapter = topology_manager.build_topology_adapter(self.topology_adapter_type, controller_ip=self.controller_ip, controller_port=self.controller_port)
 
     def setup_traffic_generators(self):
         """Each traffic generating host starts an iperf process aimed at
@@ -494,6 +504,12 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         delay = SEISMIC_EVENT_DELAY  # seconds before sensors start picking
         quit_time = EXPERIMENT_DURATION
 
+        # HACK: Need to set PYTHONPATH since we don't install our Python modules directly and running Mininet
+        # as root strips this variable from our environment.
+        env = os.environ.copy()
+        if 'PYTHONPATH' not in env:
+            env['PYTHONPATH'] = os.path.dirname(os.path.abspath(__file__))
+
         # The logs and output files go in nested directories rooted
         # at the same level as the whole experiment's output file.
         # We typically name the output file as results_$PARAMS.json, so cut off the front and extension
@@ -519,14 +535,21 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         ### SETUP SERVER
         ####################
 
-        log.info("Seismic server on host %s" % server.name)
+        server_ip = server.IP()
+        assert server_ip != '127.0.0.1', "ERROR: server.IP() returns localhost!"
+
+        log.info("Seismic server on host %s with IP %s" % (server.name, server_ip))
+
+        #### COMPARISON CONFIGS
 
         # First, we need to set static unicast routes to subscribers for unicast comparison config.
         # This HACK avoids the controller recovering failed paths too quickly due to Mininet's zero latency
         # control plane network.
         # NOTE: because we only set static routes when not using RideD multicast, this shouldn't
         # interfere with other routes.
+        use_multicast = True
         if self.comparison is not None and self.comparison == 'unicast':
+            use_multicast = False
             for sub in subscribers:
                 try:
                     # HACK: we get the route from the NetworkxTopology in order to have the same
@@ -551,34 +574,38 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # For the oracle comparison config we just extend the quit time so the controller has plenty
         # of time to detect and recover from the failures.
         elif self.comparison is not None and self.comparison == 'oracle':
-            quit_time += 20
+            use_multicast = False
+            # TODO: base this quit_time extension on the Coap timeout????
+            # quit_time += 20
 
-        cmd = "python %s seismic_warning_test/seismic_server.py -a %s --quit_time %d --debug %s" % \
-              ("-O" if OPTIMISED_PYTHON else "", ' '.join(self.mcast_address_pool), quit_time, self.debug_level)
+        srv_cfg = make_scale_config(sinks=make_scale_config_entry(name="RideD", multicast=use_multicast,
+                                                                  class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",
+                                                                  # RideD configurations
+                                                                  # addresses=[s.IP() for s in subscribers],
+                                                                  addresses=self.mcast_address_pool, ntrees=self.ntrees,
+                                                                  tree_construction_algorithm=self.tree_construction_algorithm,
+tree_choosing_heuristic=self.tree_choosing_heuristic,
+                                                                  dpid=self.get_host_dpid(self.server),
+                                                                  topology_mgr=(self.topology_adapter_type, self.controller_ip, self.controller_port),
+                                                                  # TODO: remove this when we switch to an API for it
+                                                                  publishers=[self.get_host_dpid(h) for h in sensors],
+                                                                  ),
+                                    networks=make_scale_config_entry(name="CoapServer", events_root="/events/",
+                                                                     class_path="coap_server.CoapServer"),
+                                    # TODO: also run a publisher for that bugfix?
+                                    applications=make_scale_config_entry(class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
+                                                                         # TODO: include this for server?
+                                                                         # output_file=os.path.join(outputs_dir, 'client_events_srv'),
+                                                                         name="SeismicServer")
+                                    )
 
-        # HACK: we pass the static lists of publishers/subscribers via cmd line so as to avoid having to build an
-        # API server for RideD to pull this info from.  ENHANCE: integrate a pub-sub broker agent API on controller.
-        # NOTE: we pass the subscribers' DPIDs and the server will handle converting them to appropriate IDs (e.g. IP address)
-        subs = ' '.join(self.get_host_dpid(h) for h in subscribers)
-        pubs = ' '.join(self.get_host_dpid(h) for h in sensors)
-        if self.comparison:
-            cmd += " --no-ride "
-        cmd += " --subs %s --pubs %s" % (subs, pubs)
-
-        # Add RideD arguments to the server command.
-        cmd += " --ntrees %d --mcast-construction-algorithm %s --choosing-heuristic %s --dpid %s --ip %s --port %d"\
-               % (self.ntrees, ' '.join(self.tree_construction_algorithm), self.tree_choosing_heuristic,
-                  self.get_host_dpid(self.server), self.controller_ip, self.controller_port)
+        base_args = "-q %d --log %s" % (quit_time, self.debug_level)
+        cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + srv_cfg)
 
         if WITH_LOGS:
             cmd += " > %s 2>&1" % os.path.join(logs_dir, 'srv')
 
         log.debug(cmd)
-        # HACK: Need to set PYTHONPATH since we don't install our Python modules directly and running Mininet
-        # as root strips this variable from our environment.
-        env = os.environ.copy()
-        if 'PYTHONPATH' not in env:
-            env['PYTHONPATH'] = os.path.dirname(os.path.abspath(__file__))
         p = server.popen(cmd, shell=True, env=env)
         self.popens.append(p)
 
@@ -592,23 +619,47 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # sensor client on the server host so the server process always receives at least one
         # publication.  Otherwise, if no publications reach it the reachability is 0 when it
         # may actually be 1.0! This is used mainly for comparison vs. NetworkxSmartCampusExperiment.
-        sensors.add(server)
+        # TODO: just run the same seismic sensor on the server so that it will always publish SOMETHING
+        # sensors.add(server)
 
         log.info("Running seismic test client on %d subscribers and %d sensors" % (len(subscribers), len(sensors)))
-        server_ip = server.IP()
-        assert server_ip != '127.0.0.1', "ERROR: server.IP() returns localhost!"
 
         for client in sensors.union(subscribers):
             client_id = client.name
-            cmd = "python %s seismic_warning_test/seismic_client.py --id %s --delay %d --quit_time %d --debug %s --file %s" % \
-                  ("-O" if OPTIMISED_PYTHON else "", client_id, delay, quit_time, self.debug_level,
-                   os.path.join(outputs_dir, 'client_events'))  # the client appends its ID automatically to the file name
+
+            # Build the cli configs for the two client types
+            subs_cfg = make_scale_config(
+                networks=make_scale_config_entry(name="CoapServer", class_path="coap_server.CoapServer",
+                                                 events_root="/events/"),
+                applications=make_scale_config_entry(
+                    class_path="seismic_warning_test.seismic_alert_subscriber.SeismicAlertSubscriber",
+                    name="SeismicSubscriber", remote_broker=server_ip, output_file=os.path.join(outputs_dir, 'client_events_%s' % client_id)))
+            pubs_cfg = make_scale_config(
+                sensors=make_scale_config_entry(name="SeismicSensor", event_type="seismic", static_event_data="1.0",
+                                                class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
+                                                start_delay=delay, sample_interval=5),
+                # TODO: output_file for events_sent????
+                sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
+                                              name="CoapEventSink", hostname=server_ip))
+
+            # Build up the final cli configs, merging the individual ones built above if necessary
+            args = base_args
             if client in sensors:
-                cmd += ' -a %s' % server_ip
+                args += pubs_cfg
             if client in subscribers:
-                cmd += ' -l'
+                args += subs_cfg
+            cmd = SCALE_CLIENT_BASE_COMMAND % args
+
             if WITH_LOGS:
-                cmd += " > %s 2>&1" % os.path.join(logs_dir, client_id)
+                unique_filename = ''
+                if client in sensors and client in subscribers:
+                    unique_filename = 'ps'
+                elif client in sensors:
+                    unique_filename = 'p'
+                elif client in subscribers:
+                    unique_filename = 's'
+                unique_filename = '%s_%s' % (unique_filename, client_id)
+                cmd += " > %s 2>&1" % os.path.join(logs_dir, unique_filename)
 
             # the node.sendCmd option in mininet only allows a single
             # outstanding command at a time and cancels any current
@@ -627,33 +678,49 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         log.info("*** Experiment complete! Waiting for all host procs to exit...")
 
         # need to check if the programs have finished before we exit mininet!
-        # First, we check the server to see if it even ran properly.
-        ret = self.popens[0].wait()
-        if ret != 0:
-            from seismic_warning_test.seismic_server import SeismicServer
-            if ret == SeismicServer.EXIT_CODE_NO_SUBSCRIBERS:
-                log.error("Server proc exited due to no reachable subscribers: this experiment is a wash!")
-                # TODO: handle this error appropriately: mark results as junk?
+        # NOTE: need to wait more than 10 secs, which is default 'timeout' for CoapServer.listen()
+        # TODO: set wait_time to 30? 60?
+        def wait_then_kill(proc, timeout = 5, wait_time = 20):
+            assert isinstance(proc, Popen)  # for typing
+            ret = None
+            for i in range(wait_time/timeout):
+                ret = proc.poll()
+                if ret is not None:
+                    break
+                time.sleep(timeout)
             else:
-                log.error("Server proc exited with code %d" % self.popens[0].returncode)
+                log.error("process never quit: killing it...")
+                proc.kill()
+                ret = proc.wait()
+                log.error("now it exited with code %d" % ret)
+            return ret
+
+        # Inspect the clients first, then the server so it has a little more time to finish up closing
+
         for p in self.popens[1:]:
-            ret = p.wait()
-            while ret is None:
-                ret = p.wait()
-            if ret != 0:
+            ret = wait_then_kill(p)
+            if ret is None:
+                log.error("Client proc never quit!")
+            elif ret != 0:
+                # TODO: we'll need to pipe this in from the scale client?
                 if ret == errno.ENETUNREACH:
                     # TODO: handle this error appropriately: record failed clients in results?
                     log.error("Client proc failed due to unreachable network!")
                 else:
                     log.error("Client proc exited with code %d" % p.returncode)
+
+        ret = wait_then_kill(self.popens[0])
+        if ret != 0:
+            log.error("server proc exited with code %d" % ret)
+
+        # Clean up traffic generators:
         # Clients should terminate automatically, but the server won't do so unless
         # a high enough version of iperf is used so we just do it explicitly.
         for p in self.client_iperfs:
             p.wait()
         for p in self.server_iperfs:
             try:
-                p.kill()
-                p.wait()
+                wait_then_kill(p)
             except OSError:
                 pass  # must have already terminated
         self.popens = []
@@ -740,6 +807,41 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             return self.get_host_dpid(node)
         else:
             raise TypeError("Unrecognized node type for: %s" % node)
+
+
+# TODO: import these from somewhere rather than repeating them here... BUT, note that we've done some bugfixes with these ones
+
+
+def make_scale_config(applications=None, sensors=None, sinks=None, networks=None):
+    """
+    Builds a string to be used on the command line in order to run a scale client with the given configurations.
+    NOTE: make sure to properly space your arguments and wrap any newlines in quotes so they aren't interpreted
+    as the end of the command by the shell!
+    """
+    cfg = ""
+    if applications is not None:
+        cfg += ' --applications %s ' % applications
+    if sensors is not None:
+        cfg += ' --sensors %s ' % sensors
+    if networks is not None:
+        cfg += ' --networks %s ' % networks
+    if sinks is not None:
+        cfg += ' --event-sinks %s ' % sinks
+    return cfg
+
+
+def make_scale_config_entry(class_path, name, **kwargs):
+    """Builds an individual entry for a single SCALE client module that can be fed to the CLI.
+    NOTE: don't forget to add spaces around each entry if you use multiple!"""
+    # d = dict(name=name, **kwargs)
+    d = dict(**kwargs)
+    # XXX: can't use 'class' as a kwarg in call to dict, so doing it this way...
+    d['class'] = class_path
+    # need to wrap the raw JSON in single quotes for use on command line as json.dumps wraps strings in double quotes
+    # also need to escape these double quotes so that 'eval' (su -c) actually sees them in the args it passes to the final command
+    return "'%s'" % json.dumps({name: d}).replace('"', r'\"')
+    # return "'%s'" % json.dumps(d)
+
 
 if __name__ == "__main__":
     import sys
