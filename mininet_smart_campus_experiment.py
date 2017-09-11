@@ -33,9 +33,9 @@ from mininet.link import TCLink, Intf
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from topology_manager.test_sdn_topology import mac_for_host  # used for manual MAC assignment
 
-EXPERIMENT_DURATION = 50  # in seconds
+EXPERIMENT_DURATION = 90  # in seconds
 # EXPERIMENT_DURATION = 10  # for testing
-SEISMIC_EVENT_DELAY = 30  # seconds before the 'earthquake happens', i.e. sensors start sending data
+SEISMIC_EVENT_DELAY = 60  # seconds before the 'earthquake happens', i.e. sensors start sending data
 # SEISMIC_EVENT_DELAY = 5  # for testing
 IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
 OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at the default port
@@ -63,7 +63,8 @@ SCALE_USER = 'vagrant'
 # TODO: disable these when not testing...
 SCALE_EXTRA_ARGS = " --enable-log-module coapthon " \
                    "--disable-log-module topology_manager.sdn_topology urllib3.connectionpool " \
-                   "--raise-errors "
+                   "--raise-errors " \
+                   "--format-logging '%%(levelname)-6s : %%(name)-55s (%%(asctime)2s) : %%(message)s'"  # TODO: this doesn't work right now due to coapthon logging bug.... add timestamps; make sure to use '%%' to keep it from doing the formatting yet!
 SCALE_CLIENT_BASE_COMMAND = 'su -c "pushd .; export WORKON_HOME=~/.venvs; source ~/.local/bin/virtualenvwrapper.sh; workon ride_scale_client; popd;' \
                             ' python %s -m scale_client %s %%s" ' % ("-O" if OPTIMISED_PYTHON else "", SCALE_EXTRA_ARGS) + SCALE_USER
 
@@ -633,12 +634,12 @@ tree_choosing_heuristic=self.tree_choosing_heuristic,
                                                  events_root="/events/"),
                 applications=make_scale_config_entry(
                     class_path="seismic_warning_test.seismic_alert_subscriber.SeismicAlertSubscriber",
-                    name="SeismicSubscriber", remote_broker=server_ip, output_file=os.path.join(outputs_dir, 'client_events_%s' % client_id)))
+                    name="SeismicSubscriber", remote_broker=server_ip, output_file=os.path.join(outputs_dir, 'subscriber_%s' % client_id)))
             pubs_cfg = make_scale_config(
                 sensors=make_scale_config_entry(name="SeismicSensor", event_type="seismic", static_event_data="1.0",
                                                 class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
+                                                output_events_file=os.path.join(outputs_dir, 'publisher_%s' % client_id),
                                                 start_delay=delay, sample_interval=5),
-                # TODO: output_file for events_sent????
                 sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
                                               name="CoapEventSink", hostname=server_ip))
 
