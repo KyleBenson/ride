@@ -177,8 +177,16 @@ class SmartCampusExperiment(object):
         # Log progress to a file so that we can check on
         # long-running simulations to see how far they've gotten.
         progress_filename = self.output_filename.replace(".json", ".progress")
+        # in case we hadn't specified a .json output file:
         if progress_filename == self.output_filename:
             progress_filename += ".progress"
+
+        # ensure the directory exists...
+        try:
+            os.mkdir(os.path.dirname(progress_filename))
+        except OSError:  # dir exists
+            pass
+
         try:
             progress_file = open(progress_filename, "w")
             progress_file.write("Starting experiments at time %s\n" % time.ctime())
