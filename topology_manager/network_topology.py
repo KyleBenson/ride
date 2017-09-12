@@ -136,7 +136,7 @@ class NetworkTopology(object):
                 # If it isn't a tree for some reason, trim it down until it is
                 # by first getting a spanning tree of it and then trimming off
                 # any leaf nodes that aren't terminals (destinations).
-                if not nx.is_tree(t):
+                if not nx.ftree(t):
                     log.info("non-tree mcast tree generated!")
                     new_t = t.edge_subgraph(nx.minimum_spanning_edges(t, data=False, weight=weight_metric))
                     non_terminal_leaves = [n for n in new_t.nodes() if\

@@ -1,0 +1,2 @@
+INFO:seismic_client(h1-b0):Sending event at time 1504725141.75
+ERROR:seismic_client(h1-b0):problem sending event: [Errno 101] Network is unreachable

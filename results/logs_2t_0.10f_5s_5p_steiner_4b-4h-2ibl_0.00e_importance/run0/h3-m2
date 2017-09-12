@@ -1,0 +1,1 @@
+ERROR:seismic_client(h3-m2):Error in SeismicClient.run() can't recover: (9, 'Bad file descriptor')

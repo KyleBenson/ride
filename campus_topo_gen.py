@@ -19,9 +19,9 @@ class CampusTopologyGenerator(object):
     Future versions may include additional redundant links, attributes such as
     latency or bandwidth, and shared risk groups."""
 
-    def __init__(self, core_size=4, servers=1, links_per_server=2,
-                 percent_minor_buildings=0.15, # 10-15%
-                 minor_buildings_per_distribution_router=8, # 7-8
+    def __init__(self, core_size=2, servers=1, has_cloud=True, links_per_server=2, links_per_cloud=2,
+                 percent_minor_buildings=0.80, # 10-15%
+                 minor_buildings_per_distribution_router=2, # 7-8
                  links_per_distribution_router=2, links_per_building=2, nbuildings=200,
                  add_building_topology=True,  # building topo is a tree, so no redundancy or clever routing to be done
                  building_floors=5,  # estimate for larger buildings, should probably make a distribution
@@ -34,7 +34,9 @@ class CampusTopologyGenerator(object):
 
         self.core_size = core_size
         self.servers = servers
+        self.has_cloud = has_cloud
         self.links_per_server = links_per_server
+        self.links_per_cloud = links_per_cloud
         self.percent_minor_buildings = percent_minor_buildings
         self.minor_buildings_per_distribution_router = minor_buildings_per_distribution_router
         self.links_per_distribution_router = links_per_distribution_router
@@ -120,6 +122,36 @@ class CampusTopologyGenerator(object):
                 self.topo.add_node(node_name)
                 self.add_link(node_name, router_name)
                 self.minor_building_routers.append(node_name)
+
+        if self.has_cloud is True:
+            if ndist_routers < 2:
+                print "not enough dist routers for cloud"
+            else:
+                self.cloud_nodes = []
+                self.pingers = []
+                self.cloud_gateways = []
+                for x in range(1):#self.clouds):
+                    cloud_name = "x%d" % x
+                    self.topo.add_node(cloud_name)
+                    self.cloud_nodes.append(cloud_name)
+
+                    gateway_id = 0
+                    for cloud_gateway_distribution_router in random.sample(self.distribution_routers, self.links_per_cloud):
+                        print "select %s as gateway distribution router" % (cloud_gateway_distribution_router)
+                        cloud_gateway_name = "g" + cloud_gateway_distribution_router[1:]
+                        print "add %s as gateway" % (cloud_gateway_name)
+                        self.topo.add_node(cloud_gateway_name)
+                        self.cloud_gateways.append(cloud_gateway_name)
+
+                        self.add_link(cloud_gateway_name, cloud_name)
+                        self.add_link(cloud_gateway_name, cloud_gateway_distribution_router)
+
+                        pinger_name = "p" + cloud_gateway_distribution_router[1:]
+                        self.topo.add_node(pinger_name)
+                        self.pingers.append(pinger_name)
+                        self.add_link(cloud_gateway_name, pinger_name)
+                        gateway_id += 1
+
 
         # add in-building topologies and/or just hosts
         self.hosts = []
@@ -270,6 +302,15 @@ class CampusTopologyGenerator(object):
         elif dst.startswith('m') and src.startswith('d'):
             start = 25
             stop = 50
+        elif dst.startswith('x'):
+            start = 50
+            stop = 100
+        elif dst.startswith('p'):
+            start = 5
+            stop = 10
+        elif dst.startswith('g'):
+            start = 5
+            stop = 10
         else:
             raise TypeError("Didn't recognize the src/dst router types: %s, %s" % (src, dst))
         return random.uniform(start, stop)
@@ -286,7 +327,7 @@ class CampusTopologyGenerator(object):
             import matplotlib.pyplot as plt
             print 'Node colors: red=core, blue=major-building, green=distribution, yellow=minor-building, cyan=server, magenta=host, black=floor-switch, white=rack-switch'
             # TODO: ignore building internals?
-            colormap = {'c': 'r', 'b': 'b', 'd': 'g', 'm': 'y', 's': 'c', 'h': 'm', 'f': 'k', 'r': 'w'}
+            colormap = {'c': 'r', 'b': 'b', 'd': 'g', 'm': 'y', 's': 'c', 'h': 'm', 'f': 'k', 'r': 'w', 'x':'r', 'p':'k','g':'g'}
             node_colors = [colormap[node[0]] for node in self.topo.nodes()]
             # shell layout places nodes as a series of concentric circles
             positions = nx.shell_layout(self.topo, [self.core_nodes,
@@ -327,9 +368,10 @@ if __name__ == '__main__':
         # iterate over multiple options of form (nbuildings, nhosts, n-inter-building-links)
         topologies_to_build = (
             # (20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
+            #(80, 8, 8),
             # (200, 20, 20),  # main large topology
             # (10, 4, 2),
-            (3, 3, 1),
+            (4, 2, 2),
             # (200, 20, 40), (200, 20, 80),
             # (200, 20, 10), (200, 20, 0), (200, 20, 60), # vary ibl on main topology
             # (200, 20, 200), (200, 20, 400), (200, 20, 800), # vary ibl on main topology, with repeats and larger #s
@@ -345,6 +387,7 @@ if __name__ == '__main__':
                                         )
             t.generate()
             t.write('topos/campus_topo_%db-%dh-%dibl.json' % (nb, nh, nibl))
+            t.draw()
 
     if test_run:
         g = t.get()

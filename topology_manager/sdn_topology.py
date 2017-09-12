@@ -91,6 +91,48 @@ class SdnTopology(NetworkTopology):
             rules.append(self.build_flow_rule(switch, matches, actions))
         return rules
 
+    def build_flow_rules_from_path_to_gateway(self, path, cloud_ip):
+
+        src_ip = self.get_ip_address(path[0])
+        dst_ip = cloud_ip
+
+        rules = []
+        for src, switch, dst in zip(path[:-2], path[1:-1], path[2:]):
+            # Since the edges in the topology are non-directional, we
+            # need to determine which side of the links the src/dst are
+            in_port, _ = self.get_ports_for_nodes(switch, src)
+            out_port, _ = self.get_ports_for_nodes(switch, dst)
+
+            actions = self.build_actions(("output", out_port))
+            matches = self.build_matches(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip)
+
+            rules.append(self.build_flow_rule(switch, matches, actions))
+        return rules
+
+
+    def build_flow_rules_edge_reroute(self, path, cloud_ip):
+
+        src_ip = self.get_ip_address(path[0])
+        edge_ip = self.get_ip_address(path[-1])
+        edge_mac = self.get_mac_address(path[-1])
+        dst_ip = cloud_ip
+
+        rules = []
+        src = path[0]
+        first_switch = path[1]
+        first_dst =  path[2]
+
+        in_port, _ = self.get_ports_for_nodes(first_switch, src)
+        out_port, _ = self.get_ports_for_nodes(first_switch, first_dst)
+
+        actions = self.build_actions(("set_ipv4_dst", edge_ip),
+                                             ("set_eth_dst",  edge_mac),
+                                             ("output", out_port))
+        matches = self.build_matches(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip)
+
+        rules.append(self.build_flow_rule(first_switch, matches, actions))
+        return rules
+
     def build_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1'):
         """Converts a multicast tree to a list of flow rules that can then
         be installed in the corresponding switches.  They will be ordered

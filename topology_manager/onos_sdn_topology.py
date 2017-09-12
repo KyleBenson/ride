@@ -38,27 +38,28 @@ class OnosSdnTopology(SdnTopology):
         # assume hosts only have a single IP address/interface/MAC address/attachment point,
         # but potentially multiple VLANs.
         # ONOS seems to assume only potential multiples of VLAN and IP address.
+        #print host
         mac = ip = None
-
-        try:
-            switch = host['location']['elementId']
-            port = int(host['location']['port'])
-        except IndexError:
-            log.debug("Skipping host with no location in topology: %s" % host)
-            return
-
-        try:
-            mac = host['mac']
-            ip = host['ipAddresses'][0]
-        except IndexError:
-            if mac is None:
-                log.debug("Skipping host with no MAC or IPv4 addresses: %s" % host)
+        for location in host['locations']:
+            try:
+                switch = location['elementId']
+                port = int(location['port'])
+            except IndexError:
+                log.debug("Skipping host with no location in topology: %s" % host)
                 return
 
-        self.topo.add_node(host['id'], mac=mac, vlan=host['vlan'], ip=ip)
-        self.topo.add_edge(host['id'], switch,
-                           port1={'dpid': host['id'], 'port_num': 0},
-                           port2={'dpid': switch, 'port_num': port})
+            try:
+                mac = host['mac']
+                ip = host['ipAddresses'][0]
+            except IndexError:
+                if mac is None:
+                    log.debug("Skipping host with no MAC or IPv4 addresses: %s" % host)
+                    return
+
+            self.topo.add_node(host['id'], mac=mac, vlan=host['vlan'], ip=ip)
+            self.topo.add_edge(host['id'], switch,
+                               port1={'dpid': host['id'], 'port_num': 0},
+                               port2={'dpid': switch, 'port_num': port})
 
     def is_host(self, node):
         """Returns True if the given node is a host, False if it is a switch.

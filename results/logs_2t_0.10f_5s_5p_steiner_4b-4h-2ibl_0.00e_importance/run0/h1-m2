@@ -1,0 +1,7 @@
+INFO:seismic_client(h1-m2):Sending event at time 1504728204.07
+INFO:seismic_client(h1-m2):Sending event at time 1504728206.07
+INFO:seismic_client(h1-m2):Sending event at time 1504728208.08
+INFO:seismic_client(h1-m2):Sending event at time 1504728210.08
+INFO:seismic_client(h1-m2):Sending event at time 1504728212.08
+INFO:seismic_client(h1-m2):Sending event at time 1504728214.08
+ERROR:seismic_client(h1-m2):Error in SeismicClient.run() can't recover: (9, 'Bad file descriptor')

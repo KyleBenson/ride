@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "seismic_warning_test/seismic_server.py", line 241, in <module>
+    client = SeismicServer(args)
+  File "seismic_warning_test/seismic_server.py", line 95, in __init__
+    self.rided = ride.ride_d.RideD.build_from_args(config, pre_parsed=True)
+  File "/home/dsm/sdn_pubsub_mcast/ride/ride_d.py", line 143, in build_from_args
+    topo_mgr = OnosSdnTopology(ip=args.controller_ip, port=args.controller_port)
+  File "/home/dsm/sdn_pubsub_mcast/topology_manager/onos_sdn_topology.py", line 16, in __init__
+    self.build_topology()
+  File "/home/dsm/sdn_pubsub_mcast/topology_manager/sdn_topology.py", line 32, in build_topology
+    switches = self.rest_api.get_switches()
+  File "/home/dsm/sdn_pubsub_mcast/rest_api/onos_api.py", line 60, in get_switches
+    return self.get(path)['devices']
+  File "/home/dsm/sdn_pubsub_mcast/rest_api/base_rest_api.py", line 122, in get
+    ret = self.rest_call(path, {}, 'GET')
+  File "/home/dsm/sdn_pubsub_mcast/rest_api/base_rest_api.py", line 139, in rest_call
+    resp = self.session.send(req.prepare())
+  File "/usr/local/lib/python2.7/dist-packages/requests/sessions.py", line 618, in send
+    r = adapter.send(request, **kwargs)
+  File "/usr/local/lib/python2.7/dist-packages/requests/adapters.py", line 508, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=8181): Max retries exceeded with url: /onos/v1/devices (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7f9ef3d315d0>: Failed to establish a new connection: [Errno 111] Connection refused',))

@@ -102,7 +102,7 @@ class SmartCampusExperiment(object):
                             help='''number of IoT sensor publishers to contact edge server (default=%(default)s)''')
         arg_parser.add_argument('--error-rate', type=float, default=0.0, dest='error_rate',
                             help='''error rate of links (default=%(default)s)''')
-        arg_parser.add_argument('--topology-filename', '--topo', type=str, default='topos/campus_topo.json', dest='topology_filename',
+        arg_parser.add_argument('--topology-filename', '--topo', type=str, default='topos/campus_topo_4b-2h-2ibl.json', dest='topology_filename',
                             help='''file name of topology to use (default=%(default)s)''')
 
         # experiment interaction control
@@ -192,21 +192,10 @@ class SmartCampusExperiment(object):
             log.info("Starting run %d" % r)
             self.current_run_number = r
             self.setup_topology()
-            subs = self.choose_subscribers()
-            pubs = self.choose_publishers()
-            # NOTE: this is unnecessary as we only have a single server in our test topos.  If we use multiple, need
-            # to actually modify RideD here with updated server.
-            server = self.choose_server()
-            failed_nodes, failed_links = self.get_failed_nodes_links()
 
-            assert server not in failed_nodes, "shouldn't be failing the server!  useless run...."
-
-            self.setup_experiment(failed_nodes, failed_links, server, pubs, subs)
-            result = self.run_experiment(failed_nodes, failed_links, server, pubs, subs)
+            self.setup_experiment()
+            self.run_experiment()
             self.teardown_experiment()
-
-            result['run'] = r
-            self.record_result(result)
 
             if progress_file is not None:
                 try:
@@ -214,7 +203,7 @@ class SmartCampusExperiment(object):
                     progress_file.flush()  # so we can tail it
                 except IOError as e:
                     log.warn("Error writing to progress file: %s" % e)
-        self.output_results()
+        #self.output_results()
 
     def set_interrupt_signal(self):
         # catch termination signal and immediately output results so we don't lose ALL that work
@@ -313,16 +302,11 @@ class SmartCampusExperiment(object):
         """
         pass
 
-    def setup_experiment(self, failed_nodes, failed_links, server, publishers, subscribers):
+    def setup_experiment(self):
         """
         Set up the experiment and configure it as necessary before run_experiment is called.
         By default does nothing.
 
-        :param List[str] failed_nodes:
-        :param List[str] failed_links:
-        :param str server:
-        :param List[str] publishers:
-        :param List[str] subscribers:
         :return:
         """
         pass
