@@ -28,24 +28,43 @@ class SdnTopology(NetworkTopology):
         super(SdnTopology, self).__init__()
         self.rest_api = rest_api
 
-    def build_topology(self):
+    def build_topology(self, from_scratch=True):
+        """
+        Builds the topology by getting all the switches, links, and hosts from the underlying REST API and then
+        incrementally adding each of those components to the topology in its implementation-specific manner.
+        :param from_scratch: if True, discards the old topology first (NOTE: if you expect components to leave the network,
+        you should specify True so that their lack of presence will be noted!)
+        :return:
+        """
+
+        # NOTE: we gather up the raw values first and then add the components all at once to minimize the time
+        # during which the topology is unstable (e.g. missing links between switches).
+
         # TODO: refactor this to enable get_switches, get_hosts, get_links, etc? add_ funcs should return the component
         switches = self.rest_api.get_switches()
         log.debug("Switches: %s" % json.dumps(switches, sort_keys=True, indent=4))
-        for s in switches:
-            self.add_switch(s)
 
         # log.debug(self.topo.nodes())
 
         links = self.rest_api.get_links()
         log.debug("Links: %s" % json.dumps(links, sort_keys=True, indent=4))
-        for link in links:
-            self.add_link(link)
 
         # log.debug("Topo's edges before hosts: %s " % list(self.topo.edges(data=True)))
 
         hosts = self.rest_api.get_hosts()
         log.debug("Hosts: %s" % json.dumps(hosts, sort_keys=True, indent=4))
+
+        # TODO: add thread-safe version capability where we'll lock self.topo and release it after finishing the topology update
+        # NOTE: this would need a reader-writer thread lock that allows multiple readers but only one writer if no other readers (last part would require prioritization)
+
+        if from_scratch:
+            self.topo.clear()
+
+        # now add all the components
+        for s in switches:
+            self.add_switch(s)
+        for link in links:
+            self.add_link(link)
         for host in hosts:
             self.add_host(host)
 

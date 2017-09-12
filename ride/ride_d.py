@@ -184,7 +184,8 @@ class RideD(object):
         use for publishing to the specified topic and returns the network address used
         to send multicast packets along that tree.
         :param topic:
-        :param str heuristic: identifies which heuristic method should be used (default=self.heuristic)
+        :param heuristic: identifies which heuristic method should be used (default=self.choosing_heuristic)
+        :type heuristic: str
         :return network_address:
         """
         
@@ -265,7 +266,8 @@ class RideD(object):
                 for sub in subscribers:
                     tree.add_edge(sub, sink, capacity=1)
                 flow_value, flow = nx.maximum_flow(tree, root, sink)
-                assert (flow_value == len(subscribers))  # else something wrong
+                if not (flow_value == len(subscribers)):
+                    log.warning("flow value (%f) for 'importance' heuristic doesn't match # subscribers (%d): must be missing some?" % (flow_value, len(subscribers)))
                 tree.remove_node(sink)
 
                 # For every 'up' edge, count the flow along it as its importance.
@@ -318,44 +320,64 @@ class RideD(object):
             # ignore as we just don't know about this publisher
             pass
 
-    def build_mdmts(self):
+    def build_mdmts(self, subscribers=None):
         """
-        Build redundant multicast trees over the specified subscribers using
-        the requested heuristic algorithm.
-        :return: an updated self.mdmts
+        Build redundant multicast trees over the specified subscribers (and relevant topics) using the configured heuristic algorithm.
+        :param subscribers: dict mapping topics to a list of subscriber addresses for that topic (default=self.subscribers)
+        :type subscribers: dict[str, List[str]]
+        :return: an updated dict mapping topics to a list of MDMTs for reaching that topic's subscribers
+        :rtype: dict[str, List[nx.Graph]]
         """
 
+        if subscribers is None:
+            subscribers = self.subscribers
+
         source = self.get_server_id()
-        for topic, subs in self.subscribers.items():
+        mdmts = dict()
+
+        for topic, subs in subscribers.items():
+            # XXX: ensure all subscribers are present in the topology to prevent e.g. KeyErrors from the various algorithms
+            subs = [s for s in subs if s in self.topology_manager.topo]
+
             # ENHANCE: include weight?
             trees = self.topology_manager.get_redundant_multicast_trees(
                 source, subs, self.ntrees, algorithm=self.construction_algorithm, heur_args=self.const_args)
 
-            for address, t in zip(self.address_pool, trees):
-                self.set_address_for_mdmt(t, address)
+            mdmts[topic] = trees
 
-            self.mdmts[topic] = trees
+        return mdmts
 
-        return self.mdmts
-
-    def install_mdmts(self, mdmts):
+    def install_mdmts(self, mdmts, address_pool=None):
         """
         Installs the given MDMTs by pushing static flow rules to the SDN controller.
+        Also sets the IP addresses of the MDMTs from those specified (or self.address_pool if unspecified)
         WARNING: the IP addresses of the mdmts must be routable by the host!  Make sure
         you add them e.g. "ip route add 224.0.0.0/4 dev eth0"
         :param List[nx.Graph] mdmts:
+        :param List[str] address_pool: list of network addresses from which to assign the MDMTs their addresses.  Note
+        that they must have the same length!  default=self.address_pool
         """
+
+        if address_pool is None:
+            address_pool = self.address_pool
 
         # NOTE: We need to give the group a chance to be registered or else the flow rule will hang
         # as PENDING_ADD.  Thus, we install the groups immediately but then do the flows after all
         # groups were installed in order to give the controller time to commit them.
         flows = []
 
-        for i,t in enumerate(mdmts):
-            ip_address = self.get_address_for_mdmt(t)
-            log.debug("Installing MDMT for %s" % ip_address)
+        # ENHANCE: perhaps we need to remove old flows before installing these ones? in our current setting we just overwrite them for the most part...
+        # ENHANCE: not re-install ones that are the same? would make a small performance improvement
+
+        if len(address_pool) < len(mdmts):
+            log.warning("requested to install %d MDMTs but only provided %d network addresses to assign them!"
+                        " Will install as many as we have addresses..." % (len(address_pool), len(mdmts)))
+
+        for i, t, address in zip(range(len(mdmts)), mdmts, address_pool):
+            self.set_address_for_mdmt(t, address)
+            log.debug("Installing MDMT for %s" % address)
             # TODO: need anything else here?  ip_proto=udp??? , ipv4_src=self.????
-            matches = self.topology_manager.build_matches(ipv4_dst=ip_address)
+            matches = self.topology_manager.build_matches(ipv4_dst=address)
             groups, flow_rules = self.topology_manager.build_flow_rules_from_multicast_tree(t, self.dpid, matches, group_id=i+10)
             for g in groups:
                 # log.debug("Installing group: %s" % self.topology_manager.rest_api.pretty_format_parsed_response(g))
@@ -375,16 +397,19 @@ class RideD(object):
         """
 
         # ENHANCE: extend the REST APIs to support updating the topology rather than getting a whole new one.
-        self.topology_manager.build_topology()
-        # TODO: maybe we should only save the built MDMTs as we add their flow rules? this could ensure that any MDMT we try to use will at least be fully-installed...
-        # could even use a thread lock to block until the first one is installed
+        self.topology_manager.build_topology(from_scratch=True)
 
         trees = self.build_mdmts()
-        # TODO: perhaps we need to remove old flows before installing these ones? we should just overwrite them for the most part...
-        # ENHANCE: not re-install ones that are the same?
+        # TODO: maybe we should only save the built MDMTs as we add their flow rules? this could ensure that any MDMT we try to use will at least be fully-installed...
+        # could even use a thread lock to block until the first one is installed
+        self.mdmts = trees
+
         if trees:
+            # ENHANCE: error checking/handling esp. for the multicast address pool that must be shared across all topics!
             for mdmts in trees.values():
                 self.install_mdmts(mdmts)
+        elif self.subscribers:
+            log.error("empty return value from build_mdmts() when we do have subscribers!")
         # ENHANCE: retrieve publication routes rather than rely on them being manually set...
 
     def add_subscriber(self, subscriber, topic_id):
