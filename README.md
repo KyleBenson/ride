@@ -42,6 +42,16 @@ Where s1 is the switch being inspected (only the second occurrence matters) and 
 
 NOTE about ARP: in order to deliver messages to a destination (especially via multicast) the MAC address will have to be proper.  This may require ARP resolution (flooding a request and then receiving a response to tell the MAC address for the destination IP), or it may require setting the destination MAC to be a multi/broadcast address e.g. ff:ff:ff:ff:ff:ff
 
+### Getting ONOS running properly
+
+If you're using ONOS as your controller, which is our suggested default for the SdnTopology, make sure that your ONOS instance is up and running properly.  If it's not using the default port (8181), you'll need to set that manually in your configurations.
+
+Sometimes ONOS just stops working properly... it might start, but the web server is not accessible and just keeps responding with NOT_FOUND.
+I'm unsure why, but reinstalling ONOS seems to help.  Do `onos-kill; onos-uninstall; mvn clean; onos-build; onos-install` to reinstall it one step at a time.
+This also assume that your *cell* is set properly: make sure that `onos-cell` refers to the right user/password on your systems for it to run as and that it doesn't refer to *localhost* in the `$OC??` variables (use 127.0.0.1 if you're running it locally).
+
+Most of the development/testing was done on ONOS version 1.9.0.
+
 
 ## Architecture and Workflow
 
