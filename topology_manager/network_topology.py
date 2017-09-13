@@ -123,7 +123,7 @@ class NetworkTopology(object):
                 trees_left = set(range(k))
                 for i, p in enumerate(paths):
                     # Add this path to the tree with most components in common
-                    edges = zip(p, p[1:])
+                    edges = self.get_edges_for_path(p)
                     overlaps = ((len(trees[j].intersection(edges)), j) for j in trees_left)
                     best_tree = max(overlaps)[1]
                     trees_left.remove(best_tree)
@@ -236,6 +236,27 @@ class NetworkTopology(object):
 
         return nx.shortest_path(self.topo, source=source, target=destination, weight=weight)
 
+    @staticmethod
+    def merge_paths(path1, path2):
+        """Merges the two specified paths, which are formatted as returned by get_path()"""
+
+        # Handle path(s) being empty
+        if not path1:
+            return path2
+        if not path2:
+            return path1
+
+        # Ensure this is a real path
+        if path1[-1] != path2[0]:
+            raise ValueError("specified paths don't share a common merging point!  they are %s and %s" % (path1, path2))
+
+        # We just need to remove duplicate node that would appear in the middle of the two paths joined together
+        return path1 + path2[1:]
+
+    @staticmethod
+    def get_edges_for_path(p):
+        return zip(p, p[1:])
+
     def draw_multicast_trees(self, trees):
         """Draws the trees as graphs overlaid on the original topology"""
         dsm_algs.draw_overlaid_graphs(self.topo, trees)
@@ -249,6 +270,7 @@ class NetworkTopology(object):
             path_graphs.append(new_graph)
         # now that the paths are graphs, we can just pass them as if they're trees
         self.draw_multicast_trees(path_graphs)
+
 
 # Run various tests
 if __name__ == '__main__':
@@ -279,6 +301,32 @@ if __name__ == '__main__':
         dest = ["d1", "d2"]
         source = "s"
 
+    # First, test out our added path functions
+    p1 = net.get_path(source, dest[0])
+    p2 = net.get_path(dest[0], dest[1])
+    pm = net.merge_paths(p1, p2)
+
+    # Verify it by ensuring each edge is in the topo as well as one of the first paths
+    pm_edges = net.get_edges_for_path(pm)
+    p1_edges = net.get_edges_for_path(p1)
+    p2_edges = net.get_edges_for_path(p2)
+    assert len(pm) > 1, "merged path is too small for meaningful tests!"
+    assert len(pm_edges) == len(pm) - 1  # right # edges?
+    for i,j in pm_edges:
+        assert net.topo.has_edge(i, j), "edge from merged path not present in original topology!"
+        assert (i,j) in p1_edges or (i,j) in p2_edges, "edge from merged path not present in either original path!"
+
+    # Test some simple cases: empty paths and error conditions
+    assert net.merge_paths([], p2) == p2
+    assert net.merge_paths(p1, []) == p1
+    assert net.merge_paths([], []) == []
+    try:
+        net.merge_paths([1,2,3], [4,5,6])
+        assert False, "merging paths without a join point should cause an error!"
+    except ValueError:
+        pass
+
+    # Now, test our multicast tree functions
     M = net.get_redundant_multicast_trees(source, dest, ntrees, algorithm)
 
     if draw_trees:
