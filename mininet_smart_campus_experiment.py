@@ -134,6 +134,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         #TODO: do we actually need all these???
         self.hosts = []
         self.switches = []
+        self.cloud_gateways = []
+        # XXX: see note in setup_topology() about replacing cloud hosts with a switch to ease multi-homing
+        self.cloud_switches = []
         self.links = []
         self.net = None
         self.controller = None
@@ -242,7 +245,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # import the switches, hosts, and server(s) from our specified file
         self.topo = NetworkxSdnTopology(self.topology_filename)
 
-        def __get_mac_for_switch(switch):
+        def __get_mac_for_switch(switch, is_cloud=False, is_server=False):
             # BUGFIX: need to manually specify the mac to set DPID properly or Mininet
             # will just use the number at the end of the name, causing overlaps.
             # HACK: slice off the single letter at start of name, which we assume it has;
@@ -250,11 +253,24 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             mac = mac_for_host(int(switch[1:]))
             # Disambiguate one switch type from another by setting the first letter
             # to be a unique one corresponding to switch type and add in the other 0's.
+            # XXX: if the first letter is outside those available in hexadecimal, assign one that is
             first_letter = switch[0]
             if first_letter == 'm':
                 first_letter = 'a'
-            # rest fit in hex except for rack switches
-            mac = first_letter + '0:00:00' + mac[3:]
+            elif first_letter == 'g':
+                first_letter = 'e'
+            # We'll just label rack/floor switches the same way; we don't actually even use them currently...
+            elif first_letter == 'r':
+                first_letter = 'f'
+
+            # XXX: we're out of letters! need to assign a second letter for the cloud/server switches...
+            second_letter = '0'
+            if is_cloud:
+                second_letter = 'c'
+            elif is_server:
+                second_letter = 'e'
+
+            mac = first_letter + second_letter + ':00:00' + mac[3:]
             return str(mac)
 
         for switch in self.topo.get_switches():
@@ -262,6 +278,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             s = self.net.addSwitch(switch, dpid=mac, cls=OVSKernelSwitch)
             log.debug("adding switch %s at DPID %s" % (switch, s.dpid))
             self.switches.append(s)
+            if self.topo.is_cloud_gateway(switch):
+                self.cloud_gateways.append(switch)
 
         def __get_ip_for_host(host):
             # See note in docstring about host format
@@ -277,12 +295,24 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # difficult to work with multiple interfaces on a host (e.g. ONOS can only handle
             # a single MAC address per host).
             server_switch_name = server.replace('s', 'e')
-            server_switch_dpid = __get_mac_for_switch(server_switch_name)
+            server_switch_dpid = __get_mac_for_switch(server_switch_name, is_server=True)
             # Keep server name for switch so that the proper links will be added later.
             self.server_switch = self.net.addSwitch(server, dpid=server_switch_dpid, cls=OVSKernelSwitch)
             s = self.net.addHost('h' + server)
+            # ENHANCE: handle multiple servers
             self.server = s
             self.net.addLink(self.server_switch, self.server)
+
+        for cloud in self.topo.get_clouds():
+            # HACK: Same hack with adding local server
+            cloud_switch_name = cloud.replace('x', 'f')
+            cloud_switch_dpid = __get_mac_for_switch(cloud_switch_name, is_cloud=True)
+            # Keep server name for switch so that the proper links will be added later.
+            cloud_switch = self.net.addSwitch(cloud, dpid=cloud_switch_dpid, cls=OVSKernelSwitch)
+            self.cloud_switches.append(cloud_switch)
+            # ENHANCE: handle multiple clouds
+            self.cloud = self.net.addHost('h' + cloud)
+            self.net.addLink(cloud_switch, self.cloud)
 
         for link in self.topo.get_links():
             from_link = link[0]

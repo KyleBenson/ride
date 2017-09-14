@@ -8,8 +8,12 @@ import random
 class CampusTopologyGenerator(object):
     """Generates a networkx graph representing a campus network topology.
     Assumes a core of fully-connected routers, major building routers that
-    connect to two core routers, and minor building switches that connect to
-    distribution routers that connect to two differentc core routers.
+    connect to several core routers, and minor building switches that connect to
+    distribution routers that connect to several different core routers.
+    It can also add a configurable number of edge servers (connected to the core
+    through several links) and cloud data centers, which are connected to the
+     campus through several links that each pass through a gateway connected
+     with random core routers.
 
     Buildings are optionally fitted with a depth 3 tree topology representing
     the switches and jacks in the building.
@@ -20,6 +24,7 @@ class CampusTopologyGenerator(object):
     latency or bandwidth, and shared risk groups."""
 
     def __init__(self, core_size=4, servers=1, links_per_server=2,
+                 clouds=1, links_per_cloud=2,
                  percent_minor_buildings=0.15, # 10-15%
                  minor_buildings_per_distribution_router=8, # 7-8
                  links_per_distribution_router=2, links_per_building=2, nbuildings=200,
@@ -35,6 +40,8 @@ class CampusTopologyGenerator(object):
         self.core_size = core_size
         self.servers = servers
         self.links_per_server = links_per_server
+        self.clouds = clouds
+        self.links_per_cloud = links_per_cloud
         self.percent_minor_buildings = percent_minor_buildings
         self.minor_buildings_per_distribution_router = minor_buildings_per_distribution_router
         self.links_per_distribution_router = links_per_distribution_router
@@ -47,12 +54,14 @@ class CampusTopologyGenerator(object):
         self.inter_building_links = inter_building_links
 
         self.topo = None
-        self.core_nodes = None
-        self.server_nodes = None
-        self.major_building_routers = None
-        self.minor_building_routers = None
-        self.distribution_routers = None
-        self.hosts = None
+        self.core_nodes = []
+        self.server_nodes = []
+        self.cloud_nodes = []
+        self.cloud_gateways = []
+        self.major_building_routers = []
+        self.minor_building_routers = []
+        self.distribution_routers = []
+        self.hosts = []
 
     def generate(self):
         """Generates and returns the topology."""
@@ -65,7 +74,6 @@ class CampusTopologyGenerator(object):
         self.core_nodes = list(self.topo.nodes())
 
         # Server(s), e.g. data centers, are assumed to be located close to the core
-        self.server_nodes = []
         for s in range(self.servers):
             server_name = "s%d" % s
             self.topo.add_node(server_name)
@@ -76,9 +84,6 @@ class CampusTopologyGenerator(object):
         # Add buildings
         nminor_buildings = int(math.ceil(self.nbuildings * self.percent_minor_buildings))
         nmajor_buildings = self.nbuildings - nminor_buildings
-        self.major_building_routers = []
-        self.minor_building_routers = []
-        self.distribution_routers = []
 
         print "adding %d major and %d minor buildings" % (nmajor_buildings, nminor_buildings)
 
@@ -121,8 +126,32 @@ class CampusTopologyGenerator(object):
                 self.add_link(node_name, router_name)
                 self.minor_building_routers.append(node_name)
 
+        print "buildings: ", self.major_building_routers, "minors: ", self.minor_building_routers, "core:", self.core_nodes, "servers:", self.server_nodes
+
+        # Add each cloud node, connecting it via some # links to the topology where each link goes to a gateway that
+        # then connects with one of the core routers.
+        for c in range(self.clouds):
+            cloud_name = "x%d" % c
+            self.topo.add_node(cloud_name)
+            self.cloud_nodes.append(cloud_name)
+
+            # add gateways
+            try:
+                gw_routers = random.sample(self.core_nodes, self.links_per_cloud)
+            except ValueError:
+                raise ValueError("not enough core routers for assigning cloud links/gateways: "
+                                 "needed %d but have %d" % (self.links_per_cloud, len(self.core_nodes)))
+
+            for g, router in enumerate(gw_routers):
+                gateway_name = "g%d" % g
+                self.topo.add_node(gateway_name)
+                self.cloud_gateways.append(gateway_name)
+
+                # link them together
+                self.add_link(gateway_name, cloud_name)
+                self.add_link(gateway_name, router)
+
         # add in-building topologies and/or just hosts
-        self.hosts = []
         for b in self.major_building_routers:
             self.create_building_topology(b)
 
@@ -179,8 +208,9 @@ class CampusTopologyGenerator(object):
             endpoints = random.sample(self.major_building_routers, self.inter_building_links * 2)
             endpoints = zip(endpoints[:len(endpoints)/2], endpoints[len(endpoints)/2:])
         except ValueError as e:
-            print "NOTE: requested more inter_building_links" \
-                  " than can be placed without repeating (major) buildings!"
+            raise ValueError("NOTE: requested more inter_building_links "
+                             "than can be placed without repeating (major) buildings!")
+            # XXX: this doesn't seem to work for 3 buildings and 2 inter-building links: fuhgedaboudit
             if self.inter_building_links > 400:
                 print "Requested a lot of inter-building links.  This may take a while to generate all combinations without repeat..."
             endpoints = list(itertools.combinations_with_replacement(self.major_building_routers, 2))
@@ -192,6 +222,7 @@ class CampusTopologyGenerator(object):
 
     def add_link(self, src, dst):
         """Add a link between the src and dst. Sets various attributes."""
+        assert src != dst, "requested link with same src and dst! culprit: %s" % src
         latency = self.get_link_latency(src, dst)
         weight = self.get_link_weight(src, dst)
         # TODO: bandwidth
@@ -257,6 +288,8 @@ class CampusTopologyGenerator(object):
             elif dst.startswith('c'):
                 start = 7
                 stop = 15
+            else:
+                raise TypeError("Didn't recognize destination node %s for link coming from major building %s" % (dst, src))
         elif src.startswith('c'):
             # inter-core
             if dst.startswith('c'):
@@ -266,10 +299,20 @@ class CampusTopologyGenerator(object):
             elif dst.startswith('d'):
                 start = 20
                 stop = 30
+            # cloud gateways-core routers link
+            elif dst.startswith('g'):
+                start = 5
+                stop = 10
+            else:
+                raise TypeError("Didn't recognize destination node %s for link coming from core router %s" % (dst, src))
         # minor building
         elif dst.startswith('m') and src.startswith('d'):
             start = 25
             stop = 50
+        # cloud link
+        elif dst.startswith('x'):
+            start = 50
+            stop = 100
         else:
             raise TypeError("Didn't recognize the src/dst router types: %s, %s" % (src, dst))
         return random.uniform(start, stop)
@@ -284,9 +327,10 @@ class CampusTopologyGenerator(object):
         """Draw the graph using matplotlib in a color-coordinated manner."""
         try:
             import matplotlib.pyplot as plt
-            print 'Node colors: red=core, blue=major-building, green=distribution, yellow=minor-building, cyan=server, magenta=host, black=floor-switch, white=rack-switch'
+            print 'Node colors: red=core, blue=major-building, green=distribution, yellow=minor-building, cyan=server,' \
+                  ' magenta=host, black=floor-switch, white=rack-switch, white=cloud, green=gateway'
             # TODO: ignore building internals?
-            colormap = {'c': 'r', 'b': 'b', 'd': 'g', 'm': 'y', 's': 'c', 'h': 'm', 'f': 'k', 'r': 'w'}
+            colormap = {'c': 'r', 'b': 'b', 'd': 'g', 'm': 'y', 's': 'c', 'h': 'm', 'f': 'k', 'r': 'w', 'x': 'w', 'g': 'g'}
             node_colors = [colormap[node[0]] for node in self.topo.nodes()]
             # shell layout places nodes as a series of concentric circles
             positions = nx.shell_layout(self.topo, [self.core_nodes,
