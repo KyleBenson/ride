@@ -49,12 +49,12 @@ def parse_args(args):
     # Displaying info
     parser.add_argument('command', default=['hosts'], nargs='*',
                         help='''command to execute can be one of (default=%(default)s):
-                        hosts (include_attributes)    - print the available hosts (with attributes if optional argument is yes/true)
-                        path (src, dst) - build and install a path between src and dst using flow rules
-                        mcast (addr, src, dst1, dst2, ...)  - build and install a multicast tree for IP address 'addr'
-                               from src to all of dst1,2... using flow rules
-                        del-flows (no args)   - deletes all flow rules
-                        del-groups (no args)  - deletes all groups
+                        hosts [include_attributes]          - print the available hosts (with attributes if optional argument is yes/true)
+                        path src dst                        - build and install a path between src and dst using flow rules
+                        mcast addr src dst1 [dst2 ...]      - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules
+                        redirect src old_dst new_dst        - redirect packets from src to old_dst by installing flow rules that convert ipv4_dst to that of new_dst
+                        del-flows                           - deletes all flow rules
+                        del-groups                          - deletes all groups
                         ''')
 
 
@@ -110,6 +110,17 @@ if __name__ == "__main__":
         print("installing flows:", flows)
         for flow in flows:
             assert topo.install_flow_rule(flow), "problem installing flow: %s" % flow
+
+    elif cmd == 'redirect':
+        assert len(cmd_args) == 3, "redirect command must have the source, old_destination, and new_destination hosts specified!"
+        src_host = cmd_args[0]
+        old_dst_host = cmd_args[1]
+        new_dst_host = cmd_args[2]
+        print("Redirecting packets from %s originally bound for %s to instead go to %s" % (src_host, old_dst_host, new_dst_host))
+
+        flow_rules = topo.build_redirection_flow_rules(source=src_host, old_dest=old_dst_host, new_dest=new_dst_host)
+        for f in flow_rules:
+            assert topo.install_flow_rule(f), "problem installing flow: %s" % f
 
     elif cmd == 'del-flows':
         topo.remove_all_flow_rules()

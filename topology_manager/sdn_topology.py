@@ -117,6 +117,10 @@ class SdnTopology(NetworkTopology):
         with group flows first so iterating over the list to install them
         should not cause BAD_OUT_GROUP errors.
 
+        NOTE: even though your matches might include a true multicast IP address, this implementation
+        translates the packet to look like a unicast one (i.e. ipv4_dst matches that of the receiving host)
+        before delivery to receivers.  A future version may allow you to selectively disable this packet manipulation...
+
         @:param tree - a networkx Graph-like object representing the multicast tree
         @:param source - source node/switch from which to start the search
         @:param matches - match rules to be used for matching multicast packets
@@ -169,6 +173,64 @@ class SdnTopology(NetworkTopology):
             # print node, successors
 
         return group_flows, flows
+
+    def build_redirection_flow_rules(self, source, old_dest, new_dest=None, route=None):
+        """
+        Re-directs a packet by translating the destination IP address and ethernet address to match that of the
+        new_dest.  The source and old_dest are used for creating the matches part of the flow rules.  Flow rules for
+        the route from source to new_dest will be added; they will match the optionally-specified route.  The flow rule
+        that handles packet modification for the new addresses will be installed on the first switch along route.
+
+        FUTURE ENHANCE: a 'matches' parameter could be added so that you can specify how the match is done (this would
+        make the source/old_dest arguments potentially optional);
+        a 'switch' parameter may be added so that you can specify which switch on the route does the packet modification
+
+        :param source:
+        :param old_dest: the old destination host from which we'll extract the IP/ethernet addresses for matching
+        :param new_dest: the new destination the packet will be forwarded to; if unspecified, route[-1] will be assumed
+        :param route: optional route that will be followed for the redirection; if unspecified, one will be chosen using
+         self.get_path(source, new_dest)
+        :return: a list of flow rules for accomplishing the requested redirection routing
+        """
+
+        # ENHANCE: we might consider also installing a rule so that when new_dest replies to source the packets will be
+        # translated to look like they came from old_dest, but this would require more exact matching to ensure this
+        # only affects e.g. one application rather than ALL traffic between them!
+
+        if route is None:
+            if new_dest is None:
+                raise ValueError("You must at least specify the new_dest argument to determine the redirection path!")
+            route = self.get_path(source, new_dest)
+        elif new_dest is None:
+            new_dest = route[-1]
+
+        assert source == route[0] and new_dest == route[-1], "redirection route requested that didn't match" \
+                                                             " requested source and destination!"
+
+        flow_rules = []
+        # We'll custom make the packet manipulation flow rule for the first switch in the path
+        src_ip = self.get_ip_address(source)
+        old_dest_ip = self.get_ip_address(old_dest)
+        switch = route[1]
+        in_port = self.get_ports_for_nodes(source, switch)[1]
+        matches = self.build_matches(ipv4_src=src_ip, ipv4_dst=old_dest_ip, in_port=in_port)
+
+        new_dest_ip = self.get_ip_address(new_dest)
+        new_dest_eth = self.get_mac_address(new_dest)
+        out_port = self.get_ports_for_nodes(switch, route[2])[0]
+        # NOTE: we have to do an output action as some REST APIs (e.g. ONOS) don't support redirect, or table(0)...
+        actions = self.build_actions(("set_eth_dst", new_dest_eth),
+                                     ("set_ipv4_dst", new_dest_ip),
+                                     ("output", out_port))
+
+        flow_rules.append(self.build_flow_rule(switch, matches, actions))
+
+        # Now we'll use our helper methods to build the remaining flow rules, but ignore the one for the first switch.
+        other_rules = self.build_flow_rules_from_path(route)
+        # XXX: we assume our implementation of this method remains consistent (flow rule list is in same order as route)
+        flow_rules.extend(other_rules[1:])
+
+        return flow_rules
 
     ### Utility helper functions that must be implemented by base classes
 
