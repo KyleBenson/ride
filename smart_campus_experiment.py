@@ -1,15 +1,17 @@
-import json
-import os
 
-import ride
-
-CLASS_DESCRIPTION = '''Experiment that models failures in a campus network setting
-and determines the effectiveness of several SDN/IP multicast tree-constructing and choosing
-algorithms in improving data dissemination to subscribing IoT devices around the campus.'''
+CLASS_DESCRIPTION = '''Experiment that models failures in a smart campus network setting
+and determines the effectiveness of the Resilient IoT Data Exchange (RIDE) middleware.
+RIDE improves data collection using RIDE-C, which routes IoT data publishers to the cloud
+server through the best available DataPath or directly to the edge server if they aren't available.
+RIDE improves alert dissemination using RIDE-D, which utilizes SDN-enabled IP multicast and several
+multicast tree-constructing and choosing algorithms for creation of
+ Multiple Maximally-Disjoint Multicast Trees (MDMTs).'''
 
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
 
+import json
+import os
 import argparse
 import logging as log
 import random
@@ -17,7 +19,7 @@ import signal
 import time
 from abc import abstractmethod, ABCMeta
 
-import networkx as nx
+import ride
 from failure_model import SmartCampusFailureModel
 DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
@@ -200,18 +202,11 @@ class SmartCampusExperiment(object):
         for r in range(self.nruns):
             log.info("Starting run %d" % r)
             self.current_run_number = r
+            # ENHANCE: may only need to set this up once...
             self.setup_topology()
-            subs = self.choose_subscribers()
-            pubs = self.choose_publishers()
-            # NOTE: this is unnecessary as we only have a single server in our test topos.  If we use multiple, need
-            # to actually modify RideD here with updated server.
-            server = self.choose_server()
-            failed_nodes, failed_links = self.get_failed_nodes_links()
 
-            assert server not in failed_nodes, "shouldn't be failing the server!  useless run...."
-
-            self.setup_experiment(failed_nodes, failed_links, server, pubs, subs)
-            result = self.run_experiment(failed_nodes, failed_links, server, pubs, subs)
+            self.setup_experiment()
+            result = self.run_experiment()
             self.teardown_experiment()
 
             result['run'] = r
@@ -311,32 +306,30 @@ class SmartCampusExperiment(object):
         return self.build_mcast_heuristic_name(*self.tree_construction_algorithm)
 
     @abstractmethod
-    def run_experiment(self, failed_nodes, failed_links, server, publishers, subscribers):
+    def run_experiment(self):
         """
-        Setup, run, and teardown the experiment before returning the results.
+        Run the actual experiment and return the results in a dict to be recorded.
 
-        :param List[str] failed_nodes:
-        :param List[str] failed_links:
-        :param str server:
-        :param List[str] publishers:
-        :param List[str] subscribers:
         :returns dict results:
         """
-        pass
+        raise NotImplementedError
 
-    def setup_experiment(self, failed_nodes, failed_links, server, publishers, subscribers):
+    def setup_experiment(self):
         """
         Set up the experiment and configure it as necessary before run_experiment is called.
-        By default does nothing.
+        By default it chooses the subscribers, publishers, server, and failed nodes/links
+        for this experimental run.
 
-        :param List[str] failed_nodes:
-        :param List[str] failed_links:
-        :param str server:
-        :param List[str] publishers:
-        :param List[str] subscribers:
         :return:
         """
-        pass
+        self.subscribers = self.choose_subscribers()
+        self.publishers = self.choose_publishers()
+        # NOTE: this is unnecessary as we only have a single server in our test topos.  If we use multiple, need
+        # to actually modify RideD here with updated server.
+        self.server = self.choose_server()
+        self.failed_nodes, self.failed_links = self.get_failed_nodes_links()
+
+        assert self.server not in self.failed_nodes, "shouldn't be failing the server!  useless run...."
 
     def teardown_experiment(self):
         """

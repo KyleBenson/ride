@@ -139,7 +139,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.controller = None
         self.nat = None
 
-        self.server = None
         self.server_switch = None
         # Save Popen objects to later ensure procs terminate before exiting Mininet
         # or we'll end up with hanging procs.
@@ -362,7 +361,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # NOTE: we can just pass the links as strings
         return self._get_mininet_nodes(fnodes), flinks
 
-    def run_experiment(self, failed_nodes, failed_links, server, publishers, subscribers):
+    def run_experiment(self):
         """
         Configures all appropriate settings, runs the experiment, and
         finally tears it down before returning the results.
@@ -372,11 +371,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         this run as well as lists of 'subscribers' and 'publishers' (their app IDs
         (Mininet node names), which will appear in the name of their output file).
 
-        :param List[Node] failed_nodes:
-        :param List[str] failed_links:
-        :param Host server:
-        :param List[Host] publishers:
-        :param List[Host] subscribers:
         :rtype dict:
         """
 
@@ -425,7 +419,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.setup_traffic_generators()
         # NOTE: it takes a second or two for the clients to actually start up!
         # log.debug('*** Starting clients at time %s' % time.time())
-        logs_dir, outputs_dir = self.setup_seismic_test(publishers, subscribers, server)
+        logs_dir, outputs_dir = self.setup_seismic_test(self.publishers, self.subscribers, self.server)
         # log.debug('*** Done starting clients at time %s' % time.time())
 
         # Apply actual failure model: we schedule these to fail when the earthquake hits
@@ -437,9 +431,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         log.info('*** Configuration done!  Waiting for earthquake to start...')
         time.sleep(SEISMIC_EVENT_DELAY - 1)
         log.info('*** Earthquake at %s!  Applying failure model...' % time.time())
-        for link in failed_links:
+        for link in self.failed_links:
             self.net.configLinkStatus(link[0], link[1], 'down')
-        for node in failed_nodes:
+        for node in self.failed_nodes:
             node.stop(deleteIntfs=False)
 
         # log.debug('*** Failure model finished applying at %s' % time.time())
@@ -449,8 +443,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         time.sleep(EXPERIMENT_DURATION - SEISMIC_EVENT_DELAY)
 
         return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
-                'publishers': [p.name for p in publishers],
-                'subscribers': [s.name for s in subscribers]}
+                'publishers': [p.name for p in self.publishers],
+                'subscribers': [s.name for s in self.subscribers]}
 
     def setup_topology_manager(self):
         """
