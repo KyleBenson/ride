@@ -279,7 +279,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             log.debug("adding switch %s at DPID %s" % (switch, s.dpid))
             self.switches.append(s)
             if self.topo.is_cloud_gateway(switch):
-                self.cloud_gateways.append(switch)
+                self.cloud_gateways.append(s)
 
         def __get_ip_for_host(host):
             # See note in docstring about host format
@@ -603,25 +603,42 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # TODO: base this quit_time extension on the Coap timeout????
             # quit_time += 20
 
-        srv_cfg = make_scale_config(sinks=make_scale_config_entry(name="RideD", multicast=use_multicast,
+        ride_d_cfg = None if not self.with_ride_d else make_scale_config_entry(name="RideD", multicast=use_multicast,
                                                                   class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",
                                                                   # RideD configurations
                                                                   # addresses=[s.IP() for s in subscribers],
                                                                   addresses=self.mcast_address_pool, ntrees=self.ntrees,
                                                                   tree_construction_algorithm=self.tree_construction_algorithm,
-tree_choosing_heuristic=self.tree_choosing_heuristic,
+                                                                  tree_choosing_heuristic=self.tree_choosing_heuristic,
                                                                   dpid=self.get_host_dpid(self.server),
                                                                   topology_mgr=(self.topology_adapter_type, self.controller_ip, self.controller_port),
-                                                                  # TODO: remove this when we switch to an API for it
-                                                                  publishers=[self.get_host_dpid(h) for h in sensors],
-                                                                  ),
-                                    networks=make_scale_config_entry(name="CoapServer", events_root="/events/",
-                                                                     class_path="coap_server.CoapServer"),
+                                                                  )
+        seismic_alert_server_cfg = '' if not self.with_ride_d else make_scale_config_entry(
+            class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
+            # TODO: include this for server?
+            # output_file=os.path.join(outputs_dir, 'client_events_srv'),
+            name="SeismicServer")
+
+        _srv_apps = seismic_alert_server_cfg
+        if self.with_ride_c:
+            # TODO: verify this is right?  maybe we want to shorten the DataPath name so it isn't whole GW DPID?
+            data_paths = [[self.get_switch_dpid(gw), self.get_switch_dpid(gw),
+                           self.get_host_dpid(self.cloud)] for gw in self.cloud_gateways]
+            log.debug("RideC-managed DataPaths are: %s" % data_paths)
+
+            _srv_apps += make_scale_config_entry(class_path="seismic_warning_test.ride_c_application.RideCApplication",
+                                                 name="RideC", topology_mgr='onos', data_paths=data_paths,
+                                                 edge_server=self.get_host_dpid(server),
+                                                 cloud_server=self.get_host_dpid(self.cloud),
+                                                 publishers=[self.get_host_dpid(h) for h in sensors],
+                                                 )
+
+        srv_cfg = make_scale_config(sinks=ride_d_cfg,
+                                    networks=None if not self.with_ride_d else \
+                                        make_scale_config_entry(name="CoapServer", events_root="/events/",
+                                                                class_path="coap_server.CoapServer"),
                                     # TODO: also run a publisher for that bugfix?
-                                    applications=make_scale_config_entry(class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
-                                                                         # TODO: include this for server?
-                                                                         # output_file=os.path.join(outputs_dir, 'client_events_srv'),
-                                                                         name="SeismicServer")
+                                    applications=_srv_apps
                                     )
 
         base_args = "-q %d --log %s" % (quit_time, self.debug_level)
@@ -864,7 +881,7 @@ def make_scale_config_entry(class_path, name, **kwargs):
     d['class'] = class_path
     # need to wrap the raw JSON in single quotes for use on command line as json.dumps wraps strings in double quotes
     # also need to escape these double quotes so that 'eval' (su -c) actually sees them in the args it passes to the final command
-    return "'%s'" % json.dumps({name: d}).replace('"', r'\"')
+    return "'%s' " % json.dumps({name: d}).replace('"', r'\"')
     # return "'%s'" % json.dumps(d)
 
 

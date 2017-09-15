@@ -28,18 +28,23 @@ class RideC(object):
     instance specified in __init__
     """
 
-    def __init__(self, topology_mgr, edge_server, cloud_server, distance_metric=DISTANCE_METRIC, **kwargs):
+    def __init__(self, edge_server=None, cloud_server=None, topology_mgr='onos', distance_metric=DISTANCE_METRIC, **kwargs):
         """
-        :param topology_mgr: used as adapter to SDN controller for
-         maintaining topology and routing information
-        :type topology_mgr: SdnTopology|str
         :param edge_server: DPID of the managed edge server
         :param cloud_server: DPID of the managed cloud server
+        :param topology_mgr: used as adapter to SDN controller for maintaining topology and routing information;
+        optional with default 'onos'
+        :type topology_mgr: SdnTopology|str
         :param distance_metric: the distance metric determines the length of the paths used when managing
          routing in the local network since these paths are chosen to be minimal (default='latency')
         :param kwargs: ignored (just present so we can pass args from other classes without causing errors)
         """
-        super(RideC, self).__init__()
+        # XXX: even though we KNOW an object takes no __init__ args, multiple inheritance may cause us to need
+        # another super call before reaching broker; hence we should still pass the (possibly-empty) kwargs along...
+        try:
+            super(RideC, self).__init__(**kwargs)
+        except TypeError:
+            super(RideC, self).__init__()
 
         if not isinstance(topology_mgr, SdnTopology):
             # only adapter type specified: use default other args
@@ -216,13 +221,22 @@ class RideC(object):
         return route
 
     def _get_host_route(self, host_id, dest=None):
-        """Return the route from the specified host to the specified destination, which by default is the
-        gateway responsible for its assigned DataPath."""
+        """Return the route from the specified host to the specified destination. By default, this route goes through
+        the gateway responsible for its assigned DataPath and eventually to the cloud server."""
+
+        # If the destination wasn't specified, we need to extend the route to the cloud server while ensuring
+        # it goes through the right gateway, hence two steps...
+        cloud_gw_route = None
         if dest is None:
             data_path = self._data_path_for_host[host_id]
             gateway = self._gateway_for_data_path[data_path]
+            # ENHANCE: choose the assigned cloud if we support multiple!
+            cloud_gw_route = self.topology_manager.get_path(gateway, self.cloud_server)
             dest = gateway
+
         route = self.topology_manager.get_path(host_id, dest, weight=self._distance_metric)
+        if cloud_gw_route:
+            route = self.topology_manager.merge_paths(route, cloud_gw_route)
         return route
 
     def _failover_data_path(self, data_path):
@@ -243,5 +257,14 @@ class RideC(object):
         """
         # TODO: skip over ones that are already routing there?  or just adjust the weights used to choose between edge/cloud?
         for h in self.hosts:
-            route = self._get_host_route(h, self.edge_server)
-            self._update_host_route(h, route)
+            # ENHANCE: choose from several cloud/edge servers
+            old_dest = self.cloud_server
+            new_dest = self.edge_server
+            route = self._get_host_route(h, new_dest)
+
+            flow_rules = self.topology_manager.build_redirection_flow_rules(h, old_dest, new_dest, route=route)
+            for f in flow_rules:
+                self.topology_manager.install_flow_rule(f)
+            self._host_routes[h] = route
+            # ENHANCE: may want to set a translation for the other direction so that the host receives a response and
+            # thinks it's from old_dest rather than new_dest

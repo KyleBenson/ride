@@ -31,6 +31,7 @@ class SmartCampusExperiment(object):
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
                  error_rate=0.0,
+                 with_ride_d=True, with_ride_c=True,
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
         super(SmartCampusExperiment, self).__init__()
@@ -49,6 +50,9 @@ class SmartCampusExperiment(object):
             self.output_filename = 'results.json'
         self.tree_construction_algorithm = tree_construction_algorithm
         self.error_rate = error_rate
+
+        self.with_ride_c = with_ride_c
+        self.with_ride_d = with_ride_d
 
         log_level = log.getLevelName(debug.upper())
         log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
