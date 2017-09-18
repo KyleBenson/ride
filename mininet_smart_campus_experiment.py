@@ -603,6 +603,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # TODO: base this quit_time extension on the Coap timeout????
             # quit_time += 20
 
+        sdn_topology_cfg = (self.topology_adapter_type, self.controller_ip, self.controller_port)
+
         ride_d_cfg = None if not self.with_ride_d else make_scale_config_entry(name="RideD", multicast=use_multicast,
                                                                   class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",
                                                                   # RideD configurations
@@ -611,7 +613,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                                   tree_construction_algorithm=self.tree_construction_algorithm,
                                                                   tree_choosing_heuristic=self.tree_choosing_heuristic,
                                                                   dpid=self.get_host_dpid(self.server),
-                                                                  topology_mgr=(self.topology_adapter_type, self.controller_ip, self.controller_port),
+                                                                  topology_mgr=sdn_topology_cfg,
                                                                   )
         seismic_alert_server_cfg = '' if not self.with_ride_d else make_scale_config_entry(
             class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
@@ -627,7 +629,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             log.debug("RideC-managed DataPaths are: %s" % data_paths)
 
             _srv_apps += make_scale_config_entry(class_path="seismic_warning_test.ride_c_application.RideCApplication",
-                                                 name="RideC", topology_mgr='onos', data_paths=data_paths,
+                                                 name="RideC", topology_mgr=sdn_topology_cfg, data_paths=data_paths,
                                                  edge_server=self.get_host_dpid(server),
                                                  cloud_server=self.get_host_dpid(self.cloud),
                                                  publishers=[self.get_host_dpid(h) for h in sensors],
