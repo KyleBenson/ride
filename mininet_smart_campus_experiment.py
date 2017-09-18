@@ -608,7 +608,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         ride_d_cfg = None if not self.with_ride_d else make_scale_config_entry(name="RideD", multicast=use_multicast,
                                                                   class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",
                                                                   # RideD configurations
-                                                                  # addresses=[s.IP() for s in subscribers],
                                                                   addresses=self.mcast_address_pool, ntrees=self.ntrees,
                                                                   tree_construction_algorithm=self.tree_construction_algorithm,
                                                                   tree_choosing_heuristic=self.tree_choosing_heuristic,
@@ -617,8 +616,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                                   )
         seismic_alert_server_cfg = '' if not self.with_ride_d else make_scale_config_entry(
             class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
-            # TODO: include this for server?
-            # output_file=os.path.join(outputs_dir, 'client_events_srv'),
+            output_events_file=os.path.join(outputs_dir, 'srv'),
             name="SeismicServer")
 
         _srv_apps = seismic_alert_server_cfg
@@ -679,7 +677,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                     class_path="seismic_warning_test.seismic_alert_subscriber.SeismicAlertSubscriber",
                     name="SeismicSubscriber", remote_broker=server_ip, output_file=os.path.join(outputs_dir, 'subscriber_%s' % client_id)))
             pubs_cfg = make_scale_config(
-                sensors=make_scale_config_entry(name="SeismicSensor", event_type="seismic", static_event_data="1.0",
+                sensors=make_scale_config_entry(name="SeismicSensor", event_type="seismic", dynamic_event_data=dict(seq=0),
                                                 class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
                                                 output_events_file=os.path.join(outputs_dir, 'publisher_%s' % client_id),
                                                 start_delay=delay, sample_interval=5),
