@@ -1,5 +1,5 @@
 # this should actually be in mininet_smart_campus_experiment.py...
-# When True, runs host processes with -00 command for optimized python code
+# When True, runs host processes with -OO command for optimized python code
 OPTIMISED_PYTHON = False
 
 ### Configurations for actually running SCALE as the test client applications
@@ -16,4 +16,4 @@ SCALE_EXTRA_ARGS = \
 # Change this command to match your environment's configuration as necessary
 VIRTUAL_ENV_CMD = "export WORKON_HOME=~/.venvs; source ~/.local/bin/virtualenvwrapper.sh; workon ride_scale_client;"
 # WARNING: this took a long time to get actually working as the quotes are quite finicky... careful modifying!
-SCALE_CLIENT_BASE_COMMAND = 'su -c "pushd .; %s popd; python %s -m scale_client %s %%s" ' % (VIRTUAL_ENV_CMD, "-O" if OPTIMISED_PYTHON else "", SCALE_EXTRA_ARGS) + SCALE_USER
+SCALE_CLIENT_BASE_COMMAND = 'su -c "pushd .; %s popd; python %s -m scale_client %s %%s" ' % (VIRTUAL_ENV_CMD, "-OO" if OPTIMISED_PYTHON else "", SCALE_EXTRA_ARGS) + SCALE_USER
