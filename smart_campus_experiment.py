@@ -31,6 +31,7 @@ class SmartCampusExperiment(object):
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
                  error_rate=0.0,
+                 # flags to enable/disable certain features for running different combinations of experiments
                  with_ride_d=True, with_ride_c=True,
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
@@ -53,6 +54,7 @@ class SmartCampusExperiment(object):
 
         self.with_ride_c = with_ride_c
         self.with_ride_d = with_ride_d
+        self.with_cloud = with_ride_c
 
         log_level = log.getLevelName(debug.upper())
         log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)

@@ -304,15 +304,21 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             self.net.addLink(self.server_switch, self.server)
 
         for cloud in self.topo.get_clouds():
-            # HACK: Same hack with adding local server
-            cloud_switch_name = cloud.replace('x', 'f')
-            cloud_switch_dpid = __get_mac_for_switch(cloud_switch_name, is_cloud=True)
-            # Keep server name for switch so that the proper links will be added later.
-            cloud_switch = self.net.addSwitch(cloud, dpid=cloud_switch_dpid, cls=OVSKernelSwitch)
-            self.cloud_switches.append(cloud_switch)
-            # ENHANCE: handle multiple clouds
-            self.cloud = self.net.addHost('h' + cloud)
-            self.net.addLink(cloud_switch, self.cloud)
+            # Only consider the cloud special if we've enabled doing so
+            if self.with_cloud:
+                # HACK: Same hack with adding local server
+                cloud_switch_name = cloud.replace('x', 'f')
+                cloud_switch_dpid = __get_mac_for_switch(cloud_switch_name, is_cloud=True)
+                # Keep server name for switch so that the proper links will be added later.
+                cloud_switch = self.net.addSwitch(cloud, dpid=cloud_switch_dpid, cls=OVSKernelSwitch)
+                self.cloud_switches.append(cloud_switch)
+                # ENHANCE: handle multiple clouds
+                self.cloud = self.net.addHost('h' + cloud)
+                self.net.addLink(cloud_switch, self.cloud)
+            # otherwise just add a host to prevent topology errors
+            else:
+                self.net.addHost(cloud)
+                self.cloud = self.net.addHost(cloud)
 
         for link in self.topo.get_links():
             from_link = link[0]
@@ -556,9 +562,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         except OSError:
             pass
 
-        ####################
-        ### SETUP SERVER
-        ####################
+        ##############################
+        ### SETUP EDGE / CLOUD SERVERS
+        ##############################
 
         server_ip = server.IP()
         assert server_ip != '127.0.0.1', "ERROR: server.IP() returns localhost!"
@@ -651,6 +657,31 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         p = server.popen(cmd, shell=True, env=env)
         self.popens.append(p)
 
+        if self.with_cloud:
+            # Now for the cloud, which differs only by the fact that it doesn't run RideC
+            ride_d_cfg = None if not self.with_ride_d else ride_d_cfg.replace(self.get_host_dpid(self.server), self.get_host_dpid(self.cloud))
+            seismic_alert_cloud_cfg = '' if not self.with_ride_d else make_scale_config_entry(
+                class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
+                output_events_file=os.path.join(outputs_dir, 'cloud'),
+                name="SeismicServer")
+            cloud_apps = seismic_alert_cloud_cfg
+
+            # TODO: UdpEchoServer????
+
+            cloud_cfg = make_scale_config(applications=cloud_apps, sinks=ride_d_cfg,
+                                          networks=None if not self.with_ride_d else \
+                                          make_scale_config_entry(name="CoapServer", events_root="/events/",
+                                                                  class_path="coap_server.CoapServer"),
+                                          )
+
+            cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + cloud_cfg)
+            if WITH_LOGS:
+                cmd += " > %s 2>&1" % os.path.join(logs_dir, 'cloud')
+
+            log.debug(cmd)
+            p = self.cloud.popen(cmd, shell=True, env=env)
+            self.popens.append(p)
+
         ####################
         ###  SETUP CLIENTS
         ####################
@@ -738,8 +769,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             return ret
 
         # Inspect the clients first, then the server so it has a little more time to finish up closing
+        client_popen_start_idx = 1 if not self.with_cloud else 2
 
-        for p in self.popens[1:]:
+        for p in self.popens[client_popen_start_idx:]:
             ret = wait_then_kill(p)
             if ret is None:
                 log.error("Client proc never quit!")
@@ -754,6 +786,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         ret = wait_then_kill(self.popens[0])
         if ret != 0:
             log.error("server proc exited with code %d" % ret)
+
+        if self.with_cloud:
+            ret = wait_then_kill(self.popens[1])
+            if ret != 0:
+                log.error("cloud proc exited with code %d" % ret)
 
         # Clean up traffic generators:
         # Clients should terminate automatically, but the server won't do so unless
