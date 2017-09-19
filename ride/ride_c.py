@@ -115,15 +115,20 @@ class RideC(object):
     def update(self):
         """
         Tells RideC to update itself by getting the latest topology and changing the assigned host routes if necessary.
-        :return:
+        :return: dict of update host routes (host: route)
         """
 
         # ENHANCE: extend the REST APIs to support updating the topology rather than getting a whole new one.
         self.topology_manager.build_topology(from_scratch=True)
 
         # Update all the routes
+        # ENHANCE: only update some of them? possibly based on updates to topology?
+        updated_routes = dict()
         for host in self.hosts:
-            self._update_host_route(host)
+            route = self._update_host_route(host)
+            updated_routes[host] = route
+
+        return updated_routes
 
     def on_data_path_status_change(self, data_path_id, status):
         """
