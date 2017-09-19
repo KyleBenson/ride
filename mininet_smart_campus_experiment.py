@@ -667,8 +667,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.popens.append(p)
 
         if self.with_cloud:
-            # Now for the cloud, which differs only by the fact that it doesn't run RideC
-            ride_d_cfg = None if not self.with_ride_d else ride_d_cfg.replace(self.get_host_dpid(self.server), self.get_host_dpid(self.cloud))
+            # Now for the cloud, which differs only by the fact that it doesn't run RideC and is always unicast alerting
+            ride_d_cfg = None if not self.with_ride_d else make_scale_config_entry(name="RideD", multicast=False,
+                                                                  class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",
+                                                                  dpid=self.get_host_dpid(self.cloud), addresses=None,
+                                                                  )
             seismic_alert_cloud_cfg = '' if not self.with_ride_d else make_scale_config_entry(
                 class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
                 output_events_file=os.path.join(outputs_dir, 'cloud'),
@@ -706,6 +709,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         log.info("Running seismic test client on %d subscribers and %d sensors" % (len(subscribers), len(sensors)))
 
+        # If we aren't using the cloud, publishers will just send to the edge and subscribers only have 1 broker
+        cloud_ip = server_ip
+        alerting_brokers = [server_ip]
+        if self.with_cloud:
+            cloud_ip = self.cloud.IP()
+            alerting_brokers.append(cloud_ip)
+
         for client in sensors.union(subscribers):
             client_id = client.name
 
@@ -715,14 +725,17 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                  events_root="/events/"),
                 applications=make_scale_config_entry(
                     class_path="seismic_warning_test.seismic_alert_subscriber.SeismicAlertSubscriber",
-                    name="SeismicSubscriber", remote_broker=server_ip, output_file=os.path.join(outputs_dir, 'subscriber_%s' % client_id)))
+                    name="SeismicSubscriber", remote_brokers=alerting_brokers,
+                    output_file=os.path.join(outputs_dir, 'subscriber_%s' % client_id)))
             pubs_cfg = make_scale_config(
-                sensors=make_scale_config_entry(name="SeismicSensor", event_type="seismic", dynamic_event_data=dict(seq=0),
+                sensors=make_scale_config_entry(name="SeismicSensor", event_type="seismic",
+                                                dynamic_event_data=dict(seq=0),
                                                 class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
-                                                output_events_file=os.path.join(outputs_dir, 'publisher_%s' % client_id),
+                                                output_events_file=os.path.join(outputs_dir,
+                                                                                'publisher_%s' % client_id),
                                                 start_delay=delay, sample_interval=5),
                 sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
-                                              name="CoapEventSink", hostname=server_ip))
+                                              name="CoapEventSink", hostname=cloud_ip))
 
             # Build up the final cli configs, merging the individual ones built above if necessary
             args = base_args
