@@ -315,6 +315,7 @@ class RideD(object):
 
         try:
             route = self.publisher_routes[publisher]
+            log.debug("updating STT with functional route: %s" % route)
             return self.stt_mgr.route_update(route, at_time)
         except KeyError:
             # ignore as we just don't know about this publisher
