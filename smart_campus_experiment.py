@@ -13,7 +13,8 @@ multicast tree-constructing and choosing algorithms for creation of
 import json
 import os
 import argparse
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 import random
 import signal
 import time
@@ -56,8 +57,8 @@ class SmartCampusExperiment(object):
         self.with_ride_d = with_ride_d
         self.with_cloud = with_ride_c
 
-        log_level = log.getLevelName(debug.upper())
-        log.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
+        log_level = logging.getLevelName(debug.upper())
+        logging.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
 
         # this is used for choosing pubs/subs/servers/other hosts ONLY
         self.random = random.Random(choice_rand_seed)

@@ -12,11 +12,12 @@ from subprocess import Popen
 import topology_manager
 from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
 
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 # Disable some of the more verbose and unnecessary loggers
 for _logger_name in ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool'):
-    l = log.getLogger(_logger_name)
-    l.setLevel(log.NOTSET)
+    l = logging.getLogger(_logger_name)
+    l.setLevel(logging.NOTSET)
 
 import json
 import argparse
@@ -44,7 +45,8 @@ OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at th
 # subnet for all hosts (if you change this, update the __get_ip_for_host() function!)
 # NOTE: we do /9 so as to avoid problems with addressing e.g. the controller on the local machine
 # (vagrant uses 10.0.2.* for VM's IP address).
-IP_SUBNET = '10.128.0.0/9'
+HOST_IP_N_MASK_BITS = 9
+IP_SUBNET = '10.128.0.0/%d' % HOST_IP_N_MASK_BITS
 WITH_LOGS = True  # output seismic client/server stdout to a log file
 # HACK: rather than some ugly hacking at Mininet's lack of API for allocating the next IP address,
 # we just put the NAT/server interfaces in a hard-coded subnet.
@@ -268,9 +270,28 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         def __get_ip_for_host(host):
             # See note in docstring about host format
-            host_num, building_type, building_num = re.match('h(\d+)-([mb])(\d+)', host).groups()
-            router_code = 131
-            return "10.%d.%s.%s" % (131 if building_type == 'b' else 200, building_num, host_num)
+            # XXX: differentiate between regular hosts and server hosts
+            if '-' in host:
+                host_num, building_type, building_num = re.match('h(\d+)-([mb])(\d+)', host).groups()
+            else:  # must be a server
+                log.debug("getting ip for host: %s" % host)
+                building_type, host_num = re.match('h?([xs])(\d+)', host).groups()
+                building_num = 0
+
+            # Assign a number according to the type of router this host is attached to
+            if building_type == 'b':
+                router_code = 131
+            elif building_type == 'm':
+                router_code = 144
+            # cloud
+            elif building_type == 'x':
+                router_code = 199
+            # edge server
+            elif building_type == 's':
+                router_code = 255
+            else:
+                raise ValueError("unrecognized building type '%s' so cannot assign host IP address!" % building_type)
+            return "10.%d.%s.%s/%d" % (router_code, building_num, host_num, HOST_IP_N_MASK_BITS)
 
         for host in self.topo.get_hosts():
             h = self.net.addHost(host, ip=__get_ip_for_host(host))
@@ -284,7 +305,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             server_switch_dpid = __get_mac_for_switch(server_switch_name, is_server=True)
             # Keep server name for switch so that the proper links will be added later.
             self.server_switch = self.net.addSwitch(server, dpid=server_switch_dpid, cls=OVSKernelSwitch)
-            s = self.net.addHost('h' + server)
+            host = 'h' + server
+            s = self.net.addHost(host, ip=__get_ip_for_host(host))
             # ENHANCE: handle multiple servers
             self.server = s
             self.net.addLink(self.server_switch, self.server)
@@ -299,7 +321,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 cloud_switch = self.net.addSwitch(cloud, dpid=cloud_switch_dpid, cls=OVSKernelSwitch)
                 self.cloud_switches.append(cloud_switch)
                 # ENHANCE: handle multiple clouds
-                self.cloud = self.net.addHost('h' + cloud)
+                host = 'h' + cloud
+                self.cloud = self.net.addHost(host, ip=__get_ip_for_host(host))
                 self.net.addLink(cloud_switch, self.cloud)
             # otherwise just add a host to prevent topology errors
             else:
