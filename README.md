@@ -18,7 +18,7 @@ You may need to tweak some settings inside mininet_smart_campus_experiment.py e.
 
 This repository assumes that the scale_client and seismic_warning_test repos are on your PYTHONPATH.  Really, they'll need to be in *root*'s PYTHONPATH!  I typically use symbolic links to just put them in the same directory; make sure you use an absolute (NOT relative) path for this or it won't work right!
    
-**Running the SCALE Client from within Mininet**: to properly run this, we opt to specify a different user that will have a virtual environment they can run the scale client in.  You can change the `SCALE_USER` at the top of the mininet_smart_campus_experiment.py file. Make sure this user has the `virtualenvwrapper.sh` script available (you can edit the `SCALE_CLIENT_BASE_COMMAND` as well if you use virtualenv differently or want to forego it entirely), create a virtual environment with the name `ride_scale_client`, and install the dependencies (both for scale_client and for ride) in that environment with `pip install -r requirements.txt`
+**Running the SCALE Client from within Mininet**: to properly run this, we opt to specify a different user that will have a virtual environment they can run the scale client in.  You can change the `SCALE_USER` at the top of the scale_config.py file. Make sure this user has the `virtualenvwrapper.sh` script available (you can edit the `SCALE_CLIENT_BASE_COMMAND` as well if you use virtualenv differently or want to forego it entirely), create a virtual environment with the name `ride_scale_client`, and install the dependencies (both for scale_client and for ride) in that environment with `pip install -r requirements.txt`
 
 
 ## Troubleshooting

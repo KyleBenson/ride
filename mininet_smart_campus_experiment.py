@@ -33,6 +33,8 @@ from mininet.link import TCLink, Intf
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from topology_manager.test_sdn_topology import mac_for_host  # used for manual MAC assignment
 
+from scale_config import *
+
 EXPERIMENT_DURATION = 90  # in seconds
 # EXPERIMENT_DURATION = 10  # for testing
 SEISMIC_EVENT_DELAY = 60  # seconds before the 'earthquake happens', i.e. sensors start sending data
@@ -49,24 +51,7 @@ WITH_LOGS = True  # output seismic client/server stdout to a log file
 NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
 # TODO: use a different address base...
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
-# When True, runs host processes with -00 command for optimized python code
-OPTIMISED_PYTHON = False
 SLEEP_TIME_BETWEEN_RUNS = 5  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
-
-### Configurations for actually running SCALE as the test client applications
-# Make sure you setup a virtual environment called 'scale_client' for this user!
-SCALE_USER = 'vagrant'
-# XXX: HACK: since Mininet runs as root and we use virtual environments, we have to run the client
-# within the venv but at the right location, under the right user, with the right PYTHONPATH,
-# all as a large complicated command passed as a string to 'su'...
-# WARNING: this took a long time to get actually working as the quotes are quite finicky... careful modifying!
-# TODO: disable these when not testing...
-SCALE_EXTRA_ARGS = " --enable-log-module coapthon " \
-                   "--disable-log-module topology_manager.sdn_topology urllib3.connectionpool " \
-                   "--raise-errors " \
-                   "--format-logging '%%(levelname)-6s : %%(name)-55s (%%(asctime)2s) : %%(message)s'"  # TODO: this doesn't work right now due to coapthon logging bug.... add timestamps; make sure to use '%%' to keep it from doing the formatting yet!
-SCALE_CLIENT_BASE_COMMAND = 'su -c "pushd .; export WORKON_HOME=~/.venvs; source ~/.local/bin/virtualenvwrapper.sh; workon ride_scale_client; popd;' \
-                            ' python %s -m scale_client %s %%s" ' % ("-O" if OPTIMISED_PYTHON else "", SCALE_EXTRA_ARGS) + SCALE_USER
 
 # Default values
 DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
@@ -284,6 +269,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         def __get_ip_for_host(host):
             # See note in docstring about host format
             host_num, building_type, building_num = re.match('h(\d+)-([mb])(\d+)', host).groups()
+            router_code = 131
             return "10.%d.%s.%s" % (131 if building_type == 'b' else 200, building_num, host_num)
 
         for host in self.topo.get_hosts():
