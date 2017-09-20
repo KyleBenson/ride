@@ -86,17 +86,19 @@ class SdnTopology(NetworkTopology):
 
     # Generic flow rule generating functions based on the topology
 
-    def build_flow_rules_from_path(self, path):
+    def build_flow_rules_from_path(self, path, use_matches=None):
         """Converts a simple path to a list of flow rules that can then
-        be installed in the corresponding switches.  The flow rules simply
-        match based on in_port, ipv4_src, and ipv4_dst."""
+        be installed in the corresponding switches.  If matches is not specified,
+        the flow rules simply match based on in_port, ipv4_src, and ipv4_dst."""
 
         # can't just iterate over container as the
         # next/prev node is important for flow rules
         # as well as the switch they'll be applied to
 
-        src_ip = self.get_ip_address(path[0])
-        dst_ip = self.get_ip_address(path[-1])
+        src_ip = dst_ip = None
+        if use_matches is None:
+            src_ip = self.get_ip_address(path[0])
+            dst_ip = self.get_ip_address(path[-1])
 
         rules = []
         for src, switch, dst in zip(path[:-2], path[1:-1], path[2:]):
@@ -106,7 +108,10 @@ class SdnTopology(NetworkTopology):
             out_port, _ = self.get_ports_for_nodes(switch, dst)
 
             actions = self.build_actions(("output", out_port))
-            matches = self.build_matches(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip)
+            if use_matches is None:
+                matches = self.build_matches(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip)
+            else:
+                matches = use_matches
 
             rules.append(self.build_flow_rule(switch, matches, actions))
         return rules
