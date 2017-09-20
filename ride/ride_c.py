@@ -138,6 +138,9 @@ class RideC(object):
         :param status: 0 for down, 1 for up
         :return:
         """
+
+        log.debug("DataPath %s status change: %s" % (data_path_id, status))
+
         self._data_path_status[data_path_id] = status
         if status == DATA_PATH_DOWN:
             if self.available_data_paths:
@@ -260,6 +263,9 @@ class RideC(object):
         When no DataPaths are available, our default behavior is to reroute all hosts to the edge server.
         :return:
         """
+
+        log.info("All DataPaths down!  Re-routing hosts to edge server...")
+
         # TODO: skip over ones that are already routing there?  or just adjust the weights used to choose between edge/cloud?
         for h in self.hosts:
             # ENHANCE: choose from several cloud/edge servers
