@@ -693,6 +693,31 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             p = self.cloud.popen(cmd, shell=True, env=env)
             self.popens.append(p)
 
+        # XXX: to prevent the 0-latency control plane from resulting in the controller immediately routing around
+        # quake-induced failures, we set static routes from each cloud gateway to the subscribers based on their
+        # destination IP address.
+        # TODO: what to do about cloud server --> cloud gateway?????? how do we decide which gateway (DP) should be used?
+        # NOTE: see comments above when doing static routes for unicast comparison configuration about why we
+        # should be careful about including a server in the path...
+        for sub in subscribers:
+
+            sub_ip = sub.IP()
+            matches = self.topology_adapter.build_matches(ipv4_dst=sub_ip, ipv4_src=self.cloud.IP())
+
+            for gw in self.cloud_gateways:
+                path = self.topo.get_path(gw.name, sub.name)
+                log.debug("installing static route for subscriber: %s" % path)
+                path = [self.get_node_dpid(n) for n in self._get_mininet_nodes(path)]
+                # XXX: since this helper function assumes the first node is a host, it'll skip over installing
+                # rules on it.  Hence, we add the cloud switch serving that gateway as the 'source'...
+                path.insert(0, self.get_node_dpid(self.cloud_switches[0]))
+                # TODO: what to do with this?  we can't add the cloud or the last gw to be handled will be the one routed through...
+                # path.insert(0, self.get_node_dpid(self.cloud))
+                frules = self.topology_adapter.build_flow_rules_from_path(path, matches)
+
+                for f in frules:
+                    self.topology_adapter.install_flow_rule(f)
+
         ####################
         ###  SETUP CLIENTS
         ####################
