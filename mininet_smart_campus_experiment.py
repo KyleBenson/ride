@@ -2,11 +2,10 @@
 
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
-import os
 
+import os
 import errno
 import re
-
 from subprocess import Popen
 
 import topology_manager
@@ -14,15 +13,11 @@ from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
 
 import logging
 log = logging.getLogger(__name__)
-# Disable some of the more verbose and unnecessary loggers
-for _logger_name in ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool'):
-    l = logging.getLogger(_logger_name)
-    l.setLevel(logging.NOTSET)
+LOGGERS_TO_DISABLE = ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool')
 
 import json
 import argparse
 import time
-import signal
 import ipaddress
 
 from mininet.net import Mininet
@@ -144,6 +139,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # HACK: We just manually allocate IP addresses rather than adding a controller API to request them.
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
         self.mcast_address_pool = [str(base_addr + i) for i in range(kwargs['ntrees'])]
+
+        # Disable some of the more verbose and unnecessary loggers
+        for _logger_name in LOGGERS_TO_DISABLE:
+            l = logging.getLogger(_logger_name)
+            l.setLevel(logging.WARNING)
 
     @classmethod
     def get_arg_parser(cls, parents=(SmartCampusExperiment.get_arg_parser(),), add_help=True):
@@ -274,7 +274,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             if '-' in host:
                 host_num, building_type, building_num = re.match('h(\d+)-([mb])(\d+)', host).groups()
             else:  # must be a server
-                log.debug("getting ip for host: %s" % host)
                 building_type, host_num = re.match('h?([xs])(\d+)', host).groups()
                 building_num = 0
 

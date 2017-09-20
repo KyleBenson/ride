@@ -1,4 +1,5 @@
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 
 from rest_api.onos_api import OnosRestApi
 from sdn_topology import SdnTopology
