@@ -1,8 +1,11 @@
 # Resilient IoT Data Exchange - Collection middleware
-import random
-import topology_manager
-from topology_manager.sdn_topology import SdnTopology
 import logging
+import random
+
+import topology_manager
+from ride.data_path_monitor import DATA_PATH_UP, DATA_PATH_DOWN
+from topology_manager.sdn_topology import SdnTopology
+
 log = logging.getLogger(__name__)
 
 # In case we are running RideC outside the original experimental framework that defined this default
@@ -10,10 +13,6 @@ try:
     from smart_campus_experiment import DISTANCE_METRIC
 except ImportError:
     DISTANCE_METRIC = 'latency'
-
-# constants for use in DataPath management: we could extend these to support more statuses in the future...
-DATA_PATH_UP = 1
-DATA_PATH_DOWN = 0
 
 
 class RideC(object):
