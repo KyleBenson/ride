@@ -38,8 +38,14 @@ class NetworkxSdnTopology(SdnTopology):
     def get_links(self, building_switches=False, attributes=True):
         """Return all links, optionally excluding those within
         a building and optionally including attributes."""
-        return [(n1, n2, data) for n1, n2, data in self.topo.edges(data=attributes) if
-                (building_switches or self.is_switch(n1, building_switches) or self.is_switch(n2, building_switches))]
+        if attributes:
+            return [(n1, n2, data) for n1, n2, data in self.topo.edges(data=True) if
+                    (building_switches or self.is_switch(n1, building_switches) or
+                    self.is_switch(n2, building_switches))]
+        else:
+            return [(n1, n2) for n1, n2 in self.topo.edges(data=False) if
+                    (building_switches or self.is_switch(n1, building_switches) or
+                    self.is_switch(n2, building_switches))]
 
     def get_switches(self, building_switches=False):
         """Returns all switches, optionally excluding those within
