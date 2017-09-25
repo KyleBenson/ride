@@ -72,6 +72,12 @@ class SmartCampusExperiment(object):
             failure_model = SmartCampusFailureModel()
         self.failure_model = failure_model
 
+        # These fields will be set for each run so as to avoid passing them around as parameters.
+        self.subscribers = None
+        self.publishers = None
+        self.server = None
+        self.failed_nodes, self.failed_links = (None, None)
+
         # results are output as JSON to file after the experiment runs
         self.results = {'results': [], # each is a single run containing: {run: run#, heuristic_name: percent_reachable}
                         'params': {'ntrees': ntrees,
@@ -240,6 +246,10 @@ class SmartCampusExperiment(object):
     def record_result(self, result):
         """Result is a dict that includes the percentage of subscribers
         reachable as well as metadata such as run #"""
+
+        # First, add additional parameters used on this run.
+        result['failed_nodes'] = self.failed_nodes
+        result['failed_links'] = self.failed_links
         self.results['results'].append(result)
 
     def output_results(self):
