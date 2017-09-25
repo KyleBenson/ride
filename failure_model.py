@@ -38,15 +38,24 @@ class SmartCampusFailureModel(object):
         return self.random.random() < self.fprob
 
     def apply_uniform_failure_model(self, topo):
-        """Fail each component (link/switch node) at uniformly random rate."""
+        """
+        Fail each component (link/switch node) in topo at uniformly random rate.
+        :param topo: the topology to choose failed nodes/links from
+        :type topo: NetworkxSdnTopology
+        """
         switches = []
         links = []
 
+        # NOTE: we must ensure these switches/links won't completely fail the cloud/edge servers or gateways
+        # as we can't fail them and gather meaningful results...
         for s in topo.get_switches():
-            if self.should_fail():
+            if not topo.is_cloud_gateway(s) and self.should_fail():
                 switches.append(s)
-        for l in topo.get_links():
-            if self.should_fail():
+        for l in topo.get_links(attributes=False):
+            # The DataPath link (gateway to cloud) failures will be handled by the SmartCampusExperiment
+            is_gw_cloud_link = (topo.is_cloud_gateway(l[0]) and topo.is_cloud(l[1])) or \
+                               (topo.is_cloud_gateway(l[1]) and topo.is_cloud(l[0]))
+            if not is_gw_cloud_link and self.should_fail():
                 links.append(l)
 
         return switches, links
@@ -93,11 +102,27 @@ class SmartCampusFailureModel(object):
                         help='''failure model to apply for choosing component failures (default=%(default)s)''')
 
 if __name__ == '__main__':
+    # NOTE: this should be a topology file that includes cloud servers/gateways so that we properly test not failing them!
+    topo_file = 'topos/cloud_campus_topo_3b-3h-1ibl.json'
     from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
-    st = NetworkxSdnTopology()
-    fail = SmartCampusFailureModel()
+    topo = NetworkxSdnTopology(filename=topo_file)
+    fail = SmartCampusFailureModel(fprob=1.0)
 
     print fail.get_params()
-    n,l = fail.apply_failure_model(st)
-    print "Nodes failed:", n
-    print "Links failed:", l
+    nodes, links = fail.apply_failure_model(topo)
+    print "Nodes failed:", nodes
+    print "Links failed:", links
+
+    # test to make sure we only chose the right links/nodes for failing
+    for n in nodes:
+        assert not topo.is_host(n), "shouldn't be failing host nodes!"
+        assert not topo.is_server(n), "shouldn't be failing edge server nodes!"
+        assert not topo.is_cloud(n), "shouldn't be failing cloud server nodes!"
+        assert not topo.is_cloud_gateway(n), "shouldn't be failing cloud gateway nodes!"
+    for l in links:
+        assert not topo.is_cloud(l[0]) and not topo.is_cloud(l[1]), "shouldn't be failing cloud DataPath!!"
+
+    unfailed_nodes = set(topo.topo.nodes()) - set(nodes)
+    unfailed_links = set(topo.topo.edges()) - set(links)
+    print 'unfailed nodes:', unfailed_nodes
+    print 'unfailed links:', unfailed_links
