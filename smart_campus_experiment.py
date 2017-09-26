@@ -76,6 +76,7 @@ class SmartCampusExperiment(object):
         self.subscribers = None
         self.publishers = None
         self.server = None
+        self.cloud = None
         self.failed_nodes, self.failed_links = (None, None)
 
         # results are output as JSON to file after the experiment runs
