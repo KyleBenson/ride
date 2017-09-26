@@ -70,6 +70,7 @@ class RideC(object):
         self.cloud_server = cloud_server
 
         # these fields will be set dynamically by their relevant add/remove methods
+        # NOTE: DP just means the DataPath ID, whereas host/GW are represented by their SDN DPID
         self._gateway_for_data_path = dict()  # DP --> GW
         self._data_path_status = dict()       # DP --> status
         self._data_path_for_host = dict()     # host --> DP
@@ -104,10 +105,17 @@ class RideC(object):
     def _choose_data_path(self, host_id=None):
         """
         Choose a DataPath from those currently up that's well-suited for the specified host.
+        Currently, we just choose the 'highest priority' (as determined by DataPathID order low-to-high) DataPath
+        that is currently functional.
         :param host_id: optional and currently ignored
         :return:
         """
-        return random.choice(self.data_paths)
+        dp_choices = [dp for dp in self.data_paths if self.is_data_path_up(dp)]
+        # TODO: how to handle none being available??? random choice? random.choice(self.data_paths)
+        dp_choices = sorted(dp_choices)
+        chosen_dp = dp_choices[0]
+        log.debug("assigning host %s to DP %s" % (host_id, chosen_dp))
+        return chosen_dp
 
     ## the main public API: control, registration and notification functions
 
