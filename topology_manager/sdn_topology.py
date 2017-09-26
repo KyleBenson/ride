@@ -392,7 +392,9 @@ class SdnTopology(NetworkTopology):
 
         NOTE: default implementation assumes we can simply return kwargs
         after verifying that eth_type is present (and properly set) if
-        either ipv4 or ipv6 are used.
+        either ipv4 or ipv6 are used.  Similarly, we will have to set
+        the ip_proto if a transport-layer IP protocol (e.g. UDP/TCP)
+        are requested.
         """
 
         # need to check individual keys as they might be e.g. ipv4_dst
@@ -400,6 +402,16 @@ class SdnTopology(NetworkTopology):
             kwargs['eth_type'] = '0x0800'
         elif any('ipv6' in k for k in kwargs.keys()) and 'eth_type' not in kwargs:
             kwargs['eth_type'] = '0x86DD'
+
+        # now for transport-layer
+        key = 'ip_proto'
+        if any('udp' in k for k in kwargs.keys()) and key not in kwargs:
+            kwargs[key] = 17
+        elif any('tcp' in k for k in kwargs.keys()) and key not in kwargs:
+            kwargs[key] = 6
+        elif any('sctp' in k for k in kwargs.keys()) and key not in kwargs:
+            kwargs[key] = 132
+
         return kwargs
 
     def build_actions(self, *args):
