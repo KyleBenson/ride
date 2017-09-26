@@ -2,7 +2,7 @@ import logging
 log = logging.getLogger(__name__)
 
 from rest_api.onos_api import OnosRestApi
-from sdn_topology import SdnTopology
+from sdn_topology import SdnTopology, MAX_OPENFLOW_PRIORITY
 
 
 class OnosSdnTopology(SdnTopology):
@@ -240,7 +240,7 @@ class OnosSdnTopology(SdnTopology):
     def __build_flow_rule(self, switch, **kwargs):
         """Helper function to assemble fields of a flow common between flow entry types."""
         rule = {"deviceId": switch, "isPermanent": True,
-                "priority": 10}  # priority is required so we set a default here
+                "priority": MAX_OPENFLOW_PRIORITY}  # priority is required so we set a default here
         rule.update(kwargs)
         return rule
 

@@ -5,6 +5,8 @@ import json
 import networkx as nx
 
 from network_topology import NetworkTopology
+MAX_OPENFLOW_PRIORITY = 65535
+
 
 class SdnTopology(NetworkTopology):
     """Generates a networkx topology (undirected graph) from information
