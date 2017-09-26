@@ -85,7 +85,7 @@ class ProbingDataPathMonitor(DataPathMonitor):
         self.buffer_size = buffer_size
         self._probing_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         if self._src_port:
-            self._probing_socket.bind((socket.INADDR_ANY, self._src_port))
+            self._probing_socket.bind(('', self._src_port))
         self.echo_server = self._address, self._dst_port
 
     # ENHANCE: make these abstract and move them to an actual implementation class
@@ -197,6 +197,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
 
         except socket.timeout:
             log.warning("Timeout Probe (seq:%d)" % (self._seq - 1))
+            # TODO: this hacky return value causes issues when the measured delay is actually 0ms (e.g. running on localhost): let's do something better...
             return False
         # TODO: handle other errors? such as receiving from the wrong server...
         # except socket.error:
@@ -383,6 +384,8 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         then continually uses adaptive probes to monitor it.
         :return:
         """
+
+        log.info("starting monitoring on DataPath %s" % self.data_path_id)
 
         self._running = True
         self.link_characteristic_estimation_phase()
