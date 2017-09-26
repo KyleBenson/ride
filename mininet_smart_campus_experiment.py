@@ -36,6 +36,8 @@ EXPERIMENT_DURATION = 90  # in seconds
 SEISMIC_EVENT_DELAY = 60  # seconds before the 'earthquake happens', i.e. sensors start sending data
 # SEISMIC_EVENT_DELAY = 5  # for testing
 IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
+PROBE_BASE_SRC_PORT = 9900  # ensure this doesn't collide with any other apps/protocols you're using!
+ECHO_SERVER_PORT = 9999
 OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at the default port
 # subnet for all hosts (if you change this, update the __get_ip_for_host() function!)
 # NOTE: we do /9 so as to avoid problems with addressing e.g. the controller on the local machine
@@ -46,7 +48,6 @@ WITH_LOGS = True  # output seismic client/server stdout to a log file
 # HACK: rather than some ugly hacking at Mininet's lack of API for allocating the next IP address,
 # we just put the NAT/server interfaces in a hard-coded subnet.
 NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
-# TODO: use a different address base...
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
 SLEEP_TIME_BETWEEN_RUNS = 5  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
 
@@ -66,6 +67,15 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
       - logs_*/{$HOST_ID} : log files storing seismic client/server's stdout/stderr
       NOTE: the folder hierarchy is important as the results_*.json file contains relative paths pointing
           to the other files from its containing directory.
+
+    NOTE: there are 3 different versions of the network topology stored in this object:
+      1) self.topo is the NetworkxSdnTopology that we read from a file and use to populate the networks
+      2) self.net is the Mininet topology consisting of actual Mininet Hosts and Links
+      3) self.topology_adapter is the concrete SdnTopology (e.g. OnosSdnTopology) instance that interfaces with the
+         SDN controller responsible for managing the emulated Mininet nodes.
+      Generally, the nodes stored as fields of this class are Mininet Switches and the hosts are Mininet Hosts.  Links
+      are expressed simply as (host1.name, host2.name) pairs.  Various helper functions exist to help convert between
+      these representations and ensure the proper formatting is used as arguments to e.g. launching processes on hosts.
     """
 
     def __init__(self, controller_ip='127.0.0.1', controller_port=8181,
@@ -257,7 +267,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             elif is_server:
                 second_letter = 'e'
 
-            mac = first_letter + second_letter + ':00:00' + mac[3:]
+            mac = first_letter + second_letter + ':00:00:' + mac[3:]
             return str(mac)
 
         for switch in self.topo.get_switches():
@@ -463,8 +473,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.setup_traffic_generators()
         # NOTE: it takes a second or two for the clients to actually start up!
         # log.debug('*** Starting clients at time %s' % time.time())
+
+        ##    STARTING EXPERIMENT
+
         logs_dir, outputs_dir = self.setup_seismic_test(self.publishers, self.subscribers, self.server)
         # log.debug('*** Done starting clients at time %s' % time.time())
+
+        ####    FAILURE MODEL     ####
 
         # Apply actual failure model: we schedule these to fail when the earthquake hits
         # so there isn't time for the topology to update on the controller,
@@ -474,19 +489,34 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # it'll take for different machines/configurations and time it better...
         log.info('*** Configuration done!  Waiting for earthquake to start...')
         time.sleep(SEISMIC_EVENT_DELAY - 1)
-        log.info('*** Earthquake at %s!  Applying failure model...' % time.time())
+        quake_time = time.time()
+        log.info('*** Earthquake at %s!  Applying failure model...' % quake_time)
         for link in self.failed_links:
+            log.debug("failing link: %s" % str(link))
             self.net.configLinkStatus(link[0], link[1], 'down')
         for node in self.failed_nodes:
             node.stop(deleteIntfs=False)
 
-        # log.debug('*** Failure model finished applying at %s' % time.time())
+        ## FAIL DATA PATHS
+
+        # fail ALL data paths
+        # TODO: allow the failed DataPaths to be configurable and allow re-enabling them after some time
+        dpl = self.data_path_links
+        if dpl is not None:
+            for link_to_fail in dpl:
+                log.debug("failing DataPath link: %s" % str(link_to_fail))
+                self.net.configLinkStatus(link_to_fail[0], link_to_fail[1], 'down')
+
+        log.debug('*** Failure model took %f seconds to apply' % (time.time() - quake_time))
+        # TODO: record additional failures.... maybe also recoveries?
+        failure_times = [quake_time]
 
         log.info("*** Waiting for experiment to complete...")
 
         time.sleep(EXPERIMENT_DURATION - SEISMIC_EVENT_DELAY)
 
         return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
+                'failure_times': failure_times,
                 'publishers': [p.name for p in self.publishers],
                 'subscribers': [s.name for s in self.subscribers]}
 
@@ -635,17 +665,49 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         _srv_apps = seismic_alert_server_cfg
         if self.with_ride_c:
-            # TODO: verify this is right?  maybe we want to shorten the DataPath name so it isn't whole GW DPID?
-            data_paths = [[self.get_switch_dpid(gw), self.get_switch_dpid(gw),
-                           self.get_host_dpid(self.cloud)] for gw in self.cloud_gateways]
-            log.debug("RideC-managed DataPaths are: %s" % data_paths)
+            # To run RideC, we need to configure it with the necessary information to register each DataPath under
+            # consideration: an ID, the gateway switch DPID, the cloud server's DPID, and the probing source port.
+            # The source port will be used to distinguish the different DataPathMonitor probes from each other and
+            # route them through the correct gateway using static flow rules.
+            # NOTE: because we pass these parameters as tuples in a list, with each tuple containing all info
+            # necessary to register a DataPath, we can assume the order remains constant.
+
+            src_ports = range(PROBE_BASE_SRC_PORT, PROBE_BASE_SRC_PORT + len(self.cloud_gateways))
+            data_path_args = [[gw.name, self.get_switch_dpid(gw), self.get_host_dpid(self.cloud), src_port] for
+                          gw, src_port in zip(self.cloud_gateways, src_ports)]
+            log.debug("RideC-managed DataPath arguments are: %s" % data_path_args)
 
             _srv_apps += make_scale_config_entry(class_path="seismic_warning_test.ride_c_application.RideCApplication",
-                                                 name="RideC", topology_mgr=sdn_topology_cfg, data_paths=data_paths,
+                                                 name="RideC", topology_mgr=sdn_topology_cfg, data_paths=data_path_args,
                                                  edge_server=self.get_host_dpid(server),
                                                  cloud_server=self.get_host_dpid(self.cloud),
                                                  publishers=[self.get_host_dpid(h) for h in sensors],
                                                  )
+
+            # Now set the static routes for probes to travel through the correct DataPath Gateway.
+            for gw, src_port in zip(self.cloud_gateways, src_ports):
+                gw_dpid = self.get_switch_dpid(gw)
+                edge_gw_route = self.topology_adapter.get_path(self.get_host_dpid(self.server), gw_dpid,
+                                                               weight=DISTANCE_METRIC)
+                gw_cloud_route = self.topology_adapter.get_path(gw_dpid, self.get_host_dpid(self.cloud),
+                                                                weight=DISTANCE_METRIC)
+                route = self.topology_adapter.merge_paths(edge_gw_route, gw_cloud_route)
+
+                # Need to modify the 'matches' used to include the src/dst_port!
+                dst_port = ECHO_SERVER_PORT
+
+                matches = dict(udp_src=src_port, udp_dst=dst_port)
+                frules = self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches)
+
+                # NOTE: need to do the other direction to ensure responses come along same path!
+                route.reverse()
+                matches = dict(udp_dst=src_port, udp_src=dst_port)
+                frules.extend(self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches))
+
+                # log.debug("installing probe flow rules for DataPath (port=%d)\nroute: %s\nrules: %s" %
+                #           (src_port, route, frules))
+                for f in frules:
+                    self.topology_adapter.install_flow_rule(f)
 
         srv_cfg = make_scale_config(sinks=ride_d_cfg,
                                     networks=None if not self.with_ride_d else \
@@ -666,7 +728,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.popens.append(p)
 
         if self.with_cloud:
-            # Now for the cloud, which differs only by the fact that it doesn't run RideC and is always unicast alerting
+            # Now for the cloud, which differs only by the facts that it doesn't run RideC, is always unicast alerting
+            # via RideD, and also runs a UdpEchoServer to respond to RideC's DataPath probes
             ride_d_cfg = None if not self.with_ride_d else make_scale_config_entry(name="RideD", multicast=False,
                                                                   class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",
                                                                   dpid=self.get_host_dpid(self.cloud), addresses=None,
@@ -677,13 +740,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 name="SeismicServer")
             cloud_apps = seismic_alert_cloud_cfg
 
-            # TODO: UdpEchoServer????
+            cloud_net_cfg = make_scale_config_entry(class_path='udp_echo_server.UdpEchoServer',
+                                                    name='EchoServer', port=ECHO_SERVER_PORT)
+            if self.with_ride_d:
+                cloud_net_cfg += make_scale_config_entry(name="CoapServer", events_root="/events/",
+                                                         class_path="coap_server.CoapServer")
 
-            cloud_cfg = make_scale_config(applications=cloud_apps, sinks=ride_d_cfg,
-                                          networks=None if not self.with_ride_d else \
-                                          make_scale_config_entry(name="CoapServer", events_root="/events/",
-                                                                  class_path="coap_server.CoapServer"),
-                                          )
+            cloud_cfg = make_scale_config(applications=cloud_apps, sinks=ride_d_cfg, networks=cloud_net_cfg,)
 
             cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + cloud_cfg)
             if WITH_LOGS:
@@ -888,6 +951,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # Sleep for a bit so the controller/OVS can finish resetting
         time.sleep(SLEEP_TIME_BETWEEN_RUNS)
 
+    ####   Helper functions for working with Mininet nodes/links    ####
+
     def get_host_dpid(self, host):
         """
         Returns the data plane ID for the given host that is recognized by the
@@ -932,6 +997,15 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             return self.get_host_dpid(node)
         else:
             raise TypeError("Unrecognized node type for: %s" % node)
+
+    @property
+    def data_path_links(self):
+        """Returns a collection of (gateway Switch, cloud Switch) pairs to represent DataPath links
+        or None if no clouds/DataPath exist"""
+        if self.cloud_switches is None:
+            return None
+        # XXX: since we only have one cloud server, we don't need to figure out which one corresponds to each GW
+        return [(gw.name, self.cloud_switches[0].name) for gw in self.cloud_gateways]
 
 
 # TODO: import these from somewhere rather than repeating them here... BUT, note that we've done some bugfixes with these ones
