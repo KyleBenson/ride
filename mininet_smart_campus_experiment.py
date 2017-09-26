@@ -499,13 +499,16 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         ## FAIL DATA PATHS
 
-        # fail ALL data paths
+        # fail ONE data path
+        # XXX: because RideC assigns all publishers to the 'highest priority' (lowest alphanumerically) DP,
+        # we just fail the one with highest priority here to observe the fail-over.
         # TODO: allow the failed DataPaths to be configurable and allow re-enabling them after some time
         dpl = self.data_path_links
         if dpl is not None:
-            for link_to_fail in dpl:
-                log.debug("failing DataPath link: %s" % str(link_to_fail))
-                self.net.configLinkStatus(link_to_fail[0], link_to_fail[1], 'down')
+            dpl = sorted(dpl)
+            link_to_fail = dpl[0]
+            log.debug("failing DataPath link: %s" % str(link_to_fail))
+            self.net.configLinkStatus(link_to_fail[0], link_to_fail[1], 'down')
 
         log.debug('*** Failure model took %f seconds to apply' % (time.time() - quake_time))
         # TODO: record additional failures.... maybe also recoveries?
