@@ -189,14 +189,14 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
                 delay, resp_seq = self.on_response_received(recv_data_str, count=count)
 
                 if resp_seq != seq:
-                    log.debug("skipping old probe with seq #%d, expecting #%d" % (resp_seq, seq))
+                    log.debug("DP %s: skipping old probe with seq #%d, expecting #%d" % (self.data_path_id, resp_seq, seq))
                 else:
-                    log.debug("Received Probe Response (seq:%d) delay = %dms" % (resp_seq, delay))
+                    log.debug("DP %s: Received Probe Response (seq:%d) delay = %dms" % (self.data_path_id, resp_seq, delay))
 
                 assert resp_seq <= seq, "received probe response with sequence # from the future! HOW????"
 
         except socket.timeout:
-            log.warning("Timeout Probe (seq:%d)" % (self._seq - 1))
+            log.warning("DP %s: Timeout Probe (seq:%d)" % (self.data_path_id, self._seq - 1))
             # TODO: this hacky return value causes issues when the measured delay is actually 0ms (e.g. running on localhost): let's do something better...
             return False
         # TODO: handle other errors? such as receiving from the wrong server...
@@ -217,7 +217,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         data = dict(seq=seq, time_sent=current_time_millis)
 
         self._do_send(json.dumps(data))
-        log.debug("Sent Probe (seq:%d)" % seq)
+        log.debug("DP %s: Sent Probe (seq:%d)" % (self.data_path_id, seq))
 
         if count:
             self._total_sent += 1
@@ -288,11 +288,11 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         # TODO: include some tolerance to the thresholds in order to prevent 'flapping'
         if successive_fails > self._detection_window_size:
             if not self.is_data_path_down:
-                log.debug("DP status changed to DOWN due to recent failures/timeouts!")
+                log.debug("DP %s status changed to DOWN due to recent failures/timeouts!" % self.data_path_id)
             return DATA_PATH_DOWN
         elif self._rtt_a > self._sending_interval:
             if not self.is_data_path_down:
-                log.debug("DP status changed to DOWN due to increased latency!")
+                log.debug("DP %s status changed to DOWN due to increased latency!" % self.data_path_id)
             return DATA_PATH_DOWN
         else:
             return DATA_PATH_UP
@@ -322,7 +322,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         :param nprobes: number of initial probes to send in this phase
         :return:
         """
-        log.debug("Entering initial link characteristic estimation phase...")
+        log.debug("DP %s: Entering initial link characteristic estimation phase..." % self.data_path_id)
 
         if nprobes is None:
             nprobes = self.init_window
@@ -339,9 +339,11 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         self._timeout = 2 * self._rtt_a
         self.set_detection_window_size()
         self._sending_interval = self.max_detection_time / self._detection_window_size
-        log.info("links status: link_loss:%f, rtt_a:%dms, Nb:%d, interval:%fms" % (self._link_loss, self._rtt_a,
-                                                                                   self._detection_window_size,
-                                                                                   self._sending_interval))
+        log.info("DP %s links status: link_loss:%f, rtt_a:%dms, Nb:%d, interval:%fms" % (self.data_path_id,
+                                                                                         self._link_loss,
+                                                                                         self._rtt_a,
+                                                                                         self._detection_window_size,
+                                                                                         self._sending_interval))
 
     def data_path_recovery_detection(self, nsuccesses=None):
         """
@@ -374,7 +376,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
             self.wait_for_next_probe(delay)
 
             if successive_count > nsuccesses:
-                log.debug("DataPath recovered after %d successful probes in a row!" % nsuccesses)
+                log.debug("DataPath %s recovered after %d successful probes in a row!" % (self.data_path_id, nsuccesses))
                 self.update_link_status(DATA_PATH_UP)
                 return
 
@@ -385,7 +387,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         :return:
         """
 
-        log.info("starting monitoring on DataPath %s" % self.data_path_id)
+        log.info("starting monitoring on DataPath %s (remote host=%s)" % (self.data_path_id, self.echo_server))
 
         self._running = True
         self.link_characteristic_estimation_phase()
