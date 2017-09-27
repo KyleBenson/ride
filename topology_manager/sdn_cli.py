@@ -61,6 +61,8 @@ def parse_args(args):
       so please see their method signatures for more details.
     NOTE: you can also specify **kwargs (for those commands that don't say otherwise) by doing e.g.:
     redirect source=<src_ip> old_dest=<old_dst_ip> new_dest=<new_dst_ip>
+    The **kwargs may be passed directly to the relevant function or they may be passed to build_flow_rules[...]()
+    e.g. specifying the 'priority' does the latter
     ''')
 
 
@@ -101,10 +103,13 @@ if __name__ == "__main__":
 
     elif cmd == 'path':
         assert nargs >= 2, "path command must at least have the 2 hosts specified!"
-        path = topo.get_path(*cmd_args, **cmd_kwargs)
+        if 'weight' in cmd_kwargs:
+            path = topo.get_path(*cmd_args, weight=cmd_kwargs.pop('weight'))
+        else:
+            path = topo.get_path(*cmd_args)
         print("Installing Path:", path)
-        rules = topo.build_flow_rules_from_path(path)
-        rules.extend(topo.build_flow_rules_from_path(list(reversed(path))))
+        rules = topo.build_flow_rules_from_path(path, **cmd_kwargs)
+        rules.extend(topo.build_flow_rules_from_path(list(reversed(path)), **cmd_kwargs))
         for rule in rules:
             assert topo.install_flow_rule(rule), "error installing rule: %s" % rule
 

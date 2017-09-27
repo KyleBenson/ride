@@ -88,13 +88,15 @@ class SdnTopology(NetworkTopology):
 
     # Generic flow rule generating functions based on the topology
 
-    def build_flow_rules_from_path(self, path, use_matches=None, add_matches=None):
+    def build_flow_rules_from_path(self, path, use_matches=None, add_matches=None, **kwargs):
         """
         Converts a simple path to a list of flow rules that can then be installed in the corresponding switches.
         :param use_matches: optionally use the specified 'matches'; if unspecified, by default the flow rules simply
          match based on in_port, ipv4_src, and ipv4_dst.
         :param add_matches: an optional dict to be used as additional parameters (key-value pairs) to build_matches
-         (NOTE: this cannot be used in conjunction with use_matches!)
+         (NOTE: this cannot be used in conjunction with use_matches! BUT it CAN be used to overwrite the default
+         matches i.e. ipv4_src/ipv4_dst/in_port!)
+        :param kwargs: additional arguments passed to build_flow_rule()
         """
 
         # can't just iterate over container as the
@@ -118,14 +120,16 @@ class SdnTopology(NetworkTopology):
             if use_matches is None:
                 if add_matches is None:
                     add_matches = dict()
-                matches = self.build_matches(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip, **add_matches)
+                matches_params = dict(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip)
+                matches_params.update(add_matches)
+                matches = self.build_matches(**matches_params)
             else:
                 matches = use_matches
 
-            rules.append(self.build_flow_rule(switch, matches, actions))
+            rules.append(self.build_flow_rule(switch, matches, actions, **kwargs))
         return rules
 
-    def build_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1'):
+    def build_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1', **kwargs):
         """Converts a multicast tree to a list of flow rules that can then
         be installed in the corresponding switches.  They will be ordered
         with group flows first so iterating over the list to install them
@@ -139,6 +143,8 @@ class SdnTopology(NetworkTopology):
         @:param source - source node/switch from which to start the search
         @:param matches - match rules to be used for matching multicast packets
         @:param group_id - group_id to assign this group rule to on all switches
+        :param kwargs: additional arguments passed to build_flow_rule()
+
 
         @:return group_flows, flows - pair of list of all flow rules to accomplish the multicast tree"""
 
@@ -182,18 +188,23 @@ class SdnTopology(NetworkTopology):
 
             # TODO: update matches with the src port/IP?
 
-            flows.append(self.build_flow_rule(node, matches, action))
+            flows.append(self.build_flow_rule(node, matches, action, **kwargs))
 
             # print node, successors
 
         return group_flows, flows
 
-    def build_redirection_flow_rules(self, source, old_dest, new_dest=None, route=None):
+    def build_redirection_flow_rules(self, source, old_dest, new_dest=None, route=None, tp_protocol=None,
+                                     source_port=None, old_dest_port=None, new_dest_port=None, **kwargs):
         """
-        Re-directs a packet by translating the destination IP address and ethernet address to match that of the
+        Re-directs a packet by translating the destination IP/ethernet address and port numbers to match that of the
         new_dest.  The source and old_dest are used for creating the matches part of the flow rules.  Flow rules for
         the route from source to new_dest will be added; they will match the optionally-specified route.  The flow rule
         that handles packet modification for the new addresses will be installed on the first switch along route.
+        The flow rules also include routing/translations for the opposite direction (i.e. new_dest --> source) in
+        order to ensure the source host seamlessly receives responses (e.g. ACKs) properly.  Specifying the port
+        numbers is highly recommended to ensure these translations don't prevent other applications than the intended
+        one running on the same hosts from communicating with each other.
 
         FUTURE ENHANCE: a 'matches' parameter could be added so that you can specify how the match is done (this would
         make the source/old_dest arguments potentially optional);
@@ -204,12 +215,14 @@ class SdnTopology(NetworkTopology):
         :param new_dest: the new destination the packet will be forwarded to; if unspecified, route[-1] will be assumed
         :param route: optional route that will be followed for the redirection; if unspecified, one will be chosen using
          self.get_path(source, new_dest)
+        :param tp_protocol: one of 'tcp', 'udp', or 'sctp' to specify the transport-layer protocol; MUST be specified if
+        any of the ports are!
+        :param source_port: optional port # that will be added to matches & translation actions if specified
+        :param old_dest_port: optional port # that will be added to matches & translation actions if specified
+        :param new_dest_port: optional port # that will be added to matches & translation actions if specified
+        :param kwargs: additional arguments passed to build_flow_rule()
         :return: a list of flow rules for accomplishing the requested redirection routing
         """
-
-        # ENHANCE: we might consider also installing a rule so that when new_dest replies to source the packets will be
-        # translated to look like they came from old_dest, but this would require more exact matching to ensure this
-        # only affects e.g. one application rather than ALL traffic between them!
 
         if route is None:
             if new_dest is None:
@@ -221,26 +234,110 @@ class SdnTopology(NetworkTopology):
         assert source == route[0] and new_dest == route[-1], "redirection route requested that didn't match" \
                                                              " requested source and destination!"
 
+        if tp_protocol is None and (source_port is not None or old_dest_port is not None or new_dest_port is not None):
+            raise ValueError("if you specify one of the port numbers for redirection you MUST specify the tp_protocol!")
+        if tp_protocol is not None and tp_protocol not in ('tcp', 'udp', 'sctp'):
+            raise ValueError("unrecognized transport protocol type: %s" % tp_protocol)
+
         flow_rules = []
         # We'll custom make the packet manipulation flow rule for the first switch in the path
         src_ip = self.get_ip_address(source)
+        src_eth = self.get_mac_address(source)
         old_dest_ip = self.get_ip_address(old_dest)
+        old_dest_eth = self.get_mac_address(old_dest)
         switch = route[1]
         in_port = self.get_ports_for_nodes(source, switch)[1]
-        matches = self.build_matches(ipv4_src=src_ip, ipv4_dst=old_dest_ip, in_port=in_port)
+
+        match_params = dict(ipv4_src=src_ip, ipv4_dst=old_dest_ip, in_port=in_port,
+                            eth_src=src_eth, eth_dst=old_dest_eth)
+        if source_port is not None:
+            match_params[tp_protocol + '_src'] = source_port
+        if old_dest_port is not None:
+            match_params[tp_protocol + '_dst'] = old_dest_port
+        # Must do this if we want to alter the transport layer port #!
+        if tp_protocol is not None:
+            match_params['ip_proto'] = tp_protocol
+        matches = self.build_matches(**match_params)
 
         new_dest_ip = self.get_ip_address(new_dest)
         new_dest_eth = self.get_mac_address(new_dest)
         out_port = self.get_ports_for_nodes(switch, route[2])[0]
         # NOTE: we have to do an output action as some REST APIs (e.g. ONOS) don't support redirect, or table(0)...
-        actions = self.build_actions(("set_eth_dst", new_dest_eth),
-                                     ("set_ipv4_dst", new_dest_ip),
-                                     ("output", out_port))
+        actions = [("set_eth_dst", new_dest_eth), ("set_ipv4_dst", new_dest_ip), ("output", out_port)]
+        if new_dest_port is not None:
+            actions.insert(-1, ('set_%s_dst' % tp_protocol, new_dest_port))
+        actions = self.build_actions(*actions)
 
-        flow_rules.append(self.build_flow_rule(switch, matches, actions))
+        flow_rules.append(self.build_flow_rule(switch, matches, actions, **kwargs))
 
         # Now we'll use our helper methods to build the remaining flow rules, but ignore the one for the first switch.
-        other_rules = self.build_flow_rules_from_path(route)
+        # We can do this without any further modifications since we already translated the packet's addresses/ports.
+        add_matches = dict(eth_src=src_eth, eth_dst=new_dest_eth)
+        if source_port is not None:
+            add_matches[tp_protocol + '_src'] = source_port
+        if new_dest_port is not None:
+            add_matches[tp_protocol + '_dst'] = new_dest_port
+        # match based on old port if we didn't translate it
+        elif old_dest_port is not None:
+            add_matches[tp_protocol + '_dst'] = old_dest_port
+        other_rules = self.build_flow_rules_from_path(route, add_matches=add_matches if add_matches else None, **kwargs)
+        # XXX: we assume our implementation of this method remains consistent (flow rule list is in same order as route)
+        flow_rules.extend(other_rules[1:])
+
+        # Now, we need to install rules so that when new_dest replies to source the packets will be translated to look
+        # like they came from old_dest.  This requires more exact matching (e.g. ports) to ensure this only affects
+        # e.g. one application rather than ALL traffic between them!
+        #
+        # Again, we first make a custom packet manipulation rule at the first switch from the 'source' (i.e. new_dest),
+        # but this time we're translating the source address!
+        rev_old_source_ip = new_dest_ip
+        rev_new_source_ip = old_dest_ip
+        rev_dest_ip = src_ip
+        rev_old_source_port = new_dest_port
+        rev_new_source_port = old_dest_port
+        rev_dest_port = source_port
+        rev_old_source_eth = new_dest_eth
+        rev_new_source_eth = old_dest_eth
+        rev_dest_eth = src_eth
+
+        route.reverse()
+        switch = route[1]
+        in_port = self.get_ports_for_nodes(new_dest, switch)[1]
+
+        match_params = dict(ipv4_src=rev_old_source_ip, ipv4_dst=rev_dest_ip, in_port=in_port,
+                            eth_src=rev_old_source_eth, eth_dst=rev_dest_eth)
+        if rev_old_source_port is not None:
+            match_params[tp_protocol + '_src'] = rev_old_source_port
+        if rev_dest_port is not None:
+            match_params[tp_protocol + '_dst'] = rev_dest_port
+        # Must do this if we want to alter the transport layer port #!
+        if tp_protocol is not None:
+            match_params['ip_proto'] = tp_protocol
+        matches = self.build_matches(**match_params)
+
+        out_port = self.get_ports_for_nodes(switch, route[2])[0]
+        # NOTE: we have to do an output action as some REST APIs (e.g. ONOS) don't support redirect, or table(0)...
+        actions = [("set_eth_src", rev_new_source_eth), ("set_ipv4_src", rev_new_source_ip), ("output", out_port)]
+        if rev_new_source_port is not None:
+            # Be careful with the ordering here!
+            actions.insert(-1, ('set_%s_src' % tp_protocol, rev_new_source_port))
+        actions = self.build_actions(*actions)
+
+        flow_rules.append(self.build_flow_rule(switch, matches, actions, **kwargs))
+
+        # Now we'll use our helper methods to build the remaining flow rules, but ignore the one for the first switch.
+        # We can do this without any further modifications since we already translated the packet's addresses/ports.
+        # NOTE: we have to overwrite the ipv4_src match rule since we changed it from what's seen on 'route'!
+        add_matches = dict(ipv4_src=rev_new_source_ip, eth_src=rev_new_source_eth, eth_dst=rev_dest_eth)
+
+        if rev_new_source_port is not None:
+            add_matches[tp_protocol + '_src'] = rev_new_source_port
+        # match based on old port if new isn't specified
+        elif rev_old_source_port is not None:
+            add_matches[tp_protocol + '_src'] = rev_old_source_port
+        if rev_dest_port is not None:
+            add_matches[tp_protocol + '_dst'] = rev_dest_port
+        other_rules = self.build_flow_rules_from_path(route, add_matches=add_matches, **kwargs)
         # XXX: we assume our implementation of this method remains consistent (flow rule list is in same order as route)
         flow_rules.extend(other_rules[1:])
 
@@ -406,19 +503,27 @@ class SdnTopology(NetworkTopology):
             kwargs['eth_type'] = '0x86DD'
 
         # now for transport-layer
+        # NOTE: this has only been tested for ONOS!
         key = 'ip_proto'
+        values = dict(udp=17, tcp=6, sctp=132)
         if any('udp' in k for k in kwargs.keys()) and key not in kwargs:
-            kwargs[key] = 17
+            kwargs[key] = values['udp']
         elif any('tcp' in k for k in kwargs.keys()) and key not in kwargs:
-            kwargs[key] = 6
+            kwargs[key] = values['tcp']
         elif any('sctp' in k for k in kwargs.keys()) and key not in kwargs:
-            kwargs[key] = 132
+            kwargs[key] = values['sctp']
+        elif key in kwargs and not isinstance(kwargs[key], int):
+            try:
+                kwargs[key] = values[kwargs[key]]
+            except KeyError:
+                raise ValueError("unrecognized ip_proto type '%s'" % kwargs[key])
 
         return kwargs
 
     def build_actions(self, *args):
-        """Properly format (for the particular controller) OpenFlow
-        packet actions and return the result.
+        """Properly format (for the particular controller) OpenFlow packet actions and return the result.  Note that
+        you must be careful with the ordering of actions!  For example, you typically want to have the 'output' action
+        come last after any header modifications.  Failure to do so will output the packet and THEN modify the header!
 
         @:param *args - ordered list of common OpenFlow actions in the form of either
          strings (actions with no arguments) or tuples
