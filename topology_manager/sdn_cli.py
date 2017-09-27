@@ -30,7 +30,7 @@ def parse_args(args):
 ##################################################################################
 
     parser = argparse.ArgumentParser(description=SDN_CLI_DESCRIPTION,
-                                     #formatter_class=argparse.RawTextHelpFormatter,
+                                     formatter_class=argparse.RawTextHelpFormatter,
                                      #epilog='Text to display at the end of the help print',
                                      #parents=[parent1,...], # add parser args from these ArgumentParsers
                                      # NOTE: for multiple levels of arg
@@ -49,13 +49,19 @@ def parse_args(args):
     # Displaying info
     parser.add_argument('command', default=['hosts'], nargs='*',
                         help='''command to execute can be one of (default=%(default)s):
-                        hosts [include_attributes]          - print the available hosts (with attributes if optional argument is yes/true)
-                        path src dst                        - build and install a path between src and dst using flow rules
-                        mcast addr src dst1 [dst2 ...]      - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules
-                        redirect src old_dst new_dst        - redirect packets from src to old_dst by installing flow rules that convert ipv4_dst to that of new_dst
-                        del-flows                           - deletes all flow rules
-                        del-groups                          - deletes all groups
-                        ''')
+    hosts [include_attributes]          - print the available hosts (with attributes if optional argument is yes/true; NO *ARGS/**KWARGS!)
+    path src dst                        - build and install a path between src and dst using flow rules
+    mcast addr src dst1 [dst2 ...]      - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules (*ARGS/**KWARGS!)
+    redirect src old_dst new_dst        - redirect packets from src to old_dst by installing flow rules that convert ipv4_dst to that of new_dst
+    del-flows                           - deletes all flow rules
+    del-groups                          - deletes all groups
+
+    NOTE: the arguments for most commands with optional parameters will be passed as
+     *args positional arguments to the relevant function call,
+      so please see their method signatures for more details.
+    NOTE: you can also specify **kwargs (for those commands that don't say otherwise) by doing e.g.:
+    redirect source=<src_ip> old_dest=<old_dst_ip> new_dest=<new_dst_ip>
+    ''')
 
 
     # joins logging facility with argparse
@@ -74,8 +80,18 @@ if __name__ == "__main__":
     else:
         raise ValueError("unrecognized / unsupported SdnTopology implementation of type: %s" % args.type)
 
+    # Extract the relevant command and any positional/keyword arguments to its corresponding function call.
     cmd = args.command[0]
-    cmd_args = args.command[1:] if len(args.command) > 0 else None
+    cmd_args = []
+    cmd_kwargs = {}
+    for a in args.command[1:]:
+        if '=' in a:
+            first, second = a.split('=')
+            cmd_kwargs[first] = second
+        else:
+            cmd_args.append(a)
+    nargs = len(cmd_args) + len(cmd_kwargs)
+
     if cmd == 'hosts':
         include_attrs = True if (cmd_args and cmd_args[0].lower() in ('y', 'yes', 't', 'true')) else False
         if include_attrs:
@@ -84,8 +100,8 @@ if __name__ == "__main__":
             print("Hosts:\n%s" % '\n'.join(topo.get_hosts()))
 
     elif cmd == 'path':
-        assert len(cmd_args) == 2, "path command must have exactly 2 hosts specified!"
-        path = topo.get_path(cmd_args[0], cmd_args[1])
+        assert nargs >= 2, "path command must at least have the 2 hosts specified!"
+        path = topo.get_path(*cmd_args, **cmd_kwargs)
         print("Installing Path:", path)
         rules = topo.build_flow_rules_from_path(path)
         rules.extend(topo.build_flow_rules_from_path(list(reversed(path))))
@@ -93,7 +109,7 @@ if __name__ == "__main__":
             assert topo.install_flow_rule(rule), "error installing rule: %s" % rule
 
     elif cmd == 'mcast' or cmd == 'multicast':
-        assert len(cmd_args) >= 3, "must specify an IP address and at least 2 host IDs to build a multicast tree!"
+        assert nargs >= 3, "must specify an IP address and at least 2 host IDs to build a multicast tree!"
         # TODO: validate that first arg is an IP address...
         src_host = cmd_args[1]
         mcast_tree = topo.get_multicast_tree(src_host, cmd_args[2:])
@@ -112,13 +128,11 @@ if __name__ == "__main__":
             assert topo.install_flow_rule(flow), "problem installing flow: %s" % flow
 
     elif cmd == 'redirect':
-        assert len(cmd_args) == 3, "redirect command must have the source, old_destination, and new_destination hosts specified!"
-        src_host = cmd_args[0]
-        old_dst_host = cmd_args[1]
-        new_dst_host = cmd_args[2]
-        print("Redirecting packets from %s originally bound for %s to instead go to %s" % (src_host, old_dst_host, new_dst_host))
+        assert nargs >= 3, "redirect command must at least have the source, old_destination, and new_destination hosts specified!"
+        if len(cmd_args) >= 3:
+            print("Redirecting packets from %s originally bound for %s to instead go to %s" % (cmd_args[0], cmd_args[1], cmd_args[2]))
 
-        flow_rules = topo.build_redirection_flow_rules(source=src_host, old_dest=old_dst_host, new_dest=new_dst_host)
+        flow_rules = topo.build_redirection_flow_rules(*cmd_args, **cmd_kwargs)
         for f in flow_rules:
             assert topo.install_flow_rule(f), "problem installing flow: %s" % f
 
@@ -127,6 +141,8 @@ if __name__ == "__main__":
     elif cmd == 'del-groups':
         topo.remove_all_groups()
 
+    else:
+        print("ERROR: unrecognized command: %s\nrest of args were: %s" % (cmd, args.command[1:]))
 
     # enables logging for all classes
     # log_level = log.getLevelName(args.debug.upper())
