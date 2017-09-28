@@ -4,6 +4,7 @@ import argparse
 import time
 
 import topology_manager
+from ride.config import MULTICAST_FLOW_RULE_PRIORITY
 
 CLASS_DESCRIPTION =  """Middleware layer for sending reliable IoT event notifications to a group of subscribers.
     It configures and chooses from multiple Maximally-Disjoint Multicast Trees (MDMTs) based on
@@ -379,7 +380,9 @@ class RideD(object):
             log.debug("Installing MDMT for %s" % address)
             # TODO: need anything else here?  ip_proto=udp??? , ipv4_src=self.????
             matches = self.topology_manager.build_matches(ipv4_dst=address)
-            groups, flow_rules = self.topology_manager.build_flow_rules_from_multicast_tree(t, self.dpid, matches, group_id=i+10)
+            groups, flow_rules = self.topology_manager.build_flow_rules_from_multicast_tree(t, self.dpid, matches,
+                                                                                            group_id=i+10,
+                                                                                            priority=MULTICAST_FLOW_RULE_PRIORITY)
             for g in groups:
                 # log.debug("Installing group: %s" % self.topology_manager.rest_api.pretty_format_parsed_response(g))
                 self.topology_manager.install_group(g)
