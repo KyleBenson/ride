@@ -449,6 +449,9 @@ class SdnTopology(NetworkTopology):
         """
         return self.rest_api.get_groups(switch)
 
+    def remove_flow_rule(self, switch_id, flow_id):
+        return self.rest_api.remove_flow_rule(switch_id, flow_id)
+
     def remove_all_flow_rules(self):
         """
         Removes all flow rules from all managed devices that have been added using the REST API.

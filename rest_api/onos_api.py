@@ -1,5 +1,8 @@
 #!/usr/bin/python
 
+# NOTE: to view documentation for the ONOS REST API, navigate to http://localhost:8181/onos/v1/docs/
+# (assuming you're running ONOS locally on port 8181 or at least have port forwarding to your VM).
+
 # Based on cli.py from Floodlight's GitHub repo @ https://github.com/floodlight/floodlight/blob/master/example/cli.py
 
 import sys
@@ -95,6 +98,16 @@ class OnosRestApi(BaseRestApi):
         # Need to filter out any flows that haven't been fully deleted yet to avoid confusing users.
         flows = [f for f in flows if f['state'] != 'PENDING_REMOVE']
         return flows
+
+    def remove_flow_rule(self, switch_id, flow_id):
+        """Removes the requested flow rule (installed using this REST API) from the specified switch."""
+        # Return value of flow ID from get_flow_rules is in hex, but removal requires int so we need to do a
+        # conversion if the user specified it as a hex string
+        if isinstance(flow_id, basestring):
+            flow_id = int(flow_id, 16 if flow_id.startswith('0x') else 10)
+
+        path = self.base_path + '/flows/%s/%s' % (switch_id, flow_id)
+        return self.remove(path)
 
     def remove_all_flow_rules(self):
         # Can delete all flows by just specifying to delete all rules from the rest api app

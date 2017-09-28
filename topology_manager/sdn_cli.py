@@ -53,6 +53,7 @@ def parse_args(args):
     path src dst                        - build and install a path between src and dst using flow rules
     mcast addr src dst1 [dst2 ...]      - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules (*ARGS/**KWARGS!)
     redirect src old_dst new_dst        - redirect packets from src to old_dst by installing flow rules that convert ipv4_dst to that of new_dst
+    del-flow switch_id flow_id          - delete the requested flow rule
     del-flows                           - deletes all flow rules
     del-groups                          - deletes all groups
 
@@ -140,6 +141,10 @@ if __name__ == "__main__":
         flow_rules = topo.build_redirection_flow_rules(*cmd_args, **cmd_kwargs)
         for f in flow_rules:
             assert topo.install_flow_rule(f), "problem installing flow: %s" % f
+
+    elif cmd == 'del-flow':
+        assert nargs >= 2, "delete flow command must at least have the switchId and flowId!"
+        topo.remove_flow_rule(*cmd_args, **cmd_kwargs)
 
     elif cmd == 'del-flows':
         topo.remove_all_flow_rules()

@@ -86,6 +86,10 @@ class BaseRestApi(object):
         path = 'path/to/flow/request/here'
         return self.get(path)
 
+    def remove_flow_rule(self, switch_id, flow_id):
+        """Removes the requested flow rule (installed using this REST API) from the specified switch."""
+        raise NotImplementedError
+
     def remove_all_flow_rules(self):
         """
         Removes all flow rules from all managed devices that have been added using the REST API.
