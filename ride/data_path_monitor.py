@@ -364,28 +364,45 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         if nsuccesses is None:
             nsuccesses = self.DEFAULT_DETECTION_WINDOW_SIZE
 
-        # TODO: question: why are we doing this exactly?  won't this make a DP seem recovered faster than it really
-        # should be since further probes are very unlikely to timeout?  this could cause flapping when we
-        # go back to a more reasonable timeout value...  Perhaps we should instead continue adapting the parameters
-        # so that the timeout will gradually increase to match the increased RTT (assuming it's a high-latency
-        # congestion event)
-        self._timeout = self.max_detection_time
+        # we aim for detecting a recovery (assuming 0 loss rate) within our specified detection time by doing:
+        # ENHANCE: instead of waiting for successive responses, perhaps track the recent loss rate and wait for it to
+        # exceed some threshold?
+        # TODO: perhaps we should actually account for the expected RTT here?  or maybe use our calculated detection
+        # window size instead of a default value?
+        self._timeout = self.max_detection_time / float(nsuccesses)
 
         successive_count = 0
         while self.is_data_path_down:
             delay = self.do_probing_round(count=False)
             if delay is not False:
                 successive_count += 1
+                # TODO: perhaps we should be doing some sort of adaptive probing during recovery?  Or at least continue
+                # estimating the link characteristics whenever we do receive a response (see note below after recovery).
+                # self.estimate_rtt(delay)
+                # self.adapt_probing_parameters()
             else:
                 successive_count = 0
                 delay = self._timeout
 
-            # always do this as even if we recovered, we should wait before returning to regular mode / sending a probe
-            self.wait_for_next_probe(delay)
+            # Fast-recovery scheme: only wait to send the next probe if we still KNOW the DataPath is down: once we
+            # receive a single response, we should send the next probes faster (only one outstanding at a time though)
+            # so that we can quickly assess whether it truly recovered.
+            if successive_count == 0:
+                self.wait_for_next_probe(delay)
 
-            if successive_count > nsuccesses:
+            # immediately notify when recovered, but still wait before returning to regular mode / sending another probe
+            elif successive_count >= nsuccesses:
                 log.debug("DataPath %s recovered after %d successful probes in a row!" % (self.data_path_id, nsuccesses))
                 self.update_link_status(DATA_PATH_UP)
+                self.wait_for_next_probe(delay)
+                # reset our probing parameters, especially timeout
+                # TODO: should probably take into consideration that the recovered path may have different
+                # characteristics e.g. higher RTT; maybe re-run the initial phase???  Would have to do it carefully and
+                # with modifications in order to potentially detect a failure again...
+                # NOTE: going back to our original parameters before the failure can cause flapping if we don't
+                # re-estimate these characteristics due to the recovered path possibly having a much higher RTT, which
+                # would cause further timeouts!
+                self.adapt_probing_parameters()
                 return
 
     def run(self):
