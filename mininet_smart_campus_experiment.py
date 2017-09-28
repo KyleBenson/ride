@@ -30,14 +30,19 @@ from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from topology_manager.test_sdn_topology import mac_for_host  # used for manual MAC assignment
 
 from scale_config import *
+from ride.config import *
 
-EXPERIMENT_DURATION = 90  # in seconds
+# in seconds; make sure this leaves enough time for all data_path failures, recoveries, and publishing additional
+# seismic events so we can see the recovery!  Maybe just configure this dynamically in the future?
+EXPERIMENT_DURATION = 110
 # EXPERIMENT_DURATION = 10  # for testing
 SEISMIC_EVENT_DELAY = 60  # seconds before the 'earthquake happens', i.e. sensors start sending data
 # SEISMIC_EVENT_DELAY = 5  # for testing
+TIME_BETWEEN_SEISMIC_EVENTS = 10  # for multiple earthquakes / aftershock events
 IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
 PROBE_BASE_SRC_PORT = 9900  # ensure this doesn't collide with any other apps/protocols you're using!
 ECHO_SERVER_PORT = 9999
+COAP_CLIENT_SRC_PORT = 7777  # for RemoteCoapEventSink; needed to properly identify publisher traffic
 OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at the default port
 # subnet for all hosts (if you change this, update the __get_ip_for_host() function!)
 # NOTE: we do /9 so as to avoid problems with addressing e.g. the controller on the local machine
@@ -487,7 +492,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # to fail a lot of nodes/links, we schedule the failures for a second before.
         # ENCHANCE: instead of just 1 sec before, should try to figure out how long
         # it'll take for different machines/configurations and time it better...
-        log.info('*** Configuration done!  Waiting for earthquake to start...')
+        exp_start_time = time.time()
+        log.info('*** Configuration done!  Experiment started at %f; now waiting for failure events...' % exp_start_time)
         time.sleep(SEISMIC_EVENT_DELAY - 1)
         quake_time = time.time()
         log.info('*** Earthquake at %s!  Applying failure model...' % quake_time)
@@ -497,29 +503,37 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         for node in self.failed_nodes:
             node.stop(deleteIntfs=False)
 
-        ## FAIL DATA PATHS
+        ###    FAIL / RECOVER DATA PATHS
+        # According to the specified configuration, we update each requested DataPath link to the specified status
+        # up(recover) / down(fail), sleeping between each iteration to let the system adapt to the changes.
 
-        # fail ONE data path
         # XXX: because RideC assigns all publishers to the 'highest priority' (lowest alphanumerically) DP,
-        # we just fail the one with highest priority here to observe the fail-over.
-        # TODO: allow the failed DataPaths to be configurable and allow re-enabling them after some time
-        dpl = self.data_path_links
-        if dpl is not None:
-            dpl = sorted(dpl)
-            link_to_fail = dpl[0]
-            log.debug("failing DataPath link: %s" % str(link_to_fail))
-            self.net.configLinkStatus(link_to_fail[0], link_to_fail[1], 'down')
+        # each iteration should just fail the one with highest priority here to observe the fail-over.
+        #
+        # Fail ALL DataPaths!  then recover one...
+        data_path_changes = [(dpl[0], dpl[1], 'down', TIME_BETWEEN_SEISMIC_EVENTS)
+                             for dpl in sorted(self.data_path_links)[1:]]
+        # XXX: the first one should happen immediately!
+        first_dpl = sorted(self.data_path_links)[0]
+        data_path_changes.insert(0, (first_dpl[0], first_dpl[1], 'down', 0))
+        data_path_changes.append((first_dpl[0], first_dpl[1], 'up', TIME_BETWEEN_SEISMIC_EVENTS))
 
-        log.debug('*** Failure model took %f seconds to apply' % (time.time() - quake_time))
-        # TODO: record additional failures.... maybe also recoveries?
-        failure_times = [quake_time]
+        for link_src, link_dst, new_status, delay in data_path_changes:
+            log.debug("waiting for DataPath change...")
+            time.sleep(delay)
+            log.debug("%s DataPath link (%s--%s) at time %f" %
+                      ("failing" if new_status == 'down' else "recovering", link_src, link_dst, time.time()))
+            self.net.configLinkStatus(link_src, link_dst, new_status)
 
-        log.info("*** Waiting for experiment to complete...")
-
-        time.sleep(EXPERIMENT_DURATION - SEISMIC_EVENT_DELAY)
+        # wait for the experiment to finish by sleeping for the amount of time we haven't used up already
+        remaining_time = exp_start_time + EXPERIMENT_DURATION - time.time()
+        log.info("*** Waiting %f seconds for experiment to complete..." % remaining_time)
+        if remaining_time > 0:
+            time.sleep(remaining_time)
 
         return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
-                'failure_times': failure_times,
+                'quake_start_time': quake_time,
+                'data_path_changes': data_path_changes,
                 'publishers': [p.name for p in self.publishers],
                 'subscribers': [s.name for s in self.subscribers]}
 
@@ -637,7 +651,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                     route.insert(0, self.get_host_dpid(self.server))
                     log.debug("Installing static route for subscriber %s: %s" % (sub, route))
 
-                    flow_rules = self.topology_adapter.build_flow_rules_from_path(route)
+                    flow_rules = self.topology_adapter.build_flow_rules_from_path(route, priority=STATIC_PATH_FLOW_RULE_PRIORITY)
                     for r in flow_rules:
                         self.topology_adapter.install_flow_rule(r)
                 except Exception as e:
@@ -684,7 +698,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                  name="RideC", topology_mgr=sdn_topology_cfg, data_paths=data_path_args,
                                                  edge_server=self.get_host_dpid(server),
                                                  cloud_server=self.get_host_dpid(self.cloud),
-                                                 publishers=[self.get_host_dpid(h) for h in sensors],
+                                                 publishers=[(h.IP(), COAP_CLIENT_SRC_PORT) for h in sensors],
                                                  )
 
             # Now set the static routes for probes to travel through the correct DataPath Gateway.
@@ -700,12 +714,12 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 dst_port = ECHO_SERVER_PORT
 
                 matches = dict(udp_src=src_port, udp_dst=dst_port)
-                frules = self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches)
+                frules = self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches, priority=STATIC_PATH_FLOW_RULE_PRIORITY)
 
                 # NOTE: need to do the other direction to ensure responses come along same path!
                 route.reverse()
                 matches = dict(udp_dst=src_port, udp_src=dst_port)
-                frules.extend(self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches))
+                frules.extend(self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches, priority=STATIC_PATH_FLOW_RULE_PRIORITY))
 
                 # log.debug("installing probe flow rules for DataPath (port=%d)\nroute: %s\nrules: %s" %
                 #           (src_port, route, frules))
@@ -779,7 +793,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 path.insert(0, self.get_node_dpid(self.cloud_switches[0]))
                 # TODO: what to do with this?  we can't add the cloud or the last gw to be handled will be the one routed through...
                 # path.insert(0, self.get_node_dpid(self.cloud))
-                frules = self.topology_adapter.build_flow_rules_from_path(path, matches)
+                frules = self.topology_adapter.build_flow_rules_from_path(path, matches, priority=STATIC_PATH_FLOW_RULE_PRIORITY)
 
                 for f in frules:
                     self.topology_adapter.install_flow_rule(f)
@@ -823,9 +837,15 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                 class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
                                                 output_events_file=os.path.join(outputs_dir,
                                                                                 'publisher_%s' % client_id),
-                                                start_delay=delay, sample_interval=5),
+                                                # Need to start at specific time, not just delay, as it takes a few
+                                                # seconds to start up each process.
+                                                start_time=time.time() + delay,
+                                                sample_interval=TIME_BETWEEN_SEISMIC_EVENTS),
                 sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
-                                              name="CoapEventSink", hostname=cloud_ip))
+                                              name="CoapEventSink", hostname=cloud_ip, src_port=COAP_CLIENT_SRC_PORT)
+                # Can optionally enable this to print out each event in its entirety.
+                # + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
+            )
 
             # Build up the final cli configs, merging the individual ones built above if necessary
             args = base_args
