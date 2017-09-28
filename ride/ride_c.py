@@ -1,10 +1,12 @@
 # Resilient IoT Data Exchange - Collection middleware
 import logging
-import random
+
+from ride.data_path_monitor import DATA_PATH_UP, DATA_PATH_DOWN
+from config import *
 
 import topology_manager
-from ride.data_path_monitor import DATA_PATH_UP, DATA_PATH_DOWN
 from topology_manager.sdn_topology import SdnTopology
+from scale_client.networks.util import DEFAULT_COAP_PORT
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +80,9 @@ class RideC(object):
 
         self._distance_metric = distance_metric
 
+        # Save the switches currently holding redirection flow rules so we can delete them later upon recovery.
+        self.__redirecting_switches = []
+
     ## Helper functions
 
     @property
@@ -86,6 +91,28 @@ class RideC(object):
 
     def hosts_for_data_path(self, data_path):
         return [host for host, dp in self._data_path_for_host.items() if dp == data_path]
+
+    def _get_host_ip_address(self, host_address):
+        """Extracts the IP address component from the specified host_address.  This is intended to allow future
+        migration to a different (or multiple) address format."""
+        return host_address[0]
+
+    def _get_host_port(self, host_address):
+        """Extracts the port component from the specified host_address.  This is intended to allow future
+        migration to a different (or multiple) address format."""
+        # XXX: we assume everything is IPv4!!!
+        return host_address[1]
+
+    def _get_server_ip_address(self, server_dpid):
+        """Extracts the IP address component from the specified server_dpid.  This is intended to allow future
+        migration to a different (or multiple) address format."""
+        return self.topology_manager.get_ip_address(server_dpid)
+
+    def _get_server_port(self, server_dpid):
+        """Extracts the port component from the specified server_dpid.  This is intended to allow future
+        migration to a different (or multiple) address format."""
+        # XXX: we assume everything CoAP!!!
+        return DEFAULT_COAP_PORT
 
     @property
     def gateways(self):
@@ -102,19 +129,19 @@ class RideC(object):
     def is_data_path_up(self, data_path_id):
         return self._data_path_status[data_path_id] == DATA_PATH_UP
 
-    def _choose_data_path(self, host_id=None):
+    def _choose_data_path(self, host_address=None):
         """
         Choose a DataPath from those currently up that's well-suited for the specified host.
         Currently, we just choose the 'highest priority' (as determined by DataPathID order low-to-high) DataPath
         that is currently functional.
-        :param host_id: optional and currently ignored
+        :param host_address: optional and currently ignored
         :return:
         """
         dp_choices = [dp for dp in self.data_paths if self.is_data_path_up(dp)]
         # TODO: how to handle none being available??? random choice? random.choice(self.data_paths)
         dp_choices = sorted(dp_choices)
         chosen_dp = dp_choices[0]
-        log.debug("assigning host %s to DP %s" % (host_id, chosen_dp))
+        log.debug("assigning host %s to DP %s" % (host_address, chosen_dp))
         return chosen_dp
 
     ## the main public API: control, registration and notification functions
@@ -148,12 +175,20 @@ class RideC(object):
 
         log.debug("DataPath %s status change: %s" % (data_path_id, status))
 
+        # only need to do anything if status actually changes
+        if self._data_path_status[data_path_id] == status:
+            return
+
         self._data_path_status[data_path_id] = status
         if status == DATA_PATH_DOWN:
             if self.available_data_paths:
                 self._failover_data_path(data_path_id)
             else:
                 self._on_all_data_paths_down()
+        elif status == DATA_PATH_UP:
+            self._recover_data_path(data_path_id)
+        else:
+            log.error("unrecognized DataPath status %s for DP %s" % (status, data_path_id))
 
     # ENHANCE: unregister versions of these?
 
@@ -178,10 +213,13 @@ class RideC(object):
         # ENHANCE: implement this, which might include calling some remote node's API to start up a probe to this cloud...
         # self._cloud_for_data_path = cloud_id
 
-    def register_host(self, host_id, use_data_path=None):
+    # ENHANCE: should accept
+    def register_host(self, host_address, use_data_path=None):
         """
         Registers the specified host as an IoT data publisher managed by RideC.
-        :param host_id: DPID of the host
+        :param host_address: address of the host formatted as per the family of the socket the registration was
+         received from (e.g. (ipv4_add, src_port) for IPv4).  NOTE: we need the host's source port # too so we can
+          properly distinguish traffic of one application from another on the same host!
         :param use_data_path: optional argument that sets the initial DataPath the host is assigned to.  Default
         behavior (or if the requested DataPath is not UP) is to pick an UP DataPath arbitrarily.
         :raises ValueError: if host or DataPath aren't found or if the host is already registered
@@ -195,47 +233,49 @@ class RideC(object):
         except KeyError:
             raise ValueError("DataPath %s not found!  Can't assign the registered host to it..." % use_data_path)
 
-        if not host_id in self.topology_manager.topo:
-            raise ValueError("host %s not found!  Cannot register it for RideC..." % host_id)
-        if host_id in self.hosts:
-            raise ValueError("host %s already registered!  We currently do not support updating registrations..." % host_id)
+        try:
+            self.topology_manager.get_host_by_ip(self._get_host_ip_address(host_address))
+        except (KeyError, ValueError):
+            raise ValueError("host %s not found!  Cannot register it for RideC..." % host_address)
+        if host_address in self.hosts:
+            raise ValueError("host %s already registered!  We currently do not support updating registrations..." % host_address)
 
         if use_data_path is None:
-            use_data_path = self._choose_data_path(host_id)
+            use_data_path = self._choose_data_path(host_address)
 
-        self._data_path_for_host[host_id] = use_data_path
-        self._update_host_route(host_id)
+        self._data_path_for_host[host_address] = use_data_path
+        self._update_host_route(host_address)
 
         return use_data_path
 
     ## DataPath and routing management APIs: should really be considered protected methods
 
-    def _update_host_route(self, host_id, route=None):
+    def _update_host_route(self, host_address, route=None):
         """
         Update the given host's route to the optionally-specified one, which by default is chosen for you;
          install flow rules if necessary.
-        :param host_id:
+        :param host_address:
         :return: the assigned route
         """
 
         if route is None:
-            route = self._get_host_route(host_id)
+            route = self._get_host_route(host_address)
 
         # only update flow rules if necessary
-        if host_id not in self._host_routes or route != self._host_routes[host_id]:
+        if host_address not in self._host_routes or route != self._host_routes[host_address]:
             try:
-                flow_rules = self.topology_manager.build_flow_rules_from_path(route)
+                flow_rules = self.topology_manager.build_flow_rules_from_path(route, priority=STATIC_PATH_FLOW_RULE_PRIORITY)
                 for r in flow_rules:
                     self.topology_manager.install_flow_rule(r)
 
                 # do this last in case we failed to install flow rules
-                self._host_routes[host_id] = route
+                self._host_routes[host_address] = route
             except BaseException as e:
                 log.error("building/installing flow rules for path %s failed with error: %s" % (route, e))
 
         return route
 
-    def _get_host_route(self, host_id, dest=None):
+    def _get_host_route(self, host_address, dest=None):
         """Return the route from the specified host to the specified destination. By default, this route goes through
         the gateway responsible for its assigned DataPath and eventually to the cloud server."""
 
@@ -243,13 +283,14 @@ class RideC(object):
         # it goes through the right gateway, hence two steps...
         cloud_gw_route = None
         if dest is None:
-            data_path = self._data_path_for_host[host_id]
+            data_path = self._data_path_for_host[host_address]
             gateway = self._gateway_for_data_path[data_path]
             # ENHANCE: choose the assigned cloud if we support multiple!
             cloud_gw_route = self.topology_manager.get_path(gateway, self.cloud_server)
             dest = gateway
 
-        route = self.topology_manager.get_path(host_id, dest, weight=self._distance_metric)
+        host_dpid = self.topology_manager.get_host_by_ip(self._get_host_ip_address(host_address))
+        route = self.topology_manager.get_path(host_dpid, dest, weight=self._distance_metric)
         if cloud_gw_route:
             route = self.topology_manager.merge_paths(route, cloud_gw_route)
         return route
@@ -264,6 +305,23 @@ class RideC(object):
         for h in impacted_hosts:
             self._data_path_for_host[h] = self._choose_data_path(h)
             self._update_host_route(h)
+
+    def _recover_data_path(self, data_path):
+        """
+        Reacts to the specified DataPath recovering by recomputing host assignments and possibly updating them if
+        they're assigned to a different (possibly this newly-recovered) DataPath.  Note that we also have to remove
+        any flow rules doing redirection here so that they don't prevent communication with the primary data sink (cloud).
+        :param data_path: currently ignored
+        :return:
+        """
+
+        self.clear_redirection_flows()
+
+        for h in self.hosts:
+            old_dp = self._data_path_for_host[h]
+            new_dp = self._data_path_for_host[h] = self._choose_data_path(h)
+            if old_dp is None or old_dp != new_dp:
+                self._update_host_route(h)
 
     def _on_all_data_paths_down(self):
         """
@@ -280,9 +338,52 @@ class RideC(object):
             new_dest = self.edge_server
             route = self._get_host_route(h, new_dest)
 
-            flow_rules = self.topology_manager.build_redirection_flow_rules(h, old_dest, new_dest, route=route)
+            # ENHANCE: may need to handle other address families?  Or transport layers?
+            host_dpid = self.topology_manager.get_host_by_ip(self._get_host_ip_address(h))
+            host_src_port = self._get_host_port(h)
+            old_dst_port = self._get_server_port(old_dest)
+            new_dst_port = self._get_server_port(new_dest)
+            flow_rules = self.topology_manager.build_redirection_flow_rules(host_dpid, old_dest, new_dest,
+                                                                            route=route, tp_protocol='udp',
+                                                                            source_port=host_src_port,
+                                                                            old_dest_port=old_dst_port,
+                                                                            new_dest_port=new_dst_port,
+                                                                            priority=REDIRECTION_FLOW_RULE_PRIORITY)
             for f in flow_rules:
                 self.topology_manager.install_flow_rule(f)
+
+            # XXX: Save the switches that are doing actual redirection translations of addresses/ports.  Upon recovery,
+            # we will later remove these flow rules from them.  Note that the current implementation just uses the
+            # two switches saved below for this translation.
+            self.__redirecting_switches.append(route[1])
+            self.__redirecting_switches.append(route[-2])
+
             self._host_routes[h] = route
-            # ENHANCE: may want to set a translation for the other direction so that the host receives a response and
-            # thinks it's from old_dest rather than new_dest
+            self._data_path_for_host[h] = None
+
+        log.debug("finished re-routing hosts to edge!")
+
+    def clear_redirection_flows(self):
+        """
+        Clears all redirection flow rules using a serious HACK:
+        We assume that we can leave the flow rules that simply forward traffic since it shouldn't cause any problems.
+        :return:
+        """
+
+        # XXX: could get all flows for the switches that do actual translation; find all that have the redirect
+        # priority, get their flowId, and then delete all those flows?  Super hacky but might actually be easier than
+        # trying to look through returned flow rules to find those with the same matches/actions...
+
+        for switch_id in self.__redirecting_switches:
+            # XXX: these are all ONOS api-specific methods for digging into the flows' details!
+            flows = self.topology_manager.rest_api.get_flow_rules(switch_id)
+            flow_ids_to_kill = []
+            for f in flows:
+                # XXX: we find the target translation flow rules by just looking for those
+                if f['priority'] == REDIRECTION_FLOW_RULE_PRIORITY:
+                    flow_ids_to_kill.append(f['id'])
+
+            for f in flow_ids_to_kill:
+                self.topology_manager.remove_flow_rule(switch_id, f)
+
+        self.__redirecting_switches = []
