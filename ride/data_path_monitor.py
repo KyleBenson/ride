@@ -129,11 +129,12 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
     # non-zero default to avoid math errors esp. due to link loss rate of 0
     DEFAULT_DETECTION_WINDOW_SIZE = 3
 
-    def __init__(self, max_detection_time=3000, max_false_positive=0.01, init_window=100, **kwargs):
+    def __init__(self, max_detection_time=3000, max_false_positive=0.01, init_window=100, alpha=0.8, **kwargs):
         """
         :param max_detection_time: maximum time (in ms) it will take to detect a failure/congestion event
         :param max_false_positive: in (exclusive) range (0, 1.0) to determine false positive rate
         :param init_window: number of probes required when first starting up to determine the DataPath's normal status
+        :param alpha: exponential weighting factor used in calculating average RTT
         :param kwargs: passed to super(...)
         """
         super(RideCDataPathMonitor, self).__init__(**kwargs)
@@ -142,6 +143,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         self.max_detection_time = max_detection_time
         self.max_false_positive = max_false_positive
         self.init_window = init_window
+        self._alpha = alpha
 
         if max_false_positive <= 0:
             raise ValueError("cannot specify a max_false_positive rate <= 0!! Requested: %f" % max_false_positive)
@@ -197,7 +199,9 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
 
         except socket.timeout:
             log.warning("DP %s: Timeout Probe (seq:%d)" % (self.data_path_id, self._seq - 1))
-            # TODO: this hacky return value causes issues when the measured delay is actually 0ms (e.g. running on localhost): let's do something better...
+            # TODO: this hacky return value caused issues when the measured delay was actually 0ms
+            # (e.g. due to running on localhost): we should maybe change this API later, but for now see how we use
+            # the 'is' statement to distinguish False from 0ms
             return False
         # TODO: handle other errors? such as receiving from the wrong server...
         # except socket.error:
@@ -273,6 +277,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         """
         Adapts the detector's parameters according to the RideC resource-conserving adaptive probing algorithm.
         """
+        # TODO: should probably do a weighted average of link loss rather than this calculation over the whole lifetime
         self._link_loss = 1.0 - float(self._total_received) / self._total_sent
         self.set_detection_window_size()
         self._timeout = self._rtt_a * 2
@@ -297,19 +302,22 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         else:
             return DATA_PATH_UP
 
-    def estimate_rtt(self, delay, alpha=0.8):
+    def estimate_rtt(self, delay, alpha=None):
         """
         Maintains a weighted moving average of the Round-Trip Time (RTT).  Each time you call this function with a new
         delay value, the internal RTT estimate is adjusted to account for this new data point.
         :param delay: the delay from the most recent probe
-        :param alpha: weighting factor applied to the previously estimated RTT.
+        :param alpha: weighting factor applied to the previously estimated RTT (default=self._alpha; see __init__)
         :return: the new RTT estimate
         """
+
+        if alpha is None:
+            alpha = self._alpha
 
         if self._rtt_a is None:
             self._rtt_a = delay
         else:
-            self._rtt_a = 0.8 * self._rtt_a + 0.2 * delay
+            self._rtt_a = alpha * self._rtt_a + (1.0 - alpha) * delay
 
         return self._rtt_a
 
@@ -330,7 +338,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         for i in range(nprobes):
             delay = self.do_probing_round(count=True)
             # just ignore timeouts...
-            if delay:
+            if delay is not False:
                 self.estimate_rtt(delay)
             # TODO: sleep for some time between probes???
 
@@ -366,7 +374,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         successive_count = 0
         while self.is_data_path_down:
             delay = self.do_probing_round(count=False)
-            if delay:
+            if delay is not False:
                 successive_count += 1
             else:
                 successive_count = 0
@@ -396,7 +404,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         while self._running:
             if not self.is_data_path_down:
                 delay = self.do_probing_round(count=True)
-                if not delay:
+                if delay is False:
                     successive_fails += 1
                     delay = self._timeout
                 else:
