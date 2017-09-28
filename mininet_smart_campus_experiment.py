@@ -678,7 +678,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         seismic_alert_server_cfg = '' if not self.with_ride_d else make_scale_config_entry(
             class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
             output_events_file=os.path.join(outputs_dir, 'srv'),
-            name="SeismicServer")
+            name="EdgeSeismicServer")
 
         _srv_apps = seismic_alert_server_cfg
         if self.with_ride_c:
@@ -754,7 +754,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             seismic_alert_cloud_cfg = '' if not self.with_ride_d else make_scale_config_entry(
                 class_path="seismic_warning_test.seismic_alert_server.SeismicAlertServer",
                 output_events_file=os.path.join(outputs_dir, 'cloud'),
-                name="SeismicServer")
+                name="CloudSeismicServer")
             cloud_apps = seismic_alert_cloud_cfg
 
             cloud_net_cfg = make_scale_config_entry(class_path='udp_echo_server.UdpEchoServer',
