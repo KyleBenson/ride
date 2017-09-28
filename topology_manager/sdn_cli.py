@@ -11,7 +11,7 @@ and properly format them.'''
 # (c) Kyle Benson 2017
 
 import argparse
-import logging as log
+import logging
 #from os.path import isdir
 #from os import listdir
 #from getpass import getpass
@@ -37,6 +37,9 @@ def parse_args(args):
                                      # scripts, will have to use add_help=False
                                      # or may consider using parse_known_args()
                                      )
+
+    parser.add_argument('--debug', '-d', action='store_true',
+                        help='''enable debug-level logging for all modules (has global effect)''')
 
     # Configuring the manager itself
     parser.add_argument('--type', type=str, default='onos',
@@ -77,6 +80,9 @@ def parse_args(args):
 if __name__ == "__main__":
     import sys
     args = parse_args(sys.argv[1:])
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     if args.type == 'onos':
         topo = OnosSdnTopology(ip=args.ip, port=args.port)
