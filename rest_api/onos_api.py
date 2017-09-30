@@ -257,11 +257,13 @@ def main(argv):
     parser = argparse.ArgumentParser(description='process args', usage=usage_desc)
     parser.add_argument('--ip', default='localhost')
     parser.add_argument('--port', default=8181)
+    parser.add_argument('--username', '-u', default='karaf')
+    parser.add_argument('--password', '-p', default='karaf')
     parser.add_argument('cmd')
     parser.add_argument('otherargs', nargs='*')
     args = parser.parse_args(argv)
 
-    rest = OnosRestApi(args.ip, args.port)
+    rest = OnosRestApi(args.ip, args.port, username=args.username, password=args.password)
     return rest.run_command(args.cmd, args.otherargs)
 
 if __name__ == '__main__':
