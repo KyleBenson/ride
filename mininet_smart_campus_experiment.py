@@ -29,7 +29,7 @@ from mininet.link import TCLink, Intf
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from topology_manager.test_sdn_topology import mac_for_host  # used for manual MAC assignment
 
-from scale_config import *
+from config import *
 from ride.config import *
 
 # in seconds; make sure this leaves enough time for all data_path failures, recoveries, and publishing additional
@@ -127,8 +127,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # This gets passed to seismic hosts
         self.debug_level = kwargs.get('debug', 'error')
 
-        # These will all be filled in by calling setup_mininet()
-        #TODO: do we actually need all these???
+        # These will all be filled in by calling setup_topology()
+        # NOTE: make sure you reset these between runs so that you don't collect several runs worth of e.g. hosts!
         self.hosts = []
         self.switches = []
         self.cloud_gateways = []
@@ -534,8 +534,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
                 'quake_start_time': quake_time,
                 'data_path_changes': data_path_changes,
-                'publishers': [p.name for p in self.publishers],
-                'subscribers': [s.name for s in self.subscribers]}
+                'publishers': {p.IP(): p.name for p in self.publishers},
+                'subscribers': {s.IP(): s.name for s in self.subscribers}}
 
     def setup_topology_manager(self):
         """
@@ -944,7 +944,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             CLI(self.net)
 
         # Clear out all the flows/groups from controller
-        if self.topology_adapter is not None:
+        # XXX: this method is quicker/more reliable than going through the REST API since that requires deleting each
+        # group one at a time!
+        if self.topology_adapter_type == 'onos':
+            log.debug("Resetting controller for next run...")
+            p = Popen("%s %s" % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
+            p.wait()
+        elif self.topology_adapter is not None:
             log.debug("Removing groups and flows via REST API.  This could take a while while we wait for the transactions to commit...")
             self.topology_adapter.remove_all_flow_rules()
 
@@ -959,6 +965,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 leftover_groups = self.topology_adapter.get_groups()
                 ngroups = len(leftover_groups)
                 # len(leftover_groups) == 0, "Not all groups were cleared after experiment! Still left: %s" % leftover_groups
+        else:
+            log.warning("No topology adapter!  Cannot reset it between runs...")
 
         # BUG: This might error if a process (e.g. iperf) didn't finish exiting.
         try:
@@ -971,7 +979,23 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         p = Popen('sudo mn -c > /dev/null 2>&1', shell=True)
         p.wait()
 
+        # Reset all of our collections of topology components, processes, etc.  This is copied straight from __init__,
+        # but we don't put it in a separate helper function called from there as Pycharm would complain about it...
+        self.hosts = []
+        self.switches = []
+        self.cloud_gateways = []
+        self.cloud_switches = []
+        self.links = []
+        self.net = None
+        self.controller = None
+        self.nat = None
+        self.server_switch = None
+        self.popens = []
+        self.client_iperfs = []
+        self.server_iperfs = []
+
         # Sleep for a bit so the controller/OVS can finish resetting
+        log.debug("*** Done cleaning up the run!  Waiting %dsecs for changes to propagate to OVS/SDN controller..." % SLEEP_TIME_BETWEEN_RUNS)
         time.sleep(SLEEP_TIME_BETWEEN_RUNS)
 
     ####   Helper functions for working with Mininet nodes/links    ####

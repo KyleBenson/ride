@@ -16,10 +16,10 @@ from os import getpid
 from multiprocessing import Pool, Manager
 from multiprocessing.managers import ValueProxy
 import signal
-from time import sleep
 import traceback
-from failure_model import SmartCampusFailureModel
 from itertools import chain
+
+from failure_model import SmartCampusFailureModel
 
 # when True, this flag causes run.py to only print out the commands rather than run them each
 # testing = True
@@ -32,18 +32,14 @@ nruns = 5
 reverse_cmds = False
 using_mininet = True
 if using_mininet:
+    if getpass.getuser() != 'root':
+        print "ERROR: Mininet must be run as root!"
+        exit(1)
+
     from mininet_smart_campus_experiment import MininetSmartCampusExperiment as TheSmartCampusExperiment
-    # Since Mininet runs as root, we need a way of invoking ONOS commands as the ONOS user
-    # to reset the controller in between executions.  This is a HACK as we couldn't get the
-    # shell to execute with vagrant's proper env variables that let us use the 'onos' command,
-    # which would let us just call 'tools/onos_reset.sh'
-    controller_reset_cmd = "su -c 'ssh -p 8101 vagrant@localhost wipe-out please' vagrant"
+    from config import CONTROLLER_IP, CONTROLLER_RESET_CMD, IGNORE_OUTPUT
 else:
     from networkx_smart_campus_experiment import NetworkxSmartCampusExperiment as TheSmartCampusExperiment
-controller_ip = "10.0.2.15"
-if using_mininet and getpass.getuser() != 'root':
-    print "ERROR: Mininet must be run as root!"
-    exit(1)
 
 DEFAULT_PARAMS = {
     'fprob': 0.1,
@@ -281,15 +277,14 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
         try:
             if using_mininet:
                 # Clean SDN Controller (ONOS) and Mininet just in case
-                ignore_output = ' > /dev/null 2>&1'
-                p = subprocess.Popen('%s %s' % (controller_reset_cmd, ignore_output), shell=True)
+                p = subprocess.Popen('%s %s' % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
                 p.wait()
-                p = subprocess.Popen('sudo mn -c %s' % ignore_output, shell=True)
+                p = subprocess.Popen('sudo mn -c %s' % IGNORE_OUTPUT, shell=True)
                 p.wait()
 
                 # Need to set params used for real system configs.
                 # ENHANCE: include port #, topology_adapter_type, etc...
-                kwargs['controller_ip'] = controller_ip
+                kwargs['controller_ip'] = CONTROLLER_IP
 
             failure_model = SmartCampusFailureModel(**kwargs)
             exp = TheSmartCampusExperiment(failure_model=failure_model, **kwargs)
