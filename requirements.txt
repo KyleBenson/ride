@@ -1,5 +1,5 @@
 ipaddress
-networkx
+#networkx  # we use a specific version with personal modifications; see my fork
 argparse
 requests
 
