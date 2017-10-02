@@ -223,7 +223,6 @@ class SmartCampusExperiment(object):
             result = self.run_experiment()
             self.teardown_experiment()
 
-            result['run'] = r
             self.record_result(result)
 
             if progress_file is not None:
@@ -245,12 +244,14 @@ class SmartCampusExperiment(object):
         signal.signal(signal.SIGINT, __sigint_handler)
 
     def record_result(self, result):
-        """Result is a dict that includes the percentage of subscribers
-        reachable as well as metadata such as run #"""
+        """Result is a dict that includes the experimental results for the current run i.e. percentage of subscribers
+        reachable, what parameters were used, etc.  This method also records additional parameters such as run #,
+        failed_nodes/links, etc."""
 
         # First, add additional parameters used on this run.
         result['failed_nodes'] = self.failed_nodes
         result['failed_links'] = self.failed_links
+        result['run'] = self.current_run_number
         self.results['results'].append(result)
 
     def output_results(self):

@@ -26,6 +26,7 @@ class SdnTopology(NetworkTopology):
     def __init__(self, rest_api):
         """
         :param rest_api.base_rest_api.BaseRestApi rest_api:
+        :type rest_api: rest_api.base_rest_api.BaseRestApi
         """
         super(SdnTopology, self).__init__()
         self.rest_api = rest_api
