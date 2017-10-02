@@ -385,12 +385,17 @@ class RideD(object):
                                                                                             priority=MULTICAST_FLOW_RULE_PRIORITY)
             for g in groups:
                 # log.debug("Installing group: %s" % self.topology_manager.rest_api.pretty_format_parsed_response(g))
-                self.topology_manager.install_group(g)
+                res = self.topology_manager.install_group(g)
+                if not res:
+                    log.error("Problem installing group %s" % g)
             flows.extend(flow_rules)
 
+        # Need a chance for groups to populate or the flow rule will have an unknown group treatment!
         time.sleep(2)
         for fr in flows:
-            self.topology_manager.install_flow_rule(fr)
+            res = self.topology_manager.install_flow_rule(fr)
+            if not res:
+                log.error("Problem installing flow %s" % fr)
 
     def update(self):
         """
