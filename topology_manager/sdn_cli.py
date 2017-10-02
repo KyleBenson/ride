@@ -53,8 +53,10 @@ def parse_args(args):
     parser.add_argument('command', default=['hosts'], nargs='*',
                         help='''command to execute can be one of (default=%(default)s):
     hosts [include_attributes]          - print the available hosts (with attributes if optional argument is yes/true; NO *ARGS/**KWARGS!)
+    switches|devices                    - print the available switches (alias: devices)
     path src dst                        - build and install a path between src and dst using flow rules
-    mcast addr src dst1 [dst2 ...]      - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules (*ARGS/**KWARGS!)
+    m[ulti]cast addr src dst1 [dst2...] - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules (NO *ARGS/**KWARGS!)
+    mdmts ntrees alg <mcast_args>       - same as mcast, except it builds 'ntrees' multiple maximally-disjoint multicast trees using the algorithm 'alg'
     redirect src old_dst new_dst        - redirect packets from src to old_dst by installing flow rules that convert ipv4_dst to that of new_dst
     del-flow switch_id flow_id          - delete the requested flow rule
     del-flows                           - deletes all flow rules
@@ -108,6 +110,13 @@ if __name__ == "__main__":
         else:
             print("Hosts:\n%s" % '\n'.join(topo.get_hosts()))
 
+    elif cmd == 'switches' or cmd == 'devices':
+        include_attrs = True if (cmd_args and cmd_args[0].lower() in ('y', 'yes', 't', 'true')) else False
+        if include_attrs:
+            print("Hosts:\n%s" % '\n'.join(str(h) for h in topo.get_switches(attributes=True)))
+        else:
+            print("Hosts:\n%s" % '\n'.join(topo.get_hosts()))
+
     elif cmd == 'path':
         assert nargs >= 2, "path command must at least have the 2 hosts specified!"
         if 'weight' in cmd_kwargs:
@@ -138,6 +147,30 @@ if __name__ == "__main__":
         print("installing flows:", flows)
         for flow in flows:
             assert topo.install_flow_rule(flow), "problem installing flow: %s" % flow
+
+    elif cmd == 'mdmts':
+        assert nargs >= 5, "must specify #MDMTs, an MDMT-construction algorithm, an IP address," \
+                           " and at least 2 host IDs to build a disjoint multicast trees!"
+
+        ntrees = int(cmd_args[0])
+        algorithm = cmd_args[1]
+        address = cmd_args[2]
+        src_host = cmd_args[3]
+        dests = cmd_args[4:]
+
+        mdmts = topo.get_redundant_multicast_trees(src_host, destinations=dests, k=ntrees, algorithm=algorithm)
+        for i, mcast_tree in enumerate(mdmts):
+            print("Installing multicast tree:", list(mcast_tree.nodes()))
+            matches = topo.build_matches(ipv4_src=topo.get_ip_address(src_host), ipv4_dst=address, eth_type='0x0800')
+            gflows, flows = topo.build_flow_rules_from_multicast_tree(mcast_tree, src_host, matches, group_id=i+10)
+
+            print("installing groups:", gflows)
+            for gf in gflows:
+                assert topo.install_group(gf)
+
+            print("installing flows:", flows)
+            for flow in flows:
+                assert topo.install_flow_rule(flow), "problem installing flow: %s" % flow
 
     elif cmd == 'redirect':
         assert nargs >= 3, "redirect command must at least have the source, old_destination, and new_destination hosts specified!"
