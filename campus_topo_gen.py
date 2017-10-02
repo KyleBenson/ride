@@ -353,6 +353,7 @@ class CampusTopologyGenerator(object):
 
 if __name__ == '__main__':
     test_run = False
+    view_topo = test_run
 
     if test_run:
         # build smaller topology for visualizing
@@ -373,7 +374,8 @@ if __name__ == '__main__':
             # (20, 8, 3), (40, 8, 5), (50, 8, 6), (80, 8, 8),  # smaller topologies
             # (200, 20, 20),  # main large topology
             # (10, 4, 2),
-            (3, 3, 1),
+            # (3, 3, 1),
+            (20, 10, 5),  # main topology for mininet experiments
             # (200, 20, 40), (200, 20, 80),
             # (200, 20, 10), (200, 20, 0), (200, 20, 60), # vary ibl on main topology
             # (200, 20, 200), (200, 20, 400), (200, 20, 800), # vary ibl on main topology, with repeats and larger #s
@@ -390,7 +392,7 @@ if __name__ == '__main__':
             t.generate()
             t.write('topos/campus_topo_%db-%dh-%dibl.json' % (nb, nh, nibl))
 
-    if test_run:
+    if view_topo:
         g = t.get()
         print nx.info(g)
         t.draw()

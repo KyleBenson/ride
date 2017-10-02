@@ -50,7 +50,7 @@ DEFAULT_PARAMS = {
     'npublishers': 20,
     # 'topology_filename': 'topos/campus_topo_200b-20h-20ibl.json',
     # 'topology_filename': 'topos/campus_topo_20b-8h-3ibl.json',
-    'topology_filename': 'topos/cloud_campus_topo_10b-4h-2ibl.json',
+    'topology_filename': 'topos/cloud_campus_topo_20b-10h-5ibl.json',
     # Used to compare each algorithm for each set of parameters, but now we run a specific one
     #'tree_construction_algorithm': [('steiner',), ('diverse-paths',), ('red-blue',)],
     'tree_construction_algorithm': ('red-blue',),  # diverse-paths is really slow and steiner almost always performs worse
