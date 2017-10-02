@@ -54,7 +54,7 @@ WITH_LOGS = True  # output seismic client/server stdout to a log file
 # we just put the NAT/server interfaces in a hard-coded subnet.
 NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
-SLEEP_TIME_BETWEEN_RUNS = 5  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
+SLEEP_TIME_BETWEEN_RUNS = 15  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
 
 # Default values
 DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
@@ -149,7 +149,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         # We'll drop to a CLI after the experiment completes for
         # further poking around if we're only doing a single run.
-        self.show_cli = self.nruns == 1 or show_cli
+        # We should also enable turning this feature off when nruns == 1
+        self.show_cli = (self.nruns == 1 and not show_cli) or (self.nruns != 1 and show_cli)
 
         # HACK: We just manually allocate IP addresses rather than adding a controller API to request them.
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
@@ -183,7 +184,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                 help='''bandwidth (in Mbps) of iperf for congestion traffic generating hosts (default=%(default)s)''')
         arg_parser.add_argument('--cli', '-cli', dest='show_cli', action='store_true',
                                 help='''force displaying the Mininet CLI after running the experiment. Normally it is
-                                 only displayed iff nruns==1. This is useful for debugging problems as it prevents
+                                 only displayed iff nruns==1 (and this option is NOT specified; doing so will turn off
+                                 this default). This is useful for debugging problems as it prevents
                                 the OVS/controller state from being wiped after the experiment.''')
         arg_parser.add_argument('--comparison', default=None,
                                 help='''use the specified comparison strategy rather than RIDE-D.  Can be one of:
@@ -938,18 +940,55 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.server_iperfs = []
         self.client_iperfs = []
 
-        log.debug("*** All processes exited!  Cleaning up Mininet...")
+        log.debug("*** All processes exited!")
 
+        # But first, give a chance to inspect the experiment state before quitting Mininet.
         if self.show_cli:
             CLI(self.net)
+
+        # BUG: This might error if a process (e.g. iperf) didn't finish exiting.
+        try:
+            log.debug("Stopping Mininet...")
+            self.net.stop()
+        except OSError as e:
+            log.error("Stopping Mininet failed, but we'll keep going.  Reason: %s" % e)
+
+        # We seem to still have process leakage even after the previous call to stop Mininet,
+        # so let's do an explicit clean between each run.
+        log.debug("Cleaning up Mininet...")
+        p = Popen('sudo mn -c > /dev/null 2>&1', shell=True)
+        p.wait()
 
         # Clear out all the flows/groups from controller
         # XXX: this method is quicker/more reliable than going through the REST API since that requires deleting each
         # group one at a time!
         if self.topology_adapter_type == 'onos':
             log.debug("Resetting controller for next run...")
-            p = Popen("%s %s" % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
+            # XXX: for some reason, doing 'onos wipe-out please' doesn't actually clear out switches!  Hence, we need to
+            # fully reset ONOS before the next run and wait for it to completely restart by checking if the API is up.
+            # p = Popen("%s %s" % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
+            # p.wait()
+
+            p = Popen(CONTROLLER_SERVICE_RESTART_CMD, shell=True)
             p.wait()
+            onos_running = False
+            while not onos_running:
+                try:
+                    # wait first so that if we get a 404 error we'll wait to try again
+                    time.sleep(10)
+                    ret = self.topology_adapter.rest_api.get_hosts()
+                    # Once we get back from the API an empty list of hosts, we know that ONOS is fully-booted.
+                    if ret == []:
+                        onos_running = True
+                        log.debug("ONOS fully-booted!")
+
+                        # Check to make sure the switches were actually cleared...
+                        uncleared_switches = self.topology_adapter.rest_api.get_switches()
+                        if uncleared_switches:
+                            log.error("Why do we still have switches after restarting ONOS??? they are: %s" % uncleared_switches)
+                except IOError:
+                    log.debug("still waiting for ONOS to fully restart...")
+
         elif self.topology_adapter is not None:
             log.debug("Removing groups and flows via REST API.  This could take a while while we wait for the transactions to commit...")
             self.topology_adapter.remove_all_flow_rules()
@@ -967,17 +1006,6 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 # len(leftover_groups) == 0, "Not all groups were cleared after experiment! Still left: %s" % leftover_groups
         else:
             log.warning("No topology adapter!  Cannot reset it between runs...")
-
-        # BUG: This might error if a process (e.g. iperf) didn't finish exiting.
-        try:
-            self.net.stop()
-        except OSError as e:
-            log.error("Stopping Mininet failed, but we'll keep going.  Reason: %s" % e)
-
-        # We seem to still have process leakage even after the previous call to stop Mininet,
-        # so let's do an explicit clean between each run.
-        p = Popen('sudo mn -c > /dev/null 2>&1', shell=True)
-        p.wait()
 
         # Reset all of our collections of topology components, processes, etc.  This is copied straight from __init__,
         # but we don't put it in a separate helper function called from there as Pycharm would complain about it...
@@ -997,6 +1025,12 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # Sleep for a bit so the controller/OVS can finish resetting
         log.debug("*** Done cleaning up the run!  Waiting %dsecs for changes to propagate to OVS/SDN controller..." % SLEEP_TIME_BETWEEN_RUNS)
         time.sleep(SLEEP_TIME_BETWEEN_RUNS)
+
+    def record_result(self, result):
+        """Save additional results outputs (or convert to the right format) before outputting them."""
+        # Need to save node names rather than actual Mininet nodes for JSON serializing.
+        self.failed_nodes = [n.name for n in self.failed_nodes]
+        super(MininetSmartCampusExperiment, self).record_result(result)
 
     ####   Helper functions for working with Mininet nodes/links    ####
 

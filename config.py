@@ -15,14 +15,7 @@ ONOS_USER=ONOS_ADMIN_USER     # the user actually running the ONOS service
 ONOS_ADMIN_PORT=8101  # SSH port, NOT REST API port!
 ONOS_HOSTNAME='localhost'
 
-
-
-
-
-
-
-
-
+CONTROLLER_SERVICE_RESTART_CMD='service onos restart'
 
 # Since Mininet runs as root, we need a way of invoking ONOS commands as the ONOS user
 # to reset the controller in between executions.  This is a HACK as we couldn't get the

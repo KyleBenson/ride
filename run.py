@@ -28,7 +28,7 @@ debug_level = 'debug'  # for the actual experiment
 # debug_level = 'warn'
 verbose = True
 print_cmd = True
-nruns = 5
+nruns = 10
 reverse_cmds = False
 using_mininet = True
 if using_mininet:
@@ -50,16 +50,11 @@ DEFAULT_PARAMS = {
     'npublishers': 20,
     # 'topology_filename': 'topos/campus_topo_200b-20h-20ibl.json',
     # 'topology_filename': 'topos/campus_topo_20b-8h-3ibl.json',
-    'topology_filename': 'topos/campus_topo.json',
-    # always a list of tuples!  we run all of them for each treatment and
-    # each heuristic optionally takes arguments
+    'topology_filename': 'topos/cloud_campus_topo_10b-4h-2ibl.json',
+    # Used to compare each algorithm for each set of parameters, but now we run a specific one
     #'tree_construction_algorithm': [('steiner',), ('diverse-paths',), ('red-blue',)],
-    'tree_construction_algorithm': [('steiner',), ('red-blue',)],  # skip diverse-paths since it's slowest
-    #'tree_construction_algorithm': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
-    #'tree_construction_algorithm': [('diverse-paths',)],  # diverse-paths is really slow and steiner almost always performs worse
+    'tree_construction_algorithm': ('red-blue',),  # diverse-paths is really slow and steiner almost always performs worse
     # 'tree_construction_algorithm': [('steiner', 'max'), ('steiner', 'double')],
-    # Default values for Mininet-based experiment
-    # TODO:
 }
 
 # we'll explore each of these when running experiments
@@ -80,7 +75,7 @@ nhosts = [{'nsubscribers': s, 'npublishers': p, "choicerandseed": -5732823796696
 # ntrees = [1, 2, 4, 8, 16]
 # fprobs = [0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5]
 ntrees = [1,2,4]
-fprobs = [0.1, 0.2, 0.3]
+fprobs = [0.0, 0.05, 0.1, 0.2]
 # nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
 ntrees.reverse()
 
@@ -116,11 +111,12 @@ EXPERIMENTAL_TREATMENTS = {
     #         for f in [0.1, 0.2]
     #         ]
 
-    'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
-        "failrandseed": -5644075521501607418,
-        "randseed": -4277241514845461664} for t in ntrees],
+    #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
+    #    "failrandseed": -5644075521501607418,
+    #    "randseed": -4277241514845461664} for t in ntrees],
     # look at varying fprobs too as 0.1 may be too low for >2-4 trees
     # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
+    'ntrees': ntrees,
     'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
