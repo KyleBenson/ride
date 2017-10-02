@@ -426,6 +426,17 @@ class SdnTopology(NetworkTopology):
 
         return port1, port2
 
+    # Switch helper functions
+    def is_switch(self, switch):
+        """By default, we assume a non-host node is a switch."""
+        return not self.is_host(switch)
+
+    def get_switches(self, attributes=False):
+        return [n for n in self.topo.nodes(data=attributes) if self.is_switch(n[0] if attributes else n)]
+
+    def get_switch(self, switch):
+        return self.topo.node[switch]
+
     # Flow rule helper functions
 
     def install_flow_rule(self, rule):
