@@ -340,6 +340,7 @@ class RideD(object):
         for topic, subs in subscribers.items():
             # XXX: ensure all subscribers are present in the topology to prevent e.g. KeyErrors from the various algorithms
             subs = [s for s in subs if s in self.topology_manager.topo]
+            # TODO: check for reachability?  log error if they aren't available?
 
             # ENHANCE: include weight?
             trees = self.topology_manager.get_redundant_multicast_trees(
@@ -408,15 +409,23 @@ class RideD(object):
         # ENHANCE: extend the REST APIs to support updating the topology rather than getting a whole new one.
         self.topology_manager.build_topology(from_scratch=True)
 
-        trees = self.build_mdmts()
-        # TODO: maybe we should only save the built MDMTs as we add their flow rules? this could ensure that any MDMT we try to use will at least be fully-installed...
-        # could even use a thread lock to block until the first one is installed
-        self.mdmts = trees
+        # XXX: during lots of failures, the updated topology won't see a lot of the nodes so we'll be catching errors...
+        trees = None
+        try:
+            trees = self.build_mdmts()
+            # TODO: maybe we should only save the built MDMTs as we add their flow rules? this could ensure that any MDMT we try to use will at least be fully-installed...
+            # could even use a thread lock to block until the first one is installed
+            self.mdmts = trees
+        except nx.NetworkXError as e:
+            log.error("failed to create MDMTs (likely due to topology disconnect) due to error: \n%s" % e)
 
         if trees:
             # ENHANCE: error checking/handling esp. for the multicast address pool that must be shared across all topics!
             for mdmts in trees.values():
-                self.install_mdmts(mdmts)
+                try:
+                    self.install_mdmts(mdmts)
+                except nx.NetworkXError as e:
+                    log.error("failed to install_mdmts due to error: %s" % e)
         elif self.subscribers:
             log.error("empty return value from build_mdmts() when we do have subscribers!")
         # ENHANCE: retrieve publication routes rather than rely on them being manually set...
