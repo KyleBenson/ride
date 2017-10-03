@@ -545,7 +545,17 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         routes, clearing flows, etc.
         :return:
         """
-        self.topology_adapter = topology_manager.build_topology_adapter(self.topology_adapter_type, controller_ip=self.controller_ip, controller_port=self.controller_port)
+        kwargs = self._get_topology_manager_config()
+        self.topology_adapter = topology_manager.build_topology_adapter(**kwargs)
+
+    def _get_topology_manager_config(self):
+        """Get configuration parameters for the topology adapter as a dict."""
+        kwargs = dict(topology_adapter_type=self.topology_adapter_type,
+                      controller_ip=self.controller_ip, controller_port=self.controller_port)
+        if self.topology_adapter_type == 'onos':
+            kwargs['username'] = ONOS_API_USER
+            kwargs['password'] = ONOS_API_PASSWORD
+        return kwargs
 
     def setup_traffic_generators(self):
         """Each traffic generating host starts an iperf process aimed at
@@ -666,7 +676,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # TODO: base this quit_time extension on the Coap timeout????
             # quit_time += 20
 
-        sdn_topology_cfg = (self.topology_adapter_type, self.controller_ip, self.controller_port)
+        sdn_topology_cfg = self._get_topology_manager_config()
 
         ride_d_cfg = None if not self.with_ride_d else make_scale_config_entry(name="RideD", multicast=use_multicast,
                                                                   class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",

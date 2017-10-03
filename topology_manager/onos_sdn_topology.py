@@ -10,8 +10,8 @@ class OnosSdnTopology(SdnTopology):
     Supports various functions such as finding multicast spanning trees and
     installing flow rules."""
 
-    def __init__(self, ip='localhost', port='8181'):
-        rest_api = OnosRestApi(ip, port)
+    def __init__(self, ip='localhost', port='8181', username='karaf', password='karaf'):
+        rest_api = OnosRestApi(ip, port, username=username, password=password)
         super(OnosSdnTopology, self).__init__(rest_api)
 
         self.build_topology()

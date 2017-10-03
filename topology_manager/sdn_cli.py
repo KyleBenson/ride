@@ -1,7 +1,7 @@
 #! /usr/bin/python
 from __future__ import print_function
 
-from onos_sdn_topology import OnosSdnTopology
+import topology_manager
 
 SDN_CLI_DESCRIPTION = '''CLI-based interface to the various sdn_topology implementations.
 Useful for configuring an SDN controller to install flows without having to manually type them out
@@ -48,6 +48,8 @@ def parse_args(args):
                         help='''SDN controller's host address (default=%(default)s)''')
     parser.add_argument('--port', '-p', type=int, default=8181,
                         help='''SDN controller's REST API port (default=%(default)s)''')
+    parser.add_argument('--username', '-u', default='karaf')
+    parser.add_argument('--password', default='karaf')
 
     # Displaying info
     parser.add_argument('command', default=['hosts'], nargs='*',
@@ -86,10 +88,8 @@ if __name__ == "__main__":
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    if args.type == 'onos':
-        topo = OnosSdnTopology(ip=args.ip, port=args.port)
-    else:
-        raise ValueError("unrecognized / unsupported SdnTopology implementation of type: %s" % args.type)
+    topo = topology_manager.build_topology_adapter(topology_adapter_type=args.type, ip=args.ip, port=args.port,
+                                                   username=args.username, password=args.password)
 
     # Extract the relevant command and any positional/keyword arguments to its corresponding function call.
     cmd = args.command[0]
