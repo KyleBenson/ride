@@ -375,7 +375,7 @@ if __name__ == '__main__':
             # (200, 20, 20),  # main large topology
             # (10, 4, 2),
             # (3, 3, 1),
-            (20, 10, 5),  # main topology for mininet experiments
+            (20, 2, 5),  # main topology for mininet experiments
             # (200, 20, 40), (200, 20, 80),
             # (200, 20, 10), (200, 20, 0), (200, 20, 60), # vary ibl on main topology
             # (200, 20, 200), (200, 20, 400), (200, 20, 800), # vary ibl on main topology, with repeats and larger #s
