@@ -2,8 +2,13 @@ __author__ = 'kyle'
 
 import itertools
 import networkx as nx
-import pulp
 import logging as log
+
+# We aren't using the ILP algorithm currently, so let's not force it as a dependency...
+try:
+    import pulp
+except ImportError:
+    pass
 
 
 class SkeletonList(object):
