@@ -460,14 +460,17 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         log.info('*** Pinging hosts so controller can gather IP addresses...')
         # don't want the NAT involved as hosts won't get a route to it
-        # TODO: could just ping the server from each host as we don't do any host-to-host
         # comms and the whole point of this is really just to establish the hosts in the
         # controller's topology.  ALSO: we need to either modify this or call ping manually
         # because having error_rate > 0 leads to ping loss, which could results in a host
         # not being known!
-        loss = self.net.ping(hosts=[h for h in self.net.hosts if h != self.nat], timeout=2)
+        loss = 0
+        hosts = [h for h in self.net.hosts if h != self.nat]
+        for h in hosts:
+            loss += self.net.ping((h, self.server), timeout=2)
+
         if loss > 0:
-            log.warning("ping had a loss of %f" % loss)
+            log.warning("ping had a cumulative loss of %f" % loss)
 
         # This needs to occur AFTER pingAll as the exchange of ARP messages
         # is used by the controller (ONOS) to learn hosts' IP addresses
