@@ -474,9 +474,24 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         # This needs to occur AFTER pingAll as the exchange of ARP messages
         # is used by the controller (ONOS) to learn hosts' IP addresses
-        self.net.staticArp()
+        # Similarly to ping, we don't need all-pairs... just for the hosts to/from edge/cloud servers
+        # NOTE: if you do need all-pairs, do this but it'll take a while: self.net.staticArp()
+        server_ip = self.server.IP()
+        server_mac = self.server.MAC()
+        cloud_ip = self.cloud.IP()
+        cloud_mac = self.cloud.MAC()
+        for src in hosts:
+            src.setARP(ip=server_ip, mac=server_mac)
+            src.setARP(ip=cloud_ip, mac=cloud_mac)
+            self.cloud.setARP(ip=src.IP(), mac=src.MAC())
+            self.server.setARP(ip=src.IP(), mac=src.MAC())
 
+        # Now connect the SdnTopology and verify that all the non-NAT hosts are available through it
         self.setup_topology_manager()
+
+        n_sdn_hosts = len(self.topology_adapter.get_hosts())
+        if n_sdn_hosts != len(hosts):
+            log.warning("topology adapter didn't find all the hosts!  It only got %d/%d" % (n_sdn_hosts, len(hosts)))
 
         log.info('*** Network set up!\n*** Configuring experiment...')
 
