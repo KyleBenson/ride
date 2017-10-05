@@ -42,9 +42,11 @@ class OnosSdnTopology(SdnTopology):
         mac = ip = None
 
         try:
-            switch = host['location']['elementId']
-            port = int(host['location']['port'])
-        except IndexError:
+            # XXX: not sure how to handle multiple locations, a new feature in ONOS 1.11!  Just get first...
+            host_location = host.get('location', host.get('locations', [dict()])[0])
+            switch = host_location['elementId']
+            port = int(host_location['port'])
+        except KeyError:
             log.debug("Skipping host with no location in topology: %s" % host)
             return
 
