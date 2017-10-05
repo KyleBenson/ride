@@ -55,6 +55,9 @@ WITH_LOGS = True  # output seismic client/server stdout to a log file
 NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
 SLEEP_TIME_BETWEEN_RUNS = 15  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
+# whether to set static ARP and ping between all pairs or just cloud/edge servers
+# set this to True if the controller topology doesn't seem to be including all expected hosts
+ALL_PAIRS = False
 
 # Default values
 DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
@@ -275,7 +278,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 second_letter = 'e'
 
             mac = first_letter + second_letter + ':00:00:' + mac[3:]
-            return str(mac)
+            return str(mac).lower()
 
         for switch in self.topo.get_switches():
             mac = __get_mac_for_switch(switch)
@@ -436,9 +439,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         """
 
         log.info('*** Starting network')
+        log.debug("Building Network...")
         self.net.build()
+        log.debug("Network built; starting...")
         self.net.start()
+        log.debug("Started!  Waiting for switch connections...")
         self.net.waitConnected()  # ensure switches connect
+        log.debug("Switches connected!")
 
         # give controller time to converge topology so pingall works
         time.sleep(5)
@@ -466,32 +473,58 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # not being known!
         loss = 0
         hosts = [h for h in self.net.hosts if h != self.nat]
-        for h in hosts:
-            loss += self.net.ping((h, self.server), timeout=2)
+        if ALL_PAIRS:
+            loss = self.net.ping(hosts=hosts, timeout=2)
+        else:
+            for h in hosts:
+                loss += self.net.ping((h, self.server), timeout=2)
+            loss /= len(hosts)
 
         if loss > 0:
-            log.warning("ping had a cumulative loss of %f" % loss)
+            log.warning("ping had a loss of %f" % loss)
 
         # This needs to occur AFTER pingAll as the exchange of ARP messages
         # is used by the controller (ONOS) to learn hosts' IP addresses
         # Similarly to ping, we don't need all-pairs... just for the hosts to/from edge/cloud servers
-        # NOTE: if you do need all-pairs, do this but it'll take a while: self.net.staticArp()
-        server_ip = self.server.IP()
-        server_mac = self.server.MAC()
-        cloud_ip = self.cloud.IP()
-        cloud_mac = self.cloud.MAC()
-        for src in hosts:
-            src.setARP(ip=server_ip, mac=server_mac)
-            src.setARP(ip=cloud_ip, mac=cloud_mac)
-            self.cloud.setARP(ip=src.IP(), mac=src.MAC())
-            self.server.setARP(ip=src.IP(), mac=src.MAC())
+        if ALL_PAIRS:
+            self.net.staticArp()
+        else:
+            server_ip = self.server.IP()
+            server_mac = self.server.MAC()
+            cloud_ip = self.cloud.IP()
+            cloud_mac = self.cloud.MAC()
+            for src in hosts:
+                src.setARP(ip=server_ip, mac=server_mac)
+                src.setARP(ip=cloud_ip, mac=cloud_mac)
+                self.cloud.setARP(ip=src.IP(), mac=src.MAC())
+                self.server.setARP(ip=src.IP(), mac=src.MAC())
 
-        # Now connect the SdnTopology and verify that all the non-NAT hosts are available through it
-        self.setup_topology_manager()
+        # Need to sleep so that the controller has a chance to converge its topology again...
+        time.sleep(5)
 
-        n_sdn_hosts = len(self.topology_adapter.get_hosts())
-        if n_sdn_hosts != len(hosts):
-            log.warning("topology adapter didn't find all the hosts!  It only got %d/%d" % (n_sdn_hosts, len(hosts)))
+        # Now connect the SdnTopology and verify that all the non-NAT hosts, links, and switches are available through it
+        expected_nhosts = len(hosts)  # ignore NAT, but include servers
+        # Don't forget that we added switches for the servers to easily multi-home them
+        expected_nlinks = self.topo.topo.number_of_edges() + (1 if self.server else 0) + (1 if self.cloud else 0)
+        expected_nswitches = len(self.topo.get_switches()) + (1 if self.server else 0) + (1 if self.cloud else 0)
+        n_sdn_links = 0
+        n_sdn_switches = 0
+        n_sdn_hosts = 0
+        while n_sdn_hosts != expected_nhosts or n_sdn_links != expected_nlinks or n_sdn_switches != expected_nswitches:
+            self.setup_topology_manager()
+
+            n_sdn_hosts = len(self.topology_adapter.get_hosts())
+            n_sdn_links = self.topology_adapter.topo.number_of_edges()
+            n_sdn_switches = len(self.topology_adapter.get_switches())
+
+            if n_sdn_hosts != expected_nhosts:
+                log.warning("topology adapter didn't find all the hosts!  It only got %d/%d.  Trying topology adapter again..." % (n_sdn_hosts, len(hosts)))
+            if expected_nlinks != n_sdn_links:
+                log.warning("topology adapter didn't find all the links!  Only got %d/%d.  Trying topology adapter again..." % (n_sdn_links, expected_nlinks))
+            if expected_nswitches != n_sdn_switches:
+                log.warning("topology adapter didn't find all the switches!  Only got %d/%d.  Trying topology adapter again..." % (n_sdn_switches, expected_nswitches))
+
+            time.sleep(2)
 
         log.info('*** Network set up!\n*** Configuring experiment...')
 
