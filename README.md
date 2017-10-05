@@ -11,8 +11,36 @@ Installs SDN (OpenFlow) rules for accomplishing pub-sub via multicast.
 ### Mininet-based Experiments
 
 To run the Mininet-based experiments, we'll obviously need to install Mininet and its Python API (e.g. via pip).  We just cloned the source repo and symlinked it to inside this repo's main directory.
+We also seem to have made a change to a file in mininet for multiple experiment runs with switches we create:
+```
+diff --git mininet/net.py mininet/net.py
+index a7c159e..b518958 100755
+--- mininet/net.py
++++ mininet/net.py
+@@ -520,9 +520,6 @@ def stop( self ):
+         for swclass, switches in groupby(
+                 sorted( self.switches, key=type ), type ):
+             switches = tuple( switches )
+-            if hasattr( swclass, 'batchShutdown' ):
+-                success = swclass.batchShutdown( switches )
+-                stopped.update( { s: s for s in success } )
+         for switch in self.switches:
+             info( switch.name + ' ' )
+             if switch not in stopped:
+```
 
-You'll also need to run an SDN controller locally (currently we only fully support ONOS).  Make sure to get OVS set up properly too!
+You'll also need to run an *SDN controller* locally (or remotely, though we never tried that).
+Currently we only fully support ONOS.  We install it using the directions on their website and configure it to run as a service with the following options file (in `/opt/onos/options`):
+```
+ONOS_USER=sdn
+ONOS_APPS=openflow-base,drivers,openflow,fwd,proxyarp
+JAVA_HOME=/usr/lib/jvm/java-8-oracle
+```
+If you're running on a physical machine rather than a VM, you should probably change the user/password for the karaf GUI in `/opt/onos/apache-karaf-$KARAF_VERSION/etc/users.properties` to something more secure.
+Note that because ONOS uses a clustering service, you may run into problems with dynamic IP addresses (i.e. the master node is no longer available because your machine IS the master node but its IP address changed).
+
+
+Make sure to get **Open vSwitch** set up properly too!  You can install it with Mininet's install script.
 
 You may need to tweak some settings inside mininet_smart_campus_experiment.py e.g. the IP addresses of the Mininet hosts might conflict with your OS's networking configuration esp. if you're running inside a virtual machine.
 
@@ -110,7 +138,13 @@ multiple multicast dst addresses?  dst_ip translated to actual host before deliv
 event-reporter plug-in (or ride-d-sink) needs to choose from multiple addresses based on STT
 * how to handle OVERLAPPING mdmts????
 
-TODO docs
-=========
+TODO 
+====
+
+## Documentation
 
 discuss rest api, sdn topo mgr, and cli interfaces
+
+talk about config files?
+
+document the mess that is network/sdn/netx_topology, esp. the fact that a host can be client or server; everything else is a switch, which can be a gateway
