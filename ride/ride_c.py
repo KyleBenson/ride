@@ -81,7 +81,7 @@ class RideC(object):
         self._distance_metric = distance_metric
 
         # Save the switches currently holding redirection flow rules so we can delete them later upon recovery.
-        self.__redirecting_switches = []
+        self.__redirecting_switches = set()
 
     ## Helper functions
 
@@ -337,6 +337,7 @@ class RideC(object):
             old_dest = self.cloud_server
             new_dest = self.edge_server
             route = self._get_host_route(h, new_dest)
+            log.debug("host re-route path: %s" % route)
 
             # ENHANCE: may need to handle other address families?  Or transport layers?
             host_dpid = self.topology_manager.get_host_by_ip(self._get_host_ip_address(h))
@@ -349,14 +350,21 @@ class RideC(object):
                                                                             old_dest_port=old_dst_port,
                                                                             new_dest_port=new_dst_port,
                                                                             priority=REDIRECTION_FLOW_RULE_PRIORITY)
+
+            log.debug("installing redirection flow rules")
             for f in flow_rules:
-                self.topology_manager.install_flow_rule(f)
+                if not self.topology_manager.install_flow_rule(f):
+                    log.error("failed to install host %s redirect flow rule: %s" % (f, h))
+            log.debug("redirection flow rules installed!")
 
             # XXX: Save the switches that are doing actual redirection translations of addresses/ports.  Upon recovery,
             # we will later remove these flow rules from them.  Note that the current implementation just uses the
             # two switches saved below for this translation.
-            self.__redirecting_switches.append(route[1])
-            self.__redirecting_switches.append(route[-2])
+            trans_switch1 = route[1]
+            trans_switch2 = route[-2]
+            log.debug("saving redirection switches %s and %s for clearing flow rules later..." % (trans_switch1, trans_switch2))
+            self.__redirecting_switches.add(trans_switch1)
+            self.__redirecting_switches.add(trans_switch2)
 
             self._host_routes[h] = route
             self._data_path_for_host[h] = None
@@ -384,6 +392,7 @@ class RideC(object):
                     flow_ids_to_kill.append(f['id'])
 
             for f in flow_ids_to_kill:
-                self.topology_manager.remove_flow_rule(switch_id, f)
+                if not self.topology_manager.remove_flow_rule(switch_id, f):
+                    log.error("Failed to remove swithc %s's redirection flow: %s" % (switch_id, f))
 
-        self.__redirecting_switches = []
+        self.__redirecting_switches.clear()
