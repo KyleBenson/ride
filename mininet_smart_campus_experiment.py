@@ -34,11 +34,11 @@ from ride.config import *
 
 # in seconds; make sure this leaves enough time for all data_path failures, recoveries, and publishing additional
 # seismic events so we can see the recovery!  Maybe just configure this dynamically in the future?
-EXPERIMENT_DURATION = 110
+EXPERIMENT_DURATION = 150
 # EXPERIMENT_DURATION = 10  # for testing
 SEISMIC_EVENT_DELAY = 60  # seconds before the 'earthquake happens', i.e. sensors start sending data
 # SEISMIC_EVENT_DELAY = 5  # for testing
-TIME_BETWEEN_SEISMIC_EVENTS = 10  # for multiple earthquakes / aftershock events
+TIME_BETWEEN_SEISMIC_EVENTS = 20  # for multiple earthquakes / aftershock events
 IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
 PROBE_BASE_SRC_PORT = 9900  # ensure this doesn't collide with any other apps/protocols you're using!
 ECHO_SERVER_PORT = 9999
