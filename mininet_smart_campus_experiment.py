@@ -150,10 +150,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.client_iperfs = []
         self.server_iperfs = []
 
-        # We'll drop to a CLI after the experiment completes for
-        # further poking around if we're only doing a single run.
-        # We should also enable turning this feature off when nruns == 1
-        self.show_cli = (self.nruns == 1 and not show_cli) or (self.nruns != 1 and show_cli)
+        # We'll optionally drop to a CLI after the experiment completes for further poking around
+        self.show_cli = show_cli
 
         # HACK: We just manually allocate IP addresses rather than adding a controller API to request them.
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
@@ -186,10 +184,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         arg_parser.add_argument('--generator-bandwidth', '-bw', default=10, dest='traffic_generator_bandwidth', type=float,
                                 help='''bandwidth (in Mbps) of iperf for congestion traffic generating hosts (default=%(default)s)''')
         arg_parser.add_argument('--cli', '-cli', dest='show_cli', action='store_true',
-                                help='''force displaying the Mininet CLI after running the experiment. Normally it is
-                                 only displayed iff nruns==1 (and this option is NOT specified; doing so will turn off
-                                 this default). This is useful for debugging problems as it prevents
-                                the OVS/controller state from being wiped after the experiment.''')
+                                help='''displays the Mininet CLI after running the experiment. This is useful for
+                                debugging problems as it prevents the OVS/controller state from being wiped after
+                                the experiment and keeps the network topology up.''')
         arg_parser.add_argument('--comparison', default=None,
                                 help='''use the specified comparison strategy rather than RIDE-D.  Can be one of:
                                  unicast (send individual unicast packets to each subscriber),
@@ -288,7 +285,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             if self.topo.is_cloud_gateway(switch):
                 self.cloud_gateways.append(s)
 
-        def __get_ip_for_host(host):
+        def __get_ip_mac_for_host(host):
             # See note in docstring about host format
             # XXX: differentiate between regular hosts and server hosts
             if '-' in host:
@@ -300,20 +297,29 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # Assign a number according to the type of router this host is attached to
             if building_type == 'b':
                 router_code = 131
+                router_mac_code = 'bb'
             elif building_type == 'm':
                 router_code = 144
+                router_mac_code = 'aa'
             # cloud
             elif building_type == 'x':
                 router_code = 199
+                router_mac_code = 'cc'
             # edge server
             elif building_type == 's':
                 router_code = 255
+                router_mac_code = '55'
             else:
                 raise ValueError("unrecognized building type '%s' so cannot assign host IP address!" % building_type)
-            return "10.%d.%s.%s/%d" % (router_code, building_num, host_num, HOST_IP_N_MASK_BITS)
+            _ip = "10.%d.%s.%s/%d" % (router_code, building_num, host_num, HOST_IP_N_MASK_BITS)
+            _mac = mac_for_host(int(host_num))
+            _mac = "00:%s:%s%s" % (router_mac_code, str(building_num).rjust(2, '0'), _mac[8:])
+            # XXX: onos expects upper case mac addresses
+            return _ip, _mac.upper()
 
         for host in self.topo.get_hosts():
-            h = self.net.addHost(host, ip=__get_ip_for_host(host))
+            _ip, _mac = __get_ip_mac_for_host(host)
+            h = self.net.addHost(host, ip=_ip, mac=_mac)
             self.hosts.append(h)
 
         for server in self.topo.get_servers():
@@ -325,7 +331,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # Keep server name for switch so that the proper links will be added later.
             self.server_switch = self.net.addSwitch(server, dpid=server_switch_dpid, cls=OVSKernelSwitch)
             host = 'h' + server
-            s = self.net.addHost(host, ip=__get_ip_for_host(host))
+            _ip, _mac = __get_ip_mac_for_host(host)
+            s = self.net.addHost(host, ip=_ip, mac=_mac)
             # ENHANCE: handle multiple servers
             self.server = s
             self.net.addLink(self.server_switch, self.server)
@@ -341,7 +348,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 self.cloud_switches.append(cloud_switch)
                 # ENHANCE: handle multiple clouds
                 host = 'h' + cloud
-                self.cloud = self.net.addHost(host, ip=__get_ip_for_host(host))
+                _ip, _mac = __get_ip_mac_for_host(host)
+                self.cloud = self.net.addHost(host, ip=_ip, mac=_mac)
                 self.net.addLink(cloud_switch, self.cloud)
             # otherwise just add a host to prevent topology errors
             else:
