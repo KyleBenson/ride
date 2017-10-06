@@ -45,15 +45,17 @@ DEFAULT_PARAMS = {
     'fprob': 0.1,
     'ntrees': 4,
     # 'nsubscribers': 400,
-    'nsubscribers': 40,
+    'nsubscribers': 20,
     # 'npublishers': 200,
-    'npublishers': 20,
+    'npublishers': 10,
     # 'topology_filename': 'topos/campus_topo_200b-20h-20ibl.json',
     # 'topology_filename': 'topos/campus_topo_20b-8h-3ibl.json',
-    'topology_filename': 'topos/cloud_campus_topo_20b-10h-5ibl.json',
+    #'topology_filename': 'topos/cloud_campus_topo_20b-10h-5ibl.json',
+    'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
+    # NOTE: the construction algorithm is specified as a list since each config is run for each experimental treatment!
     # Used to compare each algorithm for each set of parameters, but now we run a specific one
     #'tree_construction_algorithm': [('steiner',), ('diverse-paths',), ('red-blue',)],
-    'tree_construction_algorithm': ('red-blue',),  # diverse-paths is really slow and steiner almost always performs worse
+    'tree_construction_algorithm': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
     # 'tree_construction_algorithm': [('steiner', 'max'), ('steiner', 'double')],
 }
 
@@ -74,8 +76,8 @@ nhosts = [{'nsubscribers': s, 'npublishers': p, "choicerandseed": -5732823796696
 #           for s,p in [(400, 800), (400, 25), (800, 200), (800, 50), (800, 800), (800, 1600)]]
 # ntrees = [1, 2, 4, 8, 16]
 # fprobs = [0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5]
-ntrees = [1,2,4]
-fprobs = [0.0, 0.05, 0.1, 0.2]
+ntrees = [0,1,2,4,8]
+fprobs = [0.0, 0.05, 0.1, 0.2, 0.3]
 # nhosts.reverse()  # put larger jobs up front to make for easier sharing across procs
 ntrees.reverse()
 
@@ -102,7 +104,7 @@ def get_nhosts_treatment(nsubs, npubs):
 # same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
-    # 'ilp': [{'mcast_heuristic': [('ilp',), ('steiner',), ('diverse-paths',), ('red-blue',)],
+    # 'ilp': [{'tree_construction_algorithm': [('ilp',), ('steiner',), ('diverse-paths',), ('red-blue',)],
     #          'npublishers': p, 'nsubscribers': p*2, 'ntrees': t, 'fprob': f,
     #          'topology_filename': 'topos/campus_topo_10b-4h-2ibl.json',
     #          }
@@ -110,14 +112,26 @@ EXPERIMENTAL_TREATMENTS = {
     #         for t in [2, 4]
     #         for f in [0.1, 0.2]
     #         ]
+    'construction': [
+        {
+            'tree_construction_algorithm': alg,
+            # 'npublishers': p, 'nsubscribers': p*2,
+            'ntrees': t, 'fprob': f,
+            'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
+        }
+        # for p in [5, 10]
+        for t in [2, 4]
+        for f in [0.1, 0.2]
+        for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
+        ]
 
     #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
     #    "failrandseed": -5644075521501607418,
     #    "randseed": -4277241514845461664} for t in ntrees],
     # look at varying fprobs too as 0.1 may be too low for >2-4 trees
     # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
-    'ntrees': ntrees,
-    'fprob': fprobs,
+    # 'ntrees': ntrees,
+    # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
     # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
@@ -258,8 +272,9 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
     :return:
     """
 
-    if using_pool:
+    if using_pool and not using_mininet:
         # Ignore ctrl-c in worker processes
+        # Need to process it when using Mininet since we don't apply_async
         signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     if verbose:
@@ -319,13 +334,19 @@ if __name__ == '__main__':
         except OSError:
             pass
 
+    all_cmds = list(makecmds(output_dirname=dirname))
+    total_jobs = len(all_cmds)
+
     # use a process pool to run jobs in parallel for the Networkx Experiment
-    using_pool = (nprocs != 1 and not using_mininet)
-    assert not (using_pool and using_mininet), "Can't use proc pool and Mininet in same exp!"
+    using_pool = (nprocs != 1)
+    using_pool = True
     # track the returned (empty) results to see if any processes crash
     results = []
     if using_pool:
-        pool = Pool(processes=nprocs)
+        # XXX: we seem to need a new process for each Mininet run as if we just directly use the built-in apply() we end up
+        # with weird buffer overflow errors after the first experiment completes.  Hence, we make each process in the pool
+        # only execute one command (using non-async apply()) before being replaced.
+        pool = Pool(processes=nprocs, maxtasksperchild=1 if using_mininet else None)
         # shared variable to track progress
         # NOTE: need to use Manager as directly using Value with pool causes RuntimeException...
         _mgr = Manager()
@@ -349,17 +370,17 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, __sigint_handler)
 
-    # map inputs a positional argument, not kwargs
-    # pool.map(run_experiment, makecmds(_dirname=dirname), chunksize=1)
-    all_cmds = list(makecmds(output_dirname=dirname))
+    # Now we actually run the commands using the right version of 'apply()'
     # TODO: sort cmds to place diverse-paths first since it runs longest
     if reverse_cmds:
         all_cmds.reverse()
-    total_jobs = len(all_cmds)
     for i, cmd in enumerate(all_cmds):
         cmd = [jobs_completed, total_jobs, cmd]
         if using_pool:
-            result = pool.apply_async(run_experiment, cmd)
+            if using_mininet:
+                result = pool.apply(run_experiment, cmd)
+            else:
+                result = pool.apply_async(run_experiment, cmd)
             results.append((result, cmd))
         else:
             apply(run_experiment, cmd)
@@ -370,27 +391,30 @@ if __name__ == '__main__':
     if using_pool:
         pool.close()
 
-        failed_cmds = []
-        # wait for results to finish first so that we don't
-        # interleave failure reports with progress reports
-        for res, cmd in results:
-            res.wait()
-        for res, cmd in results:
-            if res.ready() and not res.successful():
-                # slice off first two since they're just metadata
-                failed_cmds.append(cmd[2:])
-                try:
-                    print "COMMAND FAILED with result:", res.get()
-                except BaseException as e:
-                    print "COMMAND FAILED:", cmd
-                    print "REASON:", e.__class__, e.message, e.args
+        if not using_mininet:
 
-        if failed_cmds:
-            failed_cmds_filename = os.path.join(dirname, "failed_cmds")
-            with open(failed_cmds_filename, "w") as f:
-                f.write(str(failed_cmds))
-            print "Failed commands written to file", failed_cmds_filename
-        else:
-            print "All commands successful!"
+            # These only work with pool.apply_async()
+            failed_cmds = []
+            # wait for results to finish first so that we don't
+            # interleave failure reports with progress reports
+            for res, cmd in results:
+                res.wait()
+            for res, cmd in results:
+                if res.ready() and not res.successful():
+                    # slice off first two since they're just metadata
+                    failed_cmds.append(cmd[2:])
+                    try:
+                        print "COMMAND FAILED with result:", res.get()
+                    except BaseException as e:
+                        print "COMMAND FAILED:", cmd
+                        print "REASON:", e.__class__, e.message, e.args
+
+            if failed_cmds:
+                failed_cmds_filename = os.path.join(dirname, "failed_cmds")
+                with open(failed_cmds_filename, "w") as f:
+                    f.write(str(failed_cmds))
+                print "Failed commands written to file", failed_cmds_filename
+            else:
+                print "All commands successful!"
 
         pool.join()
