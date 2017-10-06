@@ -1027,12 +1027,19 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             log.debug("Resetting controller for next run...")
             # XXX: for some reason, doing 'onos wipe-out please' doesn't actually clear out switches!  Hence, we need to
             # fully reset ONOS before the next run and wait for it to completely restart by checking if the API is up.
-            # p = Popen("%s %s" % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
-            # p.wait()
+            p = Popen("%s %s" % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
+            p.wait()
 
             p = Popen(CONTROLLER_SERVICE_RESTART_CMD, shell=True)
             p.wait()
             onos_running = False
+
+            # We also seem to need to fully reset OVS sometimes for larger topologies
+            p = Popen(RESET_OVS, shell=True)
+            p.wait()
+            p = Popen(RUN_OVS, shell=True)
+            p.wait()
+
             while not onos_running:
                 try:
                     # wait first so that if we get a 404 error we'll wait to try again
