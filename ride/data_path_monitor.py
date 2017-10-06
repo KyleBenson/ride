@@ -198,7 +198,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
                 assert resp_seq <= seq, "received probe response with sequence # from the future! HOW????"
 
         except socket.timeout:
-            log.warning("DP %s: Timeout Probe (seq:%d)" % (self.data_path_id, self._seq - 1))
+            log.info("DP %s: Timeout Probe (seq:%d)" % (self.data_path_id, self._seq - 1))
             # TODO: this hacky return value caused issues when the measured delay was actually 0ms
             # (e.g. due to running on localhost): we should maybe change this API later, but for now see how we use
             # the 'is' statement to distinguish False from 0ms
@@ -293,11 +293,11 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
         # TODO: include some tolerance to the thresholds in order to prevent 'flapping'
         if successive_fails > self._detection_window_size:
             if not self.is_data_path_down:
-                log.debug("DP %s status changed to DOWN due to recent failures/timeouts!" % self.data_path_id)
+                log.info("DP %s status changed to DOWN due to recent failures/timeouts!" % self.data_path_id)
             return DATA_PATH_DOWN
         elif self._rtt_a > self._sending_interval:
             if not self.is_data_path_down:
-                log.debug("DP %s status changed to DOWN due to increased latency!" % self.data_path_id)
+                log.info("DP %s status changed to DOWN due to increased latency!" % self.data_path_id)
             return DATA_PATH_DOWN
         else:
             return DATA_PATH_UP
