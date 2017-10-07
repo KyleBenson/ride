@@ -86,6 +86,14 @@ class OnosRestApi(BaseRestApi):
         path = '%s/flows/%s' % (self.base_path, switch_id)
         return self.set(path, rule)
 
+    def batch_push_flow_rules(self, rules):
+        """
+        Pushes a batch of flow rules for more quickly installing multiple of them.
+        :type rules: list
+        """
+        path = '%s/flows' % self.base_path
+        return self.set(path, dict(flows=rules))
+
     def get_flow_rules(self, switch_id=None):
         """Get all flow rules or a specific switch's if specified.
         NOTE: check the flow rule's 'state' field if you previously

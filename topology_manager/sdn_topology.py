@@ -445,6 +445,16 @@ class SdnTopology(NetworkTopology):
         log.debug("Installing flow %s" % rule)
         return self.rest_api.push_flow_rule(rule)
 
+    def install_flow_rules(self, rules):
+        """Helper function for installing multiple flow rules, which simply iterates over them to call
+         self.install_flow_rule(rule) and returns a list of return values.  Override this method to handle batch
+         flow rule installation methods if your rest_api handles it!"""
+
+        ret = []
+        for fr in rules:
+            ret.append(self.install_flow_rule(fr))
+        return ret
+
     def get_flow_rules(self, switch=None):
         """
         Get all flow rules (optionally only those associated with switch).

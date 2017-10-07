@@ -78,6 +78,11 @@ class OnosSdnTopology(SdnTopology):
 
     # Flow rule helper functions
 
+    def install_flow_rules(self, rules):
+        """Batch installs multiple flow rules."""
+        assert isinstance(self.rest_api, OnosRestApi)
+        return self.rest_api.batch_push_flow_rules(rules)
+
     def build_flow_rule(self, switch, matches, actions, **kwargs):
         """Builds a flow rule that can be installed on the corresponding switch via the RestApi.
 
