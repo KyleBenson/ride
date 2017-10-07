@@ -9,6 +9,7 @@ import re
 from subprocess import Popen
 
 import topology_manager
+from seismic_warning_test.seismic_alert_common import SEISMIC_PICK_TOPIC, IOT_GENERIC_TOPIC
 from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
 
 import logging
@@ -58,6 +59,9 @@ SLEEP_TIME_BETWEEN_RUNS = 15  # give Mininet/OVS/ONOS a chance to reconverge aft
 # whether to set static ARP and ping between all pairs or just cloud/edge servers
 # set this to True if the controller topology doesn't seem to be including all expected hosts
 ALL_PAIRS = False
+# Since we're using the scale client for background traffic, we need to specify an interval between SensedEvents
+# ENHANCE: base this on the traffic_generator_bandwidth parameter
+IOT_CONGESTION_INTERVAL = 1.0
 
 # Default values
 DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
@@ -903,7 +907,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                     name="SeismicSubscriber", remote_brokers=alerting_brokers,
                     output_file=os.path.join(outputs_dir, 'subscriber_%s' % client_id)))
             pubs_cfg = make_scale_config(
-                sensors=make_scale_config_entry(name="SeismicSensor", event_type="seismic",
+                sensors=make_scale_config_entry(name="SeismicSensor", event_type=SEISMIC_PICK_TOPIC,
                                                 dynamic_event_data=dict(seq=0),
                                                 class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
                                                 output_events_file=os.path.join(outputs_dir,
@@ -911,7 +915,16 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                 # Need to start at specific time, not just delay, as it takes a few
                                                 # seconds to start up each process.
                                                 start_time=time.time() + delay,
-                                                sample_interval=TIME_BETWEEN_SEISMIC_EVENTS),
+                                                sample_interval=TIME_BETWEEN_SEISMIC_EVENTS) +
+                # for congestion traffic
+                        make_scale_config_entry(name="IoTSensor", event_type=IOT_GENERIC_TOPIC,
+                                                dynamic_event_data=dict(seq=0),
+                                                class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
+                                                output_events_file=os.path.join(outputs_dir,
+                                                                                'congestor_%s' % client_id),
+                                                start_delay=5,  # give servers a chance to start
+                                                sample_interval=IOT_CONGESTION_INTERVAL)
+                ,
                 sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
                                               name="CoapEventSink", hostname=cloud_ip, src_port=COAP_CLIENT_SRC_PORT)
                 # Can optionally enable this to print out each event in its entirety.
