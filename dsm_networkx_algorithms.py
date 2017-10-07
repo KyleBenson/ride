@@ -6,7 +6,10 @@ import networkx as nx
 
 
 def draw_overlaid_graphs(original, new_graphs, print_text=False):
-    """Draws the new_graphs as graphs overlaid on the original topology"""
+    """
+    Draws the new_graphs as graphs overlaid on the original topology
+    :type new_graphs: list[nx.Graph]
+    """
     import matplotlib.pyplot as plt
 
     layout = nx.spring_layout(original)
@@ -25,6 +28,17 @@ def draw_overlaid_graphs(original, new_graphs, print_text=False):
         line_width /= 1.7  # use this for visualising on screen
         # line_width /= 2.0  # use this for generating diagrams
     plt.show()
+
+
+def draw_paths(G, paths):
+    """
+    Draws the specified paths on the graph G by building a graph for each path and passing to draw_overlaid_graphs
+    :type G: nx.Graph
+    :type paths: collections.Iterable
+    """
+
+    GP = [nx.Graph(((u, v) for u, v in get_edges_for_path(p))) for p in paths]
+    draw_overlaid_graphs(G, GP)
 
 
 def node_split_in_out(G, nbunch=None, in_place=False, rename_func=None):
@@ -69,6 +83,7 @@ def node_split_in_out(G, nbunch=None, in_place=False, rename_func=None):
     # print '\n'.join([str(x) for x in g2.edges(data=True)])
     return g2
 
+
 def get_redundant_paths(G, source, target, k=2, weight='weight'):
     """Gets k (possibly shortest) redundant paths with minimal component overlap.
     Current version based on Zheng et al 2010 paper entitled
@@ -76,7 +91,8 @@ def get_redundant_paths(G, source, target, k=2, weight='weight'):
     The basic idea is to use network flow on a modified graph where each edge can
     handle one flow at regular cost but any others have greatly increased cost.
     This implementation assumes we only care about min-sum costs of edges then nodes
-    for the constraints."""
+    for the constraints.
+    WARNING: nodes are expected to be strings since we split them up and relabel them in a temp graph!"""
 
     # 3-step algorithm: build transformed graph(s), find min-cost flow, compute paths
     if source == target:
@@ -141,7 +157,7 @@ def get_redundant_paths(G, source, target, k=2, weight='weight'):
     paths = []
     for i in range(k):
         p = nx.shortest_path(flow_graph, source, target, weight='weight')
-        for u,v in zip(p, p[1:]):
+        for u,v in get_edges_for_path(p):
             # Prefer primary edges first, which cannot have >1 flow
             try:
                 flow_graph.remove_edge(u, v, 0)
@@ -152,10 +168,80 @@ def get_redundant_paths(G, source, target, k=2, weight='weight'):
         paths.append([v for v in p if not v.endswith("'")])
 
     # sanity check
-    if flow_graph.number_of_edges() > 0:
-        print "WARNING! flow_graph still has flow edges left!", list(flow_graph.edges(data=True))
+    if __debug__:
+        if flow_graph.number_of_edges() > 0:
+            print "WARNING! flow_graph still has flow edges left!", list(flow_graph.edges(data=True))
 
     return paths
+
+
+def get_multi_source_disjoint_paths(G, sources, target, weight='weight'):
+    """Gets len(sources) (possibly shortest) maximally-disjoint paths (minimal component overlap) from
+    multiple sources to one target destination.  This just calls get_redundant_paths() with a modified graph
+    in which a new 'virtual node' is added with edges to each source.  Because the paths are maximally-disjoint and
+    k=len(sources), each of these edges will be used and so each source will have a path to target.
+    :type G: nx.Graph
+    :type sources: list|tuple
+    :param target: target destination node in G
+    :param weight: string specifying path length
+    :raises nx.NetworkxError: if something goes wrong
+    """
+
+    G2 = nx.Graph(G)
+    virt_node = '__multi_source_virt_node__'
+    for s in sources:
+        G2.add_edge(virt_node, s, weight=0)
+
+    paths = get_redundant_paths(G2, virt_node, target, k=len(sources), weight=weight)
+    # chop off virt_node before returning
+    paths = [p[1:] for p in paths]
+
+    # some sanity checks
+    if __debug__:
+        sources_covered = set()
+        for p in paths:
+            assert path_exists(G, p), "not a valid path! %s" % p
+            sources_covered.add(p[0])
+            assert p[-1] == target, "path contained incorrect target: expected %s but got %s" % (target, p[-1])
+        assert sources_covered == set(sources), "not all sources accounted for!  Expected: %s\nBut only got: %s" % (sources, sources_covered)
+
+    return paths
+
+
+def path_exists(G, p):
+    """
+    Returns true if p is a valid path in G (all edges exist).
+    :type G: nx.Graph
+    """
+
+    return all(G.has_edge(u, v) for u, v in get_edges_for_path(p))
+
+
+def merge_paths(path1, path2):
+    """Merges the two specified paths, which are formatted as returned by get_path()"""
+
+    # Handle path(s) being empty
+    if not path1:
+        return path2
+    if not path2:
+        return path1
+
+    # Ensure this is a real path
+    if path1[-1] != path2[0]:
+        raise ValueError("specified paths don't share a common merging point!  they are %s and %s" % (path1, path2))
+
+    # We just need to remove duplicate node that would appear in the middle of the two paths joined together
+    return path1 + path2[1:]
+
+
+def get_edges_for_path(p):
+    """
+    Returns the edges in path p using zip
+    :param p: a path expressed as an ordered list of nodes
+    :type p: list
+    :return: ordered list of (src, dst) pairs
+    """
+    return list(zip(p, p[1:]))
 
 
 # Simple tests
@@ -165,8 +251,30 @@ if __name__ == '__main__':
     g = nx.complete_graph(4)
     g.add_edge(0, 4)
     g.add_edge(3, 5)
+
+    ### First test our helper functions
+    if not __debug__:
+        print "You should run these simple tests without the '-O' flag that optimizes Python" \
+              " as we do assert statements to check correctness!"
+    assert path_exists(g, [4,0,2,1,3,5])
+    assert path_exists(g, [2, 3])
+    assert not path_exists(g, [0, 5])
+    assert not path_exists(g, [100, 101])
+
+    ### Now test disjoint path algorithms
+    print 'test disjoint path algorithms via manual visual inspection...'
+
     # Need to relabel to strings since we assume nodes are strings
     nx.relabel_nodes(g, {i: str(i) for i in g.nodes()}, copy=False)
 
-    paths = get_redundant_paths(g, '4', '5', npaths)
+    target = '5'
+    paths = get_redundant_paths(g, '4', target, npaths)
     print paths
+
+    multi_sources = ['0', '3', '4', '5']
+    target2 = '1'
+    paths2 = get_multi_source_disjoint_paths(g, multi_sources, target2)
+    print paths2
+
+    print 'drawing get_multi_source_disjoint_paths(g, %s, %s) output...' % (multi_sources, target)
+    draw_paths(g, paths2)

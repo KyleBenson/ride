@@ -230,6 +230,10 @@ class NetworkTopology(object):
 
         return dsm_algs.get_redundant_paths(self.topo, source, destination, k)
 
+    def get_multi_source_disjoint_paths(self, sources, target, weight='weight'):
+        """Returns disjoint (possibly shortest) paths from each source to the target."""
+        return dsm_algs.get_multi_source_disjoint_paths(self.topo, sources, target, weight=weight)
+
     def get_path(self, source, destination, weight='weight'):
         """Gets shortest path by the optionally specified weight attribute between the nodes.
         @:return a sequence of nodes representing the shortest path"""
@@ -240,22 +244,17 @@ class NetworkTopology(object):
     def merge_paths(path1, path2):
         """Merges the two specified paths, which are formatted as returned by get_path()"""
 
-        # Handle path(s) being empty
-        if not path1:
-            return path2
-        if not path2:
-            return path1
-
-        # Ensure this is a real path
-        if path1[-1] != path2[0]:
-            raise ValueError("specified paths don't share a common merging point!  they are %s and %s" % (path1, path2))
-
-        # We just need to remove duplicate node that would appear in the middle of the two paths joined together
-        return path1 + path2[1:]
+        return dsm_algs.merge_paths(path1, path2)
 
     @staticmethod
     def get_edges_for_path(p):
-        return zip(p, p[1:])
+        """
+        Returns the edges in path p using zip
+        :param p: a path expressed as an ordered list of nodes
+        :type p: list
+        :return: ordered list of (src, dst) pairs
+        """
+        return dsm_algs.get_edges_for_path(p)
 
     def draw_multicast_trees(self, trees):
         """Draws the trees as graphs overlaid on the original topology"""
@@ -263,13 +262,7 @@ class NetworkTopology(object):
 
     def draw_paths(self, paths):
         """Draws the given paths overlaid on the original topology graph"""
-        path_graphs = []
-        for p in paths:
-            new_graph = nx.Graph()
-            nx.add_path(new_graph, p)
-            path_graphs.append(new_graph)
-        # now that the paths are graphs, we can just pass them as if they're trees
-        self.draw_multicast_trees(path_graphs)
+        dsm_algs.draw_paths(self.topo, paths)
 
 
 # Run various tests
