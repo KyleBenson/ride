@@ -3,8 +3,10 @@
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
 
-import os
 import errno
+import logging
+import os
+import random
 import re
 from subprocess import Popen
 
@@ -12,7 +14,6 @@ import topology_manager
 from seismic_warning_test.seismic_alert_common import SEISMIC_PICK_TOPIC, IOT_GENERIC_TOPIC
 from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
 
-import logging
 log = logging.getLogger(__name__)
 LOGGERS_TO_DISABLE = ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool')
 
@@ -23,9 +24,9 @@ import ipaddress
 
 from mininet.net import Mininet
 from mininet.node import RemoteController, Host, OVSKernelSwitch
-from mininet.node import Switch, Link, Node  # these just used for types in docstrings
+from mininet.node import Switch  # these just used for types in docstrings
 from mininet.cli import CLI
-from mininet.link import TCLink, Intf
+from mininet.link import TCLink
 
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from topology_manager.test_sdn_topology import mac_for_host  # used for manual MAC assignment
@@ -33,39 +34,6 @@ from topology_manager.test_sdn_topology import mac_for_host  # used for manual M
 from config import *
 from ride.config import *
 
-# in seconds; make sure this leaves enough time for all data_path failures, recoveries, and publishing additional
-# seismic events so we can see the recovery!  Maybe just configure this dynamically in the future?
-EXPERIMENT_DURATION = 150
-# EXPERIMENT_DURATION = 10  # for testing
-SEISMIC_EVENT_DELAY = 60  # seconds before the 'earthquake happens', i.e. sensors start sending data
-# SEISMIC_EVENT_DELAY = 5  # for testing
-TIME_BETWEEN_SEISMIC_EVENTS = 20  # for multiple earthquakes / aftershock events
-IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
-PROBE_BASE_SRC_PORT = 9900  # ensure this doesn't collide with any other apps/protocols you're using!
-ECHO_SERVER_PORT = 9999
-COAP_CLIENT_SRC_PORT = 7777  # for RemoteCoapEventSink; needed to properly identify publisher traffic
-OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at the default port
-# subnet for all hosts (if you change this, update the __get_ip_for_host() function!)
-# NOTE: we do /9 so as to avoid problems with addressing e.g. the controller on the local machine
-# (vagrant uses 10.0.2.* for VM's IP address).
-HOST_IP_N_MASK_BITS = 9
-IP_SUBNET = '10.128.0.0/%d' % HOST_IP_N_MASK_BITS
-WITH_LOGS = True  # output seismic client/server stdout to a log file
-# HACK: rather than some ugly hacking at Mininet's lack of API for allocating the next IP address,
-# we just put the NAT/server interfaces in a hard-coded subnet.
-NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
-MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
-SLEEP_TIME_BETWEEN_RUNS = 15  # give Mininet/OVS/ONOS a chance to reconverge after cleanup
-# whether to set static ARP and ping between all pairs or just cloud/edge servers
-# set this to True if the controller topology doesn't seem to be including all expected hosts
-ALL_PAIRS = False
-# Since we're using the scale client for background traffic, we need to specify an interval between SensedEvents
-# ENHANCE: base this on the traffic_generator_bandwidth parameter
-IOT_CONGESTION_INTERVAL = 1.0
-
-# Default values
-DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
-DEFAULT_TOPOLOGY_ADAPTER = 'onos'
 
 class MininetSmartCampusExperiment(SmartCampusExperiment):
     """
@@ -551,22 +519,12 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         ####    FAILURE MODEL     ####
 
-        # Apply actual failure model: we schedule these to fail when the earthquake hits
-        # so there isn't time for the topology to update on the controller,
-        # which would skew the results incorrectly. Since it may take a few cycles
-        # to fail a lot of nodes/links, we schedule the failures for a second before.
-        # ENCHANCE: instead of just 1 sec before, should try to figure out how long
-        # it'll take for different machines/configurations and time it better...
         exp_start_time = time.time()
         log.info('*** Configuration done!  Experiment started at %f; now waiting for failure events...' % exp_start_time)
-        time.sleep(SEISMIC_EVENT_DELAY - 1)
-        quake_time = time.time()
-        log.info('*** Earthquake at %s!  Applying failure model...' % quake_time)
-        for link in self.failed_links:
-            log.debug("failing link: %s" % str(link))
-            self.net.configLinkStatus(link[0], link[1], 'down')
-        for node in self.failed_nodes:
-            node.stop(deleteIntfs=False)
+        # ENCHANCE: instead of just 1 sec before, should try to figure out how long
+        # it'll take for different machines/configurations and time it better...
+        time.sleep(SEISMIC_EVENT_DELAY)
+        quake_time = None
 
         ###    FAIL / RECOVER DATA PATHS
         # According to the specified configuration, we update each requested DataPath link to the specified status
@@ -582,13 +540,35 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         first_dpl = sorted(self.data_path_links)[0]
         data_path_changes.insert(0, (first_dpl[0], first_dpl[1], 'down', 0))
         data_path_changes.append((first_dpl[0], first_dpl[1], 'up', TIME_BETWEEN_SEISMIC_EVENTS))
+        # XXX: since the failure configs can sometimes take a little bit, we should explicitly record when each happened
+        output_dp_changes = []
 
-        for link_src, link_dst, new_status, delay in data_path_changes:
+        # We'll fail the first DataPath, then fail the second along with the local links (main earthquake),
+        # then eventually recover one of the DataPaths
+        for i, (cloud_gw, cloud_switch, new_status, delay) in enumerate(data_path_changes):
+
             log.debug("waiting for DataPath change...")
             time.sleep(delay)
+            dp_change_time = time.time()
+            output_dp_changes.append((cloud_gw, new_status, dp_change_time))
             log.debug("%s DataPath link (%s--%s) at time %f" %
-                      ("failing" if new_status == 'down' else "recovering", link_src, link_dst, time.time()))
-            self.net.configLinkStatus(link_src, link_dst, new_status)
+                      ("failing" if new_status == 'down' else "recovering", cloud_gw, cloud_switch, dp_change_time))
+            self.net.configLinkStatus(cloud_gw, cloud_switch, new_status)
+
+            # First DataPath failure wasn't a 'local earthquake', the second is and will fail part of local topology
+            if i == 1:
+                # Apply actual failure model: we schedule these to fail when the earthquake hits
+                # so there isn't time for the topology to update on the controller,
+                # which would skew the results incorrectly. Since it may take a few cycles
+                # to fail a lot of nodes/links, we schedule the failures for a second before.
+                quake_time = time.time()
+                log.info('*** Earthquake at %s!  Applying failure model...' % quake_time)
+                for link in self.failed_links:
+                    log.debug("failing link: %s" % str(link))
+                    self.net.configLinkStatus(link[0], link[1], 'down')
+                for node in self.failed_nodes:
+                    node.stop(deleteIntfs=False)
+                log.debug("done applying failure model at %f" % time.time())
 
         # wait for the experiment to finish by sleeping for the amount of time we haven't used up already
         remaining_time = exp_start_time + EXPERIMENT_DURATION - time.time()
@@ -598,7 +578,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
                 'quake_start_time': quake_time,
-                'data_path_changes': data_path_changes,
+                'data_path_changes': output_dp_changes,
                 'publishers': {p.IP(): p.name for p in self.publishers},
                 'subscribers': {s.IP(): s.name for s in self.subscribers}}
 
@@ -914,6 +894,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                                                 'publisher_%s' % client_id),
                                                 # Need to start at specific time, not just delay, as it takes a few
                                                 # seconds to start up each process.
+                                                # TODO: Also spread out the reports a little bit, but we should spread
+                                                # out the failures too if we do so: + random.uniform(0, 1)
                                                 start_time=time.time() + delay,
                                                 sample_interval=TIME_BETWEEN_SEISMIC_EVENTS) +
                 # for congestion traffic
@@ -922,7 +904,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                 class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
                                                 output_events_file=os.path.join(outputs_dir,
                                                                                 'congestor_%s' % client_id),
-                                                start_delay=5,  # give servers a chance to start
+                                                # give servers a chance to start; spread out their reports too
+                                                start_delay=random.uniform(5, 10),
                                                 sample_interval=IOT_CONGESTION_INTERVAL)
                 ,
                 sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
