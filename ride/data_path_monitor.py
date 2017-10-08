@@ -129,7 +129,7 @@ class RideCDataPathMonitor(ProbingDataPathMonitor):
     # non-zero default to avoid math errors esp. due to link loss rate of 0
     DEFAULT_DETECTION_WINDOW_SIZE = 3
 
-    def __init__(self, max_detection_time=3000, max_false_positive=0.01, init_window=100, alpha=0.8, **kwargs):
+    def __init__(self, max_detection_time=3000, max_false_positive=0.01, init_window=50, alpha=0.8, **kwargs):
         """
         :param max_detection_time: maximum time (in ms) it will take to detect a failure/congestion event
         :param max_false_positive: in (exclusive) range (0, 1.0) to determine false positive rate
