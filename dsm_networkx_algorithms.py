@@ -3,6 +3,8 @@ __author__ = 'Kyle Benson (kebenson@uci.edu)'
 might benefit from."""
 
 import networkx as nx
+import logging
+log = logging.getLogger(__name__)
 
 
 def draw_overlaid_graphs(original, new_graphs, print_text=False):
@@ -21,8 +23,8 @@ def draw_overlaid_graphs(original, new_graphs, print_text=False):
     # line_width = 3.0 ** (min(len(new_graphs), len(line_colors)) - 1)  # use this for generating diagrams
     for i, g in enumerate(new_graphs):
         if print_text:
-            print nx.info(g)
-            print "edges:", list(g.edges())
+            log.info(nx.info(g))
+            log.info("edges:", list(g.edges()))
         nx.draw_networkx(g, pos=layout, edge_color=line_colors[i % len(line_colors)], width=line_width)
         # advance to next line width
         line_width /= 1.7  # use this for visualising on screen
@@ -170,7 +172,9 @@ def get_redundant_paths(G, source, target, k=2, weight='weight'):
     # sanity check
     if __debug__:
         if flow_graph.number_of_edges() > 0:
-            print "WARNING! flow_graph still has flow edges left!", list(flow_graph.edges(data=True))
+            log.debug("flow_graph still has flow edges left! This might be indicative of a problem, but it seems to "
+                      "happen somewhat regularly with our tree-like campus topologies... Remaining flows: %s"
+                      % list(flow_graph.edges(data=True)))
 
     return paths
 
@@ -179,7 +183,16 @@ def get_multi_source_disjoint_paths(G, sources, target, weight='weight'):
     """Gets len(sources) (possibly shortest) maximally-disjoint paths (minimal component overlap) from
     multiple sources to one target destination.  This just calls get_redundant_paths() with a modified graph
     in which a new 'virtual node' is added with edges to each source.  Because the paths are maximally-disjoint and
-    k=len(sources), each of these edges will be used and so each source will have a path to target.
+    k=len(sources), each of these edges *should* be used and so each source *should* have a path to target.
+
+    Based on our implementation of get_redundant_paths(), however, it's possible that some paths may not include a
+     proper source due to the only remaining path to the source incurring such a high penalty that it's cheaper to
+    re-use one of the 'virtual links'.  In such a case, we throw out the useless path (it's links probably weren't
+    of interest to the other sources since they were so cheap still) and simply choose the normal shortest path for any
+    sources not yet accounted for.  This path won't have disjointness guarantees, but we probably didn't have a better
+    option for it anyway...  Could enhance this by actually doing the shortest path (from true source) on the the
+    flow graph to get a cheaper path?
+
     :type G: nx.Graph
     :type sources: list|tuple
     :param target: target destination node in G
@@ -190,31 +203,51 @@ def get_multi_source_disjoint_paths(G, sources, target, weight='weight'):
     G2 = nx.Graph(G)
     virt_node = '__multi_source_virt_node__'
     for s in sources:
-        G2.add_edge(virt_node, s, weight=0)
+        # make sure we specify a 0 weight of the proper attribute
+        G2.add_edge(virt_node, s, **{weight: 0})
 
     paths = get_redundant_paths(G2, virt_node, target, k=len(sources), weight=weight)
-    # chop off virt_node before returning
-    paths = [p[1:] for p in paths]
 
-    # some sanity checks
-    if __debug__:
-        sources_covered = set()
-        for p in paths:
-            assert path_exists(G, p), "not a valid path! %s" % p
-            sources_covered.add(p[0])
-            assert p[-1] == target, "path contained incorrect target: expected %s but got %s" % (target, p[-1])
-        assert sources_covered == set(sources), "not all sources accounted for!  Expected: %s\nBut only got: %s" % (sources, sources_covered)
+    # Now we ensure that all sources are accounted for and filter out paths that don't start (index 1) with one of
+    # our sources.
+    sources = set(sources)
+    sources_covered = set()
+    final_paths = []
+    for p in paths:
+        # We might have multiple paths with same legitimate source, in which case we need to choose which one to keep:
+        # ENHANCE: perhaps choose the one with the cheapest flow value based on having the other algorithm return the flows?
+        # XXX: for now, we're just going to take the first one arbitrarily...
+        src_node = p[1]
+        if src_node in sources and src_node not in sources_covered:
+            sources_covered.add(src_node)
+            # chop off virt_node so we're using actual paths
+            true_path = p[1:]
+            final_paths.append(true_path)
+            assert path_exists(G, true_path), "not a valid path! %s" % true_path
+        assert p[-1] == target, "path contained incorrect target: expected %s but got %s" % (target, p[-1])
 
-    return paths
+    # XXX: Finally, we need to add a regular shortest path for those that aren't
+    # ENHANCE: could try to select a slightly more disjoint path (see above about using returned flow values)
+    for leftover in sources - sources_covered:
+        log.debug("assigning regular shortest path for node %s as it was missing from our diverse paths to target %s" % (leftover, target))
+        final_paths.append(nx.shortest_path(G, source=leftover, target=target, weight=weight))
+
+    assert len(final_paths) == len(sources)  # simple sanity check to ensure we're returning the right # paths!
+    return final_paths
 
 
 def path_exists(G, p):
     """
-    Returns true if p is a valid path in G (all edges exist).
+    Returns true if p is a valid path in G (all edges exist).  Uses the networkx.is_simple_path(G, path) function so it
+    also ensures the path has no loops!
     :type G: nx.Graph
     """
-
-    return all(G.has_edge(u, v) for u, v in get_edges_for_path(p))
+    ret = False
+    try:
+        ret = nx.is_simple_path(G, p)
+    except KeyError:  # edge not found!
+        pass
+    return ret
 
 
 def merge_paths(path1, path2):
@@ -276,5 +309,5 @@ if __name__ == '__main__':
     paths2 = get_multi_source_disjoint_paths(g, multi_sources, target2)
     print paths2
 
-    print 'drawing get_multi_source_disjoint_paths(g, %s, %s) output...' % (multi_sources, target)
+    print 'drawing get_multi_source_disjoint_paths(g, %s, %s) output...' % (multi_sources, target2)
     draw_paths(g, paths2)
