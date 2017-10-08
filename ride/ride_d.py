@@ -392,11 +392,10 @@ class RideD(object):
             flows.extend(flow_rules)
 
         # Need a chance for groups to populate or the flow rule will have an unknown group treatment!
+        # ENHANCE: could wait for the groups to actually finish populating?
         time.sleep(2)
-        for fr in flows:
-            res = self.topology_manager.install_flow_rule(fr)
-            if not res:
-                log.error("Problem installing flow %s" % fr)
+        if not self.topology_manager.install_flow_rules(flows):
+            log.error("Problem installing flow rules: %s" % flows)
 
     def update(self):
         """

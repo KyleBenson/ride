@@ -265,8 +265,8 @@ class RideC(object):
         if host_address not in self._host_routes or route != self._host_routes[host_address]:
             try:
                 flow_rules = self.topology_manager.build_flow_rules_from_path(route, priority=STATIC_PATH_FLOW_RULE_PRIORITY)
-                for r in flow_rules:
-                    self.topology_manager.install_flow_rule(r)
+                if not self.topology_manager.install_flow_rules(flow_rules):
+                    log.error("problem installing batch of flow rules for host %s: %s" % (host_address, flow_rules))
 
                 # do this last in case we failed to install flow rules
                 self._host_routes[host_address] = route
@@ -332,6 +332,7 @@ class RideC(object):
         log.info("All DataPaths down!  Re-routing hosts to edge server...")
 
         # TODO: skip over ones that are already routing there?  or just adjust the weights used to choose between edge/cloud?
+        flow_rules = []
         for h in self.hosts:
             # ENHANCE: choose from several cloud/edge servers
             old_dest = self.cloud_server
@@ -344,18 +345,12 @@ class RideC(object):
             host_src_port = self._get_host_port(h)
             old_dst_port = self._get_server_port(old_dest)
             new_dst_port = self._get_server_port(new_dest)
-            flow_rules = self.topology_manager.build_redirection_flow_rules(host_dpid, old_dest, new_dest,
+            flow_rules.extend(self.topology_manager.build_redirection_flow_rules(host_dpid, old_dest, new_dest,
                                                                             route=route, tp_protocol='udp',
                                                                             source_port=host_src_port,
                                                                             old_dest_port=old_dst_port,
                                                                             new_dest_port=new_dst_port,
-                                                                            priority=REDIRECTION_FLOW_RULE_PRIORITY)
-
-            log.debug("installing redirection flow rules")
-            for f in flow_rules:
-                if not self.topology_manager.install_flow_rule(f):
-                    log.error("failed to install host %s redirect flow rule: %s" % (f, h))
-            log.debug("redirection flow rules installed!")
+                                                                            priority=REDIRECTION_FLOW_RULE_PRIORITY))
 
             # XXX: Save the switches that are doing actual redirection translations of addresses/ports.  Upon recovery,
             # we will later remove these flow rules from them.  Note that the current implementation just uses the
@@ -368,6 +363,10 @@ class RideC(object):
 
             self._host_routes[h] = route
             self._data_path_for_host[h] = None
+
+        log.debug("installing redirection flow rules")
+        if not self.topology_manager.install_flow_rules(flow_rules):
+            log.error("failed to install host %s redirect flow rules: %s" % (flow_rules, h))
 
         log.debug("finished re-routing hosts to edge!")
 

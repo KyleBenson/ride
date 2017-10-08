@@ -707,8 +707,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                     log.debug("Installing static route for subscriber %s: %s" % (sub, route))
 
                     flow_rules = self.topology_adapter.build_flow_rules_from_path(route, priority=STATIC_PATH_FLOW_RULE_PRIORITY)
-                    for r in flow_rules:
-                        self.topology_adapter.install_flow_rule(r)
+                    if not self.topology_adapter.install_flow_rules(flow_rules):
+                        log.error("problem installing batch of flow rules for subscriber %s: %s" % (sub, flow_rules))
                 except Exception as e:
                     log.error("Error installing flow rules for static subscriber routes: %s" % e)
                     raise e
@@ -778,8 +778,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
                 # log.debug("installing probe flow rules for DataPath (port=%d)\nroute: %s\nrules: %s" %
                 #           (src_port, route, frules))
-                for f in frules:
-                    self.topology_adapter.install_flow_rule(f)
+                if not self.topology_adapter.install_flow_rules(frules):
+                    log.error("problem installing batch of flow rules for RideC probes via gateway %s: %s" % (gw, frules))
 
         srv_cfg = make_scale_config(sinks=ride_d_cfg,
                                     networks=None if not self.with_ride_d else \
@@ -850,8 +850,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                 # path.insert(0, self.get_node_dpid(self.cloud))
                 frules = self.topology_adapter.build_flow_rules_from_path(path, matches, priority=STATIC_PATH_FLOW_RULE_PRIORITY)
 
-                for f in frules:
-                    self.topology_adapter.install_flow_rule(f)
+                if not self.topology_adapter.install_flow_rules(frules):
+                    log.error("problem installing batch of flow rules for subscriber %s via gateway %s: %s" % (sub, gw, frules))
 
         ####################
         ###  SETUP CLIENTS
