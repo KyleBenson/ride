@@ -754,6 +754,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                  edge_server=self.get_host_dpid(server),
                                                  cloud_server=self.get_host_dpid(self.cloud),
                                                  publishers=[(h.IP(), COAP_CLIENT_SRC_PORT) for h in sensors],
+                                                 reroute_policy=self.reroute_policy,
                                                  )
 
             # Now set the static routes for probes to travel through the correct DataPath Gateway.
@@ -907,9 +908,13 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                 # give servers a chance to start; spread out their reports too
                                                 start_delay=random.uniform(5, 10),
                                                 sample_interval=IOT_CONGESTION_INTERVAL)
-                ,
+                ,  # always sink the picks as confirmable, but deliver the congestion traffic best-effort
                 sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
-                                              name="CoapEventSink", hostname=cloud_ip, src_port=COAP_CLIENT_SRC_PORT)
+                                              name="SeismicCoapEventSink", hostname=cloud_ip, src_port=COAP_CLIENT_SRC_PORT,
+                                              topics_to_sink=(SEISMIC_PICK_TOPIC,)) +
+                      make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
+                                              name="GenericCoapEventSink", hostname=cloud_ip, src_port=COAP_CLIENT_SRC_PORT,
+                                              topics_to_sink=(IOT_GENERIC_TOPIC,), confirmable_messages=False)
                 # Can optionally enable this to print out each event in its entirety.
                 # + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
             )
@@ -1058,6 +1063,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                         uncleared_switches = self.topology_adapter.rest_api.get_switches()
                         if uncleared_switches:
                             log.error("Why do we still have switches after restarting ONOS??? they are: %s" % uncleared_switches)
+                    else:
+                        log.debug("hosts not cleared out of ONOS yet...")
                 except IOError:
                     log.debug("still waiting for ONOS to fully restart...")
 

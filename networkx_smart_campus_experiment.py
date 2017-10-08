@@ -75,13 +75,25 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # HACK: since we never made an actual API for the controller, we just do this manually...
         for s in subscribers:
             rided.add_subscriber(s, PUBLICATION_TOPIC)
+
         # Build up the Successfully Traversed Topology (STT) from each publisher
         # by determining which path the packet would take in the functioning
         # topology and add its edges to the STT only if that path is
         # functioning in the failed topology.
         # BIG OH: O(T) + O(S), where S = |STT|
+
+        # XXX: because the RideC implementation requires an actual SDN controller adapter, we just repeat the logic
+        # for computing 'redirection' routes (publisher-->edge after cloud failure) here...
+        if self.reroute_policy == 'shortest':
+            pub_routes = {pub: self.topo.get_path(pub, self.server, weight=DISTANCE_METRIC) for pub in self.publishers}
+        else:
+            if self.reroute_policy != 'disjoint':
+                log.error("unknown reroute_policy '%s'; defaulting to 'disjoint'...")
+            pub_routes = {p[0]: p for p in self.topo.get_multi_source_disjoint_paths(self.publishers, self.server, weight=DISTANCE_METRIC)}
+            assert list(sorted(pub_routes.keys())) == list(sorted(self.publishers)), "not all hosts accounted for in disjoint paths: %s" % pub_routes.values()
+
         for pub in self.publishers:
-            path = nx.shortest_path(self.topo.topo, pub, self.server, weight=DISTANCE_METRIC)
+            path = pub_routes[pub]
             rided.set_publisher_route(pub, path)
             if random.random() >= self.error_rate and nx.is_simple_path(failed_topology, path):
                 rided.notify_publication(pub)
@@ -115,6 +127,8 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # now filter only paths that are still functioning and record the reachability
         paths = [p for p in paths if nx.is_simple_path(failed_topology, p)]
         result['unicast'] = len(paths) / float(len(subscribers))
+
+        # TODO: disjoint unicast paths comparison!
 
         # ALL TREES' REACHABILITIES: all, min, max, mean, stdev
         # Next, check all the redundant multicast trees together to get their respective (and aggregate) reachabilities

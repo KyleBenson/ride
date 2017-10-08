@@ -29,13 +29,16 @@ class RideC(object):
     instance specified in __init__
     """
 
-    def __init__(self, edge_server=None, cloud_server=None, topology_mgr='onos', distance_metric=DISTANCE_METRIC, **kwargs):
+    def __init__(self, edge_server=None, cloud_server=None, topology_mgr='onos',
+                 reroute_policy=DEFAULT_REROUTE_POLICY, distance_metric=DISTANCE_METRIC, **kwargs):
         """
         :param edge_server: DPID of the managed edge server
         :param cloud_server: DPID of the managed cloud server
         :param topology_mgr: used as adapter to SDN controller for maintaining topology and routing information;
         optional with default 'onos'
         :type topology_mgr: SdnTopology|str
+        :param reroute_policy: specifies the strategy for rerouting registered publishers to the edge server;
+        can be one of: 'disjoint' (default; choose maximally-disjoint shortish paths), 'shortest' (regular shortest paths)
         :param distance_metric: the distance metric determines the length of the paths used when managing
          routing in the local network since these paths are chosen to be minimal (default='latency')
         :param kwargs: ignored (just present so we can pass args from other classes without causing errors)
@@ -72,13 +75,14 @@ class RideC(object):
         self.cloud_server = cloud_server
 
         # these fields will be set dynamically by their relevant add/remove methods
-        # NOTE: DP just means the DataPath ID, whereas host/GW are represented by their SDN DPID
+        # NOTE: DP just means the DataPath ID, GW is represented by its SDN DPID, and host is an (address, port) tuple
         self._gateway_for_data_path = dict()  # DP --> GW
         self._data_path_status = dict()       # DP --> status
         self._data_path_for_host = dict()     # host --> DP
         self._host_routes = dict()
 
         self._distance_metric = distance_metric
+        self._reroute_policy = reroute_policy
 
         # Save the switches currently holding redirection flow rules so we can delete them later upon recovery.
         self.__redirecting_switches = set()
@@ -102,6 +106,10 @@ class RideC(object):
         migration to a different (or multiple) address format."""
         # XXX: we assume everything is IPv4!!!
         return host_address[1]
+
+    def get_host_dpid(self, host):
+        """Returns the DPID corresponding with the given host specified in its internal format i.e. (address, port)"""
+        return self.topology_manager.get_host_by_ip(self._get_host_ip_address(host))
 
     def _get_server_ip_address(self, server_dpid):
         """Extracts the IP address component from the specified server_dpid.  This is intended to allow future
@@ -315,6 +323,8 @@ class RideC(object):
         :return:
         """
 
+        log.info("DataPath %s recovered! Clearing redirection flows and reassigning hosts..." % data_path)
+
         self.clear_redirection_flows()
 
         for h in self.hosts:
@@ -331,17 +341,30 @@ class RideC(object):
 
         log.info("All DataPaths down!  Re-routing hosts to edge server...")
 
+        # ENHANCE: choose from several cloud/edge servers
+        old_dest = self.cloud_server
+        new_dest = self.edge_server
+
+        # Comparing two strategies: rerouting via shortest path routing VS. rerouting via maximally-disjoint paths
+        # Based on the policy, we'll collect the routes to be used for the hosts into a dict so we can reference them later
+        if self._reroute_policy == 'shortest':
+            routes = {h: self._get_host_route(h, new_dest) for h in self.hosts}
+        else:
+            if self._reroute_policy != 'disjoint':
+                log.error("unknown reroute_policy '%s'; defaulting to 'disjoint'...")
+            host_dpids = [self.get_host_dpid(h) for h in self.hosts]
+            # ENHANCE: pre-compute these for faster re-route
+            routes = {p[0]: p for p in self.topology_manager.get_multi_source_disjoint_paths(host_dpids, new_dest, weight=self._distance_metric)}
+            assert list(sorted(routes.keys())) == list(sorted(host_dpids)), "not all hosts accounted for in disjoint paths: %s" % routes.values()
+
         # TODO: skip over ones that are already routing there?  or just adjust the weights used to choose between edge/cloud?
         flow_rules = []
         for h in self.hosts:
-            # ENHANCE: choose from several cloud/edge servers
-            old_dest = self.cloud_server
-            new_dest = self.edge_server
-            route = self._get_host_route(h, new_dest)
+            host_dpid = self.get_host_dpid(h)
+            route = routes[host_dpid]
             log.debug("host re-route path: %s" % route)
 
             # ENHANCE: may need to handle other address families?  Or transport layers?
-            host_dpid = self.topology_manager.get_host_by_ip(self._get_host_ip_address(h))
             host_src_port = self._get_host_port(h)
             old_dst_port = self._get_server_port(old_dest)
             new_dst_port = self._get_server_port(new_dest)
@@ -366,7 +389,7 @@ class RideC(object):
 
         log.debug("installing redirection flow rules")
         if not self.topology_manager.install_flow_rules(flow_rules):
-            log.error("failed to install host %s redirect flow rules: %s" % (flow_rules, h))
+            log.error("failed to install redirection flow rules: %s" % flow_rules)
 
         log.debug("finished re-routing hosts to edge!")
 

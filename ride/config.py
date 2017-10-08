@@ -1,6 +1,8 @@
 ## This file contains various user-configurable constants used by the RIDE components and experiments.
 
+DEFAULT_TREE_CONSTRUCTION_ALGORITHM = ('red-blue',)
 DEFAULT_TREE_CHOOSING_HEURISTIC = 'importance'
+DEFAULT_REROUTE_POLICY = 'disjoint'
 
 # BUGFIX: when doing redirection to edge server, the static path to cloud server takes precedence.
 # Cause: for multiple flow rules matching a packet, OVS uses the first one added!

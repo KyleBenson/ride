@@ -44,20 +44,19 @@ else:
 DEFAULT_PARAMS = {
     'fprob': 0.1,
     'ntrees': 4,
-    # 'nsubscribers': 400,
-    'nsubscribers': 20,
-    # 'npublishers': 200,
-    'npublishers': 10,
-    # 'topology_filename': 'topos/campus_topo_200b-20h-20ibl.json',
-    # 'topology_filename': 'topos/campus_topo_20b-8h-3ibl.json',
-    #'topology_filename': 'topos/cloud_campus_topo_20b-10h-5ibl.json',
-    'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
+    'nsubscribers': 20 if using_mininet else 400,
+    'npublishers': 10 if using_mininet else 200,
+    'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json' if using_mininet else 'topos/campus_topo_200b-20h-20ibl.json',
     # NOTE: the construction algorithm is specified as a list since each config is run for each experimental treatment!
     # Used to compare each algorithm for each set of parameters, but now we run a specific one
     #'tree_construction_algorithm': [('steiner',), ('diverse-paths',), ('red-blue',)],
-    'tree_construction_algorithm': [('red-blue',)],  # diverse-paths is really slow and steiner almost always performs worse
+    'tree_construction_algorithm': ('red-blue',),  # diverse-paths is really slow and steiner almost always performs worse
     # 'tree_construction_algorithm': [('steiner', 'max'), ('steiner', 'double')],
 }
+# for smaller topology (quicker run):
+# if not using_mininet:
+#     DEFAULT_PARAMS.update(dict(topology_filename='topos/cloud_campus_topo_20b-10h-5ibl.json',
+#                                nsubscribers=40, npublishers=20))
 
 # we'll explore each of these when running experiments
 nsubscribers = [20, 40, 80, 160]
@@ -112,19 +111,19 @@ EXPERIMENTAL_TREATMENTS = {
     #         for t in [2, 4]
     #         for f in [0.1, 0.2]
     #         ]
-    'construction': [
-        {
-            'tree_construction_algorithm': alg,
-            # 'npublishers': p, 'nsubscribers': p*2,
-            'ntrees': t, 'fprob': f,
-            'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
-        }
-        # for p in [5, 10]
-        for t in [2, 4]
-        for f in [0.1, 0.2]
-        for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
-        ]
-
+    # 'construction': [
+    #     {
+    #         'tree_construction_algorithm': alg,
+    #         # 'npublishers': p, 'nsubscribers': p*2,
+    #         'ntrees': t, 'fprob': f,
+    #         'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
+    #     }
+    #     # for p in [5, 10]
+    #     for t in [2, 4]
+    #     for f in [0.1, 0.2]
+    #     for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
+    #     ],
+    'reroute_policy': ['disjoint', 'shortest'],
     #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
     #    "failrandseed": -5644075521501607418,
     #    "randseed": -4277241514845461664} for t in ntrees],

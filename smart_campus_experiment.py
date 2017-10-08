@@ -1,4 +1,3 @@
-
 CLASS_DESCRIPTION = '''Experiment that models failures in a smart campus network setting
 and determines the effectiveness of the Resilient IoT Data Exchange (RIDE) middleware.
 RIDE improves data collection using RIDE-C, which routes IoT data publishers to the cloud
@@ -21,21 +20,44 @@ import time
 from abc import abstractmethod, ABCMeta
 
 import ride
+from ride.config import *
 from failure_model import SmartCampusFailureModel
 DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
 class SmartCampusExperiment(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, nruns=1, ntrees=4, tree_construction_algorithm=('steiner',), nsubscribers=5, npublishers=5,
+    def __init__(self, nruns=1, nsubscribers=5, npublishers=5,
                  failure_model=None, topology_filename=None,
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
                  error_rate=0.0,
+                 ## RideD params
+                 ntrees=4, tree_construction_algorithm=DEFAULT_TREE_CONSTRUCTION_ALGORITHM,
+                 ## RideC params
+                 reroute_policy=DEFAULT_REROUTE_POLICY,
                  # flags to enable/disable certain features for running different combinations of experiments
                  with_ride_d=True, with_ride_c=True,
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
+        """
+        :param nruns:
+        :param ntrees:
+        :param tree_construction_algorithm:
+        :param nsubscribers:
+        :param npublishers:
+        :param reroute_policy: used by RideC to determine the publishers' routes to edge server (after re-route from cloud in our real scenario)
+        :param failure_model:
+        :param topology_filename:
+        :param debug:
+        :param output_filename:
+        :param choice_rand_seed:
+        :param rand_seed:
+        :param error_rate:
+        :param with_ride_d:
+        :param with_ride_c:
+        :param kwargs:
+        """
         super(SmartCampusExperiment, self).__init__()
         self.nruns = nruns
         self.current_run_number = None
@@ -51,6 +73,7 @@ class SmartCampusExperiment(object):
             log.warning("output_filename is None!  Using default of results.json")
             self.output_filename = 'results.json'
         self.tree_construction_algorithm = tree_construction_algorithm
+        self.reroute_policy = reroute_policy
         self.error_rate = error_rate
 
         self.with_ride_c = with_ride_c
@@ -86,6 +109,7 @@ class SmartCampusExperiment(object):
                                    'npublishers': npublishers,
                                    'failure_model': self.failure_model.get_params(),
                                    'heuristic': self.get_mcast_heuristic_name(),
+                                   'reroute_policy': self.reroute_policy,
                                    'topo': topology_filename,
                                    'error_rate': self.error_rate,
                                    'choicerandseed': choice_rand_seed,
