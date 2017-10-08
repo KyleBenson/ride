@@ -111,9 +111,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # ORACLE
         # First, use a copy of whole topology as the 'oracle' heuristic,
         # which sees what subscribers are even reachable by ANY path.
-        failed_topology.graph['heuristic'] = 'oracle'
-        topos_to_check = [failed_topology]
-        reach = self.get_reachability(self.server, subscribers, topos_to_check)[0]
+        reach = self.get_oracle_reachability(subscribers, self.server, failed_topology)
         result['oracle'] = reach
 
         # UNICAST
@@ -180,40 +178,6 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
 
         return result
 
-    # The rest of the methods here are specific to this subclass (not inherited from base).
-
-    def get_reachability(self, server, subscribers, topologies):
-        """Returns the average probability of reaching any of the subscribers from the
-        server in each of the given topologies.  Also includes the result for using
-        all topologies at once.
-        :returns list: containing reachability for each topology (in order),
-        with the last entry representing using all topologies at the same time
-        """
-
-        subs_reachable_by_tree = []
-        all_subscribers_reachable = set()
-        for topology in topologies:
-            nodes_reachable = set(nx.single_source_shortest_path(topology, server))
-            # could also use has_path()
-            subscribers_reachable = subscribers.intersection(nodes_reachable)
-            subs_reachable_by_tree.append(len(subscribers_reachable) / float(len(subscribers)))
-            all_subscribers_reachable.update(subscribers_reachable)
-
-            log.debug("%s heuristic reached %d subscribers in this topo" % (topology.graph['heuristic'], len(subscribers_reachable)))
-        log.debug("ALL subscribers reached by these topos: %d" % len(all_subscribers_reachable))
-        # Lastly, include all of them reachable
-        subs_reachable_by_tree.append(float(len(all_subscribers_reachable)) / len(subscribers))
-        return subs_reachable_by_tree
-
-    @staticmethod
-    def get_failed_topology(topo, failed_nodes, failed_links):
-        """Returns a copy of the graph topo with all of the failed nodes
-        and links removed."""
-        # since we froze the graph we can't just use .copy()
-        topology = nx.Graph(topo)
-        topology.remove_edges_from(failed_links)
-        topology.remove_nodes_from(failed_nodes)
-        return topology
 
 if __name__ == "__main__":
     import sys

@@ -338,6 +338,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             attributes = link[2]
             _bw = attributes.get('bw', 10)  # in Mbps
             _delay = '%fms' % attributes.get('latency', 10)
+            # TODO: increase jitter for cloud!
             _jitter = '1ms'
             _loss = self.error_rate
 
@@ -947,7 +948,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         # make the paths relative to the root directory in which the whole experiment output file is stored
         # as otherwise the paths are dependent on where the cwd is
-        logs_dir = os.path.relpath(logs_dir, root_dir)
+        logs_dir = os.path.relpath(logs_dir, root_dir) if WITH_LOGS else None
         outputs_dir = os.path.relpath(outputs_dir, root_dir)
         return logs_dir, outputs_dir
 
@@ -1109,6 +1110,25 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         """Save additional results outputs (or convert to the right format) before outputting them."""
         # Need to save node names rather than actual Mininet nodes for JSON serializing.
         self.failed_nodes = [n.name for n in self.failed_nodes]
+
+        # We'll also record the 'oracle' heuristic now so that we know how many pubs/subs should have been reachable
+        # by/to the edge/cloud servers
+        ftopo = self.get_failed_topology(self.topo.topo, self.failed_nodes, self.failed_links)
+        subscriber_names = result['subscribers'].values()
+        publisher_names = result['publishers'].values()
+        # XXX: just hard-coding the names since we made them e.g. hs0
+        server_name = 's0'
+        cloud_name = 'x0'
+
+        result['oracle_edge_subs'] = SmartCampusExperiment.get_oracle_reachability(subscriber_names, server_name, ftopo)
+        result['oracle_edge_pubs'] = SmartCampusExperiment.get_oracle_reachability(publisher_names, server_name, ftopo)
+        if self.with_cloud:
+            # we need to remove the first DP link since it'd be failed:
+            # XXX: we can just hack the gateway off that we know is always there
+            ftopo.remove_node('g0')
+            result['oracle_cloud_subs'] = SmartCampusExperiment.get_oracle_reachability(subscriber_names, cloud_name, ftopo)
+            result['oracle_cloud_pubs'] = SmartCampusExperiment.get_oracle_reachability(publisher_names, cloud_name, ftopo)
+
         super(MininetSmartCampusExperiment, self).record_result(result)
 
     ####   Helper functions for working with Mininet nodes/links    ####
