@@ -2,6 +2,7 @@ ipaddress
 #networkx  # we use a specific version with personal modifications; see my fork
 argparse
 requests
+numpy
 
 # NOTE: you'll also need the requirements from scale_client if you plan to use the Mininet-based experiments that run SCALE client processes!
 
