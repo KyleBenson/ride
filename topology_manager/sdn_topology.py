@@ -232,8 +232,9 @@ class SdnTopology(NetworkTopology):
         elif new_dest is None:
             new_dest = route[-1]
 
-        assert source == route[0] and new_dest == route[-1], "redirection route requested that didn't match" \
-                                                             " requested source and destination!"
+        assert source == route[0] and new_dest == route[-1],\
+            "redirection route requested that didn't match requested source and destination! Src/dst: %s/%s\n" \
+            "Requested Route: %s" % (source, new_dest, route)
 
         if tp_protocol is None and (source_port is not None or old_dest_port is not None or new_dest_port is not None):
             raise ValueError("if you specify one of the port numbers for redirection you MUST specify the tp_protocol!")
@@ -301,7 +302,7 @@ class SdnTopology(NetworkTopology):
         rev_new_source_eth = old_dest_eth
         rev_dest_eth = src_eth
 
-        route.reverse()
+        route = list(reversed(route))
         switch = route[1]
         in_port = self.get_ports_for_nodes(new_dest, switch)[1]
 
@@ -416,6 +417,7 @@ class SdnTopology(NetworkTopology):
         # the directionality of the request in order to properly order
         # the return values.
 
+        assert not isinstance(self.topo, nx.DiGraph), "We assume the graph is undirected, but self.topo is a nx.DiGraph!"
         edge = self.topo[n1][n2]
         if edge['port1']['dpid'] == n1:
             port1 = edge['port1']['port_num']

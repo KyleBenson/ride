@@ -348,19 +348,23 @@ class RideC(object):
         # Comparing two strategies: rerouting via shortest path routing VS. rerouting via maximally-disjoint paths
         # Based on the policy, we'll collect the routes to be used for the hosts into a dict so we can reference them later
         if self._reroute_policy == 'shortest':
-            routes = {h: self._get_host_route(h, new_dest) for h in self.hosts}
+            routes = {self.get_host_dpid(h): self._get_host_route(h, new_dest) for h in self.hosts}
         else:
             if self._reroute_policy != 'disjoint':
                 log.error("unknown reroute_policy '%s'; defaulting to 'disjoint'...")
-            host_dpids = [self.get_host_dpid(h) for h in self.hosts]
+            # since we can have a host registered with multiple ports, we should just make this a unique list so their
+            # flows take the same path, though in the future we may want to assign different paths for different flows...
+            host_dpids = set(self.get_host_dpid(h) for h in self.hosts)
             # ENHANCE: pre-compute these for faster re-route
             routes = {p[0]: p for p in self.topology_manager.get_multi_source_disjoint_paths(host_dpids, new_dest, weight=self._distance_metric)}
-            assert list(sorted(routes.keys())) == list(sorted(host_dpids)), "not all hosts accounted for in disjoint paths: %s" % routes.values()
+            assert list(sorted(routes.keys())) == list(sorted(host_dpids)), "not all hosts accounted for in disjoint paths!" \
+                                                                            " Got: %s\nMissing: %s" % (routes, set(host_dpids) - set(routes.keys()))
 
         # TODO: skip over ones that are already routing there?  or just adjust the weights used to choose between edge/cloud?
         flow_rules = []
         for h in self.hosts:
             host_dpid = self.get_host_dpid(h)
+            assert host_dpid != old_dest and host_dpid != new_dest
             route = routes[host_dpid]
             log.debug("host re-route path: %s" % route)
 

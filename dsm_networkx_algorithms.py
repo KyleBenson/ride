@@ -194,7 +194,7 @@ def get_multi_source_disjoint_paths(G, sources, target, weight='weight'):
     flow graph to get a cheaper path?
 
     :type G: nx.Graph
-    :type sources: list|tuple
+    :type sources: list|tuple|set
     :param target: target destination node in G
     :param weight: string specifying path length
     :raises nx.NetworkxError: if something goes wrong
@@ -231,6 +231,8 @@ def get_multi_source_disjoint_paths(G, sources, target, weight='weight'):
     for leftover in sources - sources_covered:
         log.debug("assigning regular shortest path for node %s as it was missing from our diverse paths to target %s" % (leftover, target))
         final_paths.append(nx.shortest_path(G, source=leftover, target=target, weight=weight))
+        assert final_paths[-1][0] == leftover
+        assert final_paths[-1][0] != target
 
     assert len(final_paths) == len(sources)  # simple sanity check to ensure we're returning the right # paths!
     return final_paths

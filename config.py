@@ -93,7 +93,7 @@ sudo ovs-vswitchd --pidfile --detach --log-file''' % (OVS_PREFIX_DIR, OVS_PREFIX
 IPERF_BASE_PORT = 5000  # background traffic generators open several iperf connections starting at this port number
 PROBE_BASE_SRC_PORT = 9900  # ensure this doesn't collide with any other apps/protocols you're using!
 ECHO_SERVER_PORT = 9999
-COAP_CLIENT_SRC_PORT = 7777  # for RemoteCoapEventSink; needed to properly identify publisher traffic
+COAP_CLIENT_BASE_SRC_PORT = 7777  # for RemoteCoapEventSink; needed to properly identify publisher traffic
 OPENFLOW_CONTROLLER_PORT = 6653  # we assume the controller will always be at the default port
 HOST_IP_N_MASK_BITS = 9
 # subnet for all hosts (if you change this, update the __get_ip_for_host() function!)

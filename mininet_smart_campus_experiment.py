@@ -688,11 +688,15 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                           gw, src_port in zip(self.cloud_gateways, src_ports)]
             log.debug("RideC-managed DataPath arguments are: %s" % data_path_args)
 
+            # We have two different types of IoT data flows (generic and seismic) so we use two different CoAP clients
+            # on the publishers to distinguish the traffic, esp. since generic data is sent non-CON!
+            publisher_args = [(h.IP(), pub_port) for h in sensors for pub_port in (COAP_CLIENT_BASE_SRC_PORT, COAP_CLIENT_BASE_SRC_PORT+1)]
+
             _srv_apps += make_scale_config_entry(class_path="seismic_warning_test.ride_c_application.RideCApplication",
                                                  name="RideC", topology_mgr=sdn_topology_cfg, data_paths=data_path_args,
                                                  edge_server=self.get_host_dpid(server),
                                                  cloud_server=self.get_host_dpid(self.cloud),
-                                                 publishers=[(h.IP(), COAP_CLIENT_SRC_PORT) for h in sensors],
+                                                 publishers=publisher_args,
                                                  reroute_policy=self.reroute_policy,
                                                  )
 
@@ -849,10 +853,12 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                 sample_interval=IOT_CONGESTION_INTERVAL)
                 ,  # always sink the picks as confirmable, but deliver the congestion traffic best-effort
                 sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
-                                              name="SeismicCoapEventSink", hostname=cloud_ip, src_port=COAP_CLIENT_SRC_PORT,
+                                              name="SeismicCoapEventSink", hostname=cloud_ip,
+                                              src_port=COAP_CLIENT_BASE_SRC_PORT,
                                               topics_to_sink=(SEISMIC_PICK_TOPIC,)) +
                       make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
-                                              name="GenericCoapEventSink", hostname=cloud_ip, src_port=COAP_CLIENT_SRC_PORT,
+                                              name="GenericCoapEventSink", hostname=cloud_ip,
+                                              src_port=COAP_CLIENT_BASE_SRC_PORT,
                                               topics_to_sink=(IOT_GENERIC_TOPIC,), confirmable_messages=False)
                 # Can optionally enable this to print out each event in its entirety.
                 # + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
