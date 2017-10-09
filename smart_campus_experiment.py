@@ -132,6 +132,9 @@ class SmartCampusExperiment(object):
         :param add_help: if True, adds help command (set to False if using this arg_parser as a parent)
         :return argparse.ArgumentParser arg_parser:
         """
+
+        # TODO: add RideC parameters?
+
         arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION,
                                              parents=parents, add_help=add_help)
         # experimental treatment parameters
@@ -185,10 +188,12 @@ class SmartCampusExperiment(object):
             # topo_fname must not be formatted as expected: just use it plain but remove _'s to avoid confusing code parsing the topo for its params
             topo_fname = os.path.splitext(os.path.basename(args.get('topology_filename', defaults.topology_filename).replace('_', '')))[0]
 
-        output_filename = 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%0.2fe.json' % \
+        output_filename = 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%s_%0.2fe.json' % \
                           (args.get('ntrees', defaults.ntrees), args.get('fprob', defaults.fprob),
                            args.get('nsubscribers', defaults.nsubscribers), args.get('npublishers', defaults.npublishers),
                            cls.build_mcast_heuristic_name(*args.get('tree_construction_algorithm', defaults.tree_construction_algorithm)),
+                           # not currently configurable via cmd line...
+                           args.get('reroute_policy', DEFAULT_REROUTE_POLICY),
                            topo_fname, args.get('error_rate', defaults.error_rate))
 
         output_filename = os.path.join(dirname, output_filename)
