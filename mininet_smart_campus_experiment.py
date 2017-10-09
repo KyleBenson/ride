@@ -1011,6 +1011,10 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.server_iperfs = []
         self.client_iperfs = []
 
+        # XXX: somehow there still seem to be client processes surviving the .kill() commands; this finishes them off:
+        p = Popen(CLEANUP_SCALE_CLIENTS, shell=True)
+        p.wait()
+
         log.debug("*** All processes exited!")
 
         # But first, give a chance to inspect the experiment state before quitting Mininet.

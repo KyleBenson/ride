@@ -2,15 +2,15 @@
 # Configurations that you might need to change for a specific installation.
 # TODO: this file can be sourced in bash to collect these variables too!  BUT we need to do string formatting differently...
 
-# When True, runs host processes in mininet with -OO command for optimized python code
-OPTIMISED_PYTHON = False
-
 # can just change this and not the others if everything is running under same user account...
 DEFAULT_USER='vagrant'
 
 # This will control a lot of delays and debugging
-TESTING = True
-WITH_LOGS = TESTING  # output seismic client/server stdout to a log file
+TESTING = False
+WITH_LOGS = True  # output seismic client/server stdout to a log file
+
+# When True, runs host processes in mininet with -OO command for optimized python code
+OPTIMISED_PYTHON = not TESTING
 
 ##########         ONOS     CONFIG      ###########
 
@@ -50,7 +50,7 @@ SCALE_EXTRA_ARGS=\
 VIRTUAL_ENV_CMD="export WORKON_HOME=~/.venvs; source ~/.local/bin/virtualenvwrapper.sh; workon ride_scale_client;"
 # WARNING: this took a long time to get actually working as the quotes are quite finicky... careful modifying!
 SCALE_CLIENT_BASE_COMMAND='su -c "pushd .; %s popd; python %s -m scale_client %s %%s" ' % (VIRTUAL_ENV_CMD, "-OO" if OPTIMISED_PYTHON else "", SCALE_EXTRA_ARGS) + SCALE_USER
-
+CLEANUP_SCALE_CLIENTS="ps aux | grep '\-m scale_client' | grep -v 'grep' | awk '{print $2;}' | xargs -n 1 kill -9"
 
 ##### Misc.
 IGNORE_OUTPUT = ' > /dev/null 2>&1'
@@ -110,7 +110,7 @@ MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
 #########       EXPERIMENT    CONFIG    ##########
 
 ## Delays (in seconds) control when events happen, how long experiment lasts, and waiting for convergence
-SEISMIC_EVENT_DELAY = 60 if not TESTING else 35  # seconds before the 'earthquake happens', i.e. sensors start sending data
+SEISMIC_EVENT_DELAY = 60 if not TESTING else 40  # seconds before the 'earthquake happens', i.e. sensors start sending data
 TIME_BETWEEN_SEISMIC_EVENTS = 20 if not TESTING else 10  # for multiple earthquakes / aftershock events
 SLEEP_TIME_BETWEEN_RUNS = 15 if not TESTING else 5 # give Mininet/OVS/ONOS a chance to reconverge after cleanup
 # make sure this leaves enough time for all data_path failures, recoveries, and publishing additional
@@ -121,5 +121,5 @@ EXPERIMENT_DURATION = SEISMIC_EVENT_DELAY + 10 + TIME_BETWEEN_SEISMIC_EVENTS * (
 ALL_PAIRS = False
 # Since we're using the scale client for background traffic, we need to specify an interval between SensedEvents
 # ENHANCE: base this on the traffic_generator_bandwidth parameter
-IOT_CONGESTION_INTERVAL = 0.05
+IOT_CONGESTION_INTERVAL = 0.1
 DEFAULT_TOPOLOGY_ADAPTER = 'onos'
