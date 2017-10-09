@@ -19,6 +19,7 @@ import signal
 import traceback
 from itertools import chain
 
+from ride.ride_d import RideD
 from failure_model import SmartCampusFailureModel
 
 # when True, this flag causes run.py to only print out the commands rather than run them each
@@ -32,7 +33,7 @@ nruns = 10
 reverse_cmds = False
 using_mininet = True
 if using_mininet:
-    if getpass.getuser() != 'root':
+    if getpass.getuser() != 'root' and not testing:
         print "ERROR: Mininet must be run as root!"
         exit(1)
 
@@ -118,11 +119,12 @@ EXPERIMENTAL_TREATMENTS = {
     #         'ntrees': t, 'fprob': f,
     #         'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
     #     }
-    #     # for p in [5, 10]
+    #     for p in [5, 10]
     #     for t in [2, 4]
     #     for f in [0.1, 0.2]
     #     for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
     #     ],
+    'tree_choosing_heuristic': RideD.TREE_CHOOSING_HEURISTICS,
     'reroute_policy': ['disjoint', 'shortest'],
     #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
     #    "failrandseed": -5644075521501607418,
@@ -327,6 +329,9 @@ if __name__ == '__main__':
     dirname = ''
     if len(sys.argv) > 1:
         dirname = sys.argv[1]
+        if dirname == 'testing':
+            print 'testing flag set to True from user request'
+            testing = True
     if dirname and not testing:
         try:
             os.mkdir(dirname)
