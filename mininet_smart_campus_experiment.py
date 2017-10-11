@@ -902,7 +902,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # need to check if the programs have finished before we exit mininet!
         # NOTE: need to wait more than 10 secs, which is default 'timeout' for CoapServer.listen()
         # TODO: set wait_time to 30? 60?
-        def wait_then_kill(proc, timeout = 5, wait_time = 20):
+        time.sleep(20)
+        def wait_then_kill(proc, timeout = 1, wait_time = 2):
             assert isinstance(proc, Popen)  # for typing
             ret = None
             for i in range(wait_time/timeout):
