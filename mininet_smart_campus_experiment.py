@@ -858,7 +858,8 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                               topics_to_sink=(SEISMIC_PICK_TOPIC,)) +
                       make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
                                               name="GenericCoapEventSink", hostname=cloud_ip,
-                                              src_port=COAP_CLIENT_BASE_SRC_PORT,
+                                              # make sure we distinguish the coapthon client instances from each other!
+                                              src_port=COAP_CLIENT_BASE_SRC_PORT + 1,
                                               topics_to_sink=(IOT_GENERIC_TOPIC,), confirmable_messages=False)
                 # Can optionally enable this to print out each event in its entirety.
                 # + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
