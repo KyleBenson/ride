@@ -38,6 +38,8 @@ def parse_args(args):
                         help='''files from which to read output results
                         (default=%(default)s)''')
 
+    parser.add_argument('--output-file', '-o', metavar='output_file', type=str, default=False,
+                        help='''if specified, output the resulting DataFrame to a CSV file''')
     parser.add_argument('--debug', '--verbose', '-v', type=str, default='info', nargs='?', const='debug',
                         help='''set verbosity level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
 
@@ -100,7 +102,6 @@ class SmartCampusExperimentStatistics(object):
         self.experiment_type = data['params'].get('experiment_type', 'networkx')
         params = self.extract_parameters(params)
         results = self.extract_stats_from_results(results, filename=fname, **params)
-        self.record_stats(results, fname)
 
         return results
 
@@ -143,7 +144,7 @@ class SmartCampusExperimentStatistics(object):
                 del exp_params["traffic_generator_bandwidth"]
 
         elif experiment_type == 'networkx':
-            raise NotImplementedError('netx parsing not supported yet!')
+            pass  # nothing different
         else:
             log.error("unrecognized 'experiment_type' %s. Aborting." % experiment_type)
             exit(1)
@@ -202,76 +203,153 @@ class SmartCampusExperimentStatistics(object):
 
 
         elif experiment_type == 'networkx':
-            raise NotImplementedError('netx parsing not supported yet!')
+            # just use the file name without .json as treatment
+            assert filename.endswith('.json'), "why does results file not end with .json???"
+            treatment = filename[:-len('.json')]
+            stats = NetworkxSeismicStatistics(results, treatment=treatment, **exp_params)
+
+            # we'll combine all the parsed results into a single data frame
+            if self.stats is None:
+                self.stats = stats
+            else:
+                self.stats += stats
         else:
             log.error("unrecognized 'experiment_type' %s. Aborting." % experiment_type)
             exit(1)
 
         return stats
 
-    def record_stats(self, results, filename):
-        """Save the results parsed and fully extracted from the given filename.  For mininet version, this does nothing
-        since we use one object to hold all the results already."""
-        pass
+
+# TODO: use these an average function that'll group rows by all param columns and average the other columns over the runs?
+VARIED_PARAMS = ('const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
+                 'npublishers', 'nsubscribers', 'topo', 'treatment')
+# maybe also pub-err-rate and rand-seeds?
+
+class NetworkxSeismicStatistics(object):
+    """
+    Parses the raw results (reachabilities) into a DataFrame.
+    """
+
+    def __init__(self, results, **exp_params):
+        """
+        :param results:
+        :type results: list[dict]
+        :param exp_params:
+        """
+        super(NetworkxSeismicStatistics, self).__init__()
+
+        # Skip over all these metrics/records for now since we aren't using them
+        # NOTE: unicast we'll actually use, but we can't add it in the for loop: see XXX note down below
+        skip_keys = {'stdev', 'all', 'overlap', 'nhops', 'failed_nodes', 'failed_links', 'unicast'}
+        # TODO: handle this by breaking it into multiple columns? or just save mean and unicast?
+        skip_keys.add('cost')
+
+        # Since the 'const_alg' is a key in this dict with all the MDMT-selection policies' reachabilities
+        # as the values, we'll actually be making multiple rows for each parsed run here.
+        # Hence, we just build a new data frame for each run and concat them at the end.
+
+        data_frames = []
+        for run in results:
+            # use a dict for DataFrame constructor where most values will be scalar but the ones we're 'unrolling' from
+            # 'const_alg' will be a list.
+            this_run_data = exp_params.copy()
+            for k, v in run.items():
+                if k in skip_keys:
+                    continue
+                elif k == exp_params['const_alg']:
+                    for select_policy, reach in v.items():
+                        # not keeping ALL selection policies that are actually special recorded values
+                        if select_policy not in skip_keys:
+                            this_run_data.setdefault('select_policy', []).append(select_policy)
+                            this_run_data.setdefault('reach', []).append(reach)
+                else:
+                    this_run_data[k] = v
+
+            this_df = pd.DataFrame(this_run_data)
+            # XXX: unicast/oracle are a weird special case where we treat it as a separate row where ntrees=0,
+            # which we need to add as a new row AFTER building the DataFrame since just appending it to a row earlier
+            # would have made for different-length indices given to the df constructor!
+            special_row = this_run_data.copy()
+            special_row['ntrees'] = 0
+            for special_treatment in ('unicast', 'oracle'):
+                special_row['select_policy'] = special_treatment
+                special_row['const_alg'] = special_treatment
+                special_row['reach'] = run[special_treatment]
+                # TODO: handle unicast cost!
+                this_df = this_df.append(special_row, ignore_index=True)
+
+            data_frames.append(this_df)
+
+        self.stats = pd.concat(data_frames, ignore_index=True, copy=False)
+        self.stats.reset_index()
+
+    def reachabilities(self, **param_matches):
+        """
+        Returns the reachability values for the parsed stats filtered over the key/values specified in kwargs.
+        This is basically just self.stats since no further computation is necessary.
+        :param param_matches: matches the rows for which the column given by the key has the associated value
+        :return:
+        :rtype pd.DataFrame:
+        """
+
+        # can't run empty query
+        if not param_matches:
+            return self.stats
+        query_string = ' & '.join(('%s == "%s"' % (k, v) for k, v in param_matches.items()))
+        log.debug("running query: %s" % query_string)
+        return self.stats.query(query_string)
+
+    @classmethod
+    def average_over_runs(self, df):
+        """Averages the given DataFrame's values over all the runs for each unique treatment grouping."""
+        return df.groupby(VARIED_PARAMS).mean().reset_index().drop('run', axis=1)
+
+    def __iadd__(self, other):
+        self.stats = pd.concat((self.stats, other.stats), ignore_index=True)
+        return self
 
 
-# TODO: this version will parse the results dict(s) directly instead of a file, but it should expose the same APIs when possible i.e. reachabilities() (can't do latency!)
-# class NetworkxSeismicStatistics(pd.DataFrame):
-#     pass
-#     assert self.experiment_type is None or self.experiment_type == 'networkx', \
-#         "experiment_type changed between parsed files!"
-#
-# def parse_results(self, results):
-#     """
-#     Parse the given results and return the parsed data.
-#     :param results: a list of dicts with each dict being a run
-#     :type results: list[dict]
-#     :rtype: pd.DataFrame
-#     """
-#     raise NotImplementedError
+#### EXAMPLE RESULTS (one index):
 
-        # TODO: could extract details about the topo file from its name?  mostly we've been doing campus_topo.json though...
-                # topo is a list containing topology reader and filename, so just extract filename
-                # and parse the parameters from it
-                #     param_value = data['params']['topo'][1].split('.')[0].split('_')[-1]
-                #     _parsed = re.match('(\d+)b-(\d+)h-(\d+)ibl', param_value).groups()
-                #     param_value = (int(_parsed[0]), int(_parsed[1]), int(_parsed[2]))
+# Actual results may have nested results with further parameters.
+# As an example, consider a single run:
+# {
+#     "cost": {
+#         "max": 596.3999999999999,
+#         "mean": 585.92499999999995,
+#         "min": 579.0,
+#         "stdev": 5.1380322108760055,
+#         "unicast": 1481.4000000000071
+#     },
+#     "nhops": {
+#         "max": 9,
+#         "mean": 3.9896875000000001,
+#         "min": 3,
+#         "stdev": 1.3643519166050841
+#     },
+#     "oracle": 0.7975,
+#     "overlap": 31628,
+#     "run": 29,
+#     "steiner": { #                        <------  metric_name=steiner, yvalue=this dict
+#         "all": 0.78,
+#         "importance-chosen": 0.7125,
+#         "max": 0.7125,
+#         "max-overlap-chosen": 0.7125,
+#         "max-reachable-chosen": 0.7125,
+#         "mean": 0.56031249999999999,
+#         "min": 0.135,
+#         "min-missing-chosen": 0.7125,
+#         "stdev": 0.17726409279306962
+#     },
+#     "unicast": 0.605
+# }
 
-                # WARNING: if we make a separate NetworkxSeismicStatistics class that directly derives from pd.DataFrame, make
-                # sure that you don't try to set any of its attributes in its constructor until after calling super.__init__!
-
-                # Actual results may have nested results with further parameters.
-                # As an example, consider a single run:
-                # {
-                #     "cost": {
-                #         "max": 596.3999999999999,
-                #         "mean": 585.92499999999995,
-                #         "min": 579.0,
-                #         "stdev": 5.1380322108760055,
-                #         "unicast": 1481.4000000000071
-                #     },
-                #     "nhops": {
-                #         "max": 9,
-                #         "mean": 3.9896875000000001,
-                #         "min": 3,
-                #         "stdev": 1.3643519166050841
-                #     },
-                #     "oracle": 0.7975,
-                #     "overlap": 31628,
-                #     "run": 29,
-                #     "steiner": {                        <------  metric_name=steiner, yvalue=this dict
-                #         "all": 0.78,
-                #         "importance-chosen": 0.7125,
-                #         "max": 0.7125,
-                #         "max-overlap-chosen": 0.7125,
-                #         "max-reachable-chosen": 0.7125,
-                #         "mean": 0.56031249999999999,
-                #         "min": 0.135,
-                #         "min-missing-chosen": 0.7125,
-                #         "stdev": 0.17726409279306962
-                #     },
-                #     "unicast": 0.605
-                # }
+# TODO: could extract details about the topo file from its name?  mostly we've been doing campus_topo.json though...
+# topo is a list containing topology reader and filename, so just extract filename
+# and parse the parameters from it
+#     param_value = data['params']['topo'][1].split('.')[0].split('_')[-1]
+#     _parsed = re.match('(\d+)b-(\d+)h-(\d+)ibl', param_value).groups()
+#     param_value = (int(_parsed[0]), int(_parsed[1]), int(_parsed[2]))
 
 
 def run_tests():
@@ -330,6 +408,14 @@ if __name__ == '__main__':
     stats.parse_all()
 
     # Now we have to determine what kind of stats we want to collect and output... Can use filtering here
-    assert isinstance(stats.stats, MininetSeismicStatistics)
-    print stats.stats.latencies(stats.stats.seismic_events())
-    print stats.stats.reachabilities()
+    # assert isinstance(stats.stats, MininetSeismicStatistics)
+    # assert isinstance(stats.stats, NetworkxSeismicStatistics)
+    df = stats.stats.reachabilities()
+    print 'original stats (%d):\n' % len(df), df
+    # print stats.stats.stats.info()
+
+    print 'averaged over runs (%d):\n' % len(df), stats.stats.average_over_runs(df)
+    # print stats.stats.latencies(stats.stats.seismic_events())
+
+    if args.output_file:
+        df.to_csv(args.output_file, index=False)
