@@ -1,5 +1,5 @@
-# sdn_pubsub_mcast
-Installs SDN (OpenFlow) rules for accomplishing pub-sub via multicast.
+# Resilient IoT Data Exchange (RIDE)
+Resilient IoT Data Exchange (RIDE) using SDN and edge computing. This repository includes the algorithms, prototype implementation, SDN controller REST API adapter, and Mininet-based experimental framework we used to evaluate its performance.
 
 ## Getting Started
 
