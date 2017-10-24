@@ -25,8 +25,8 @@ from failure_model import SmartCampusFailureModel
 # when True, this flag causes run.py to only print out the commands rather than run them each
 # testing = True
 testing = False
-debug_level = 'debug'  # for the actual experiment
-# debug_level = 'warn'
+# debug_level = 'debug'  # for the actual experiment
+debug_level = 'warn'
 verbose = True
 print_cmd = True
 nruns = 10
@@ -112,20 +112,28 @@ EXPERIMENTAL_TREATMENTS = {
     #         for t in [2, 4]
     #         for f in [0.1, 0.2]
     #         ]
-    # 'construction': [
-    #     {
-    #         'tree_construction_algorithm': alg,
-    #         # 'npublishers': p, 'nsubscribers': p*2,
-    #         'ntrees': t, 'fprob': f,
-    #         'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
-    #     }
-    #     for p in [5, 10]
-    #     for t in [2, 4]
-    #     for f in [0.1, 0.2]
-    #     for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
-    #     ],
-    'tree_choosing_heuristic': RideD.TREE_CHOOSING_HEURISTICS,
-    'reroute_policy': ['disjoint', 'shortest'],
+    # 'construction-reroute': [
+    'npubs-reroute': [
+    # 'construction-selection': [
+        {
+            # 'tree_construction_algorithm': alg,
+            # 'tree_choosing_heuristic': choice,
+            # TODO: not p*2 just static 20 or maybe 10?
+            'npublishers': p, 'nsubscribers': 400,
+            # 'ntrees': t,
+            'fprob': f,
+            # 'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
+            'reroute_policy': rrp,
+        }
+        for rrp in ['disjoint', 'shortest']
+        for p in [100, 200, 400, 800]
+        # for t in [2, 4]
+        for f in [0.1, 0.2]
+        # for choice in RideD.TREE_CHOOSING_HEURISTICS
+        # for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
+        ],
+    # 'tree_choosing_heuristic': RideD.TREE_CHOOSING_HEURISTICS,
+    # 'reroute_policy': ['disjoint', 'shortest'],
     #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
     #    "failrandseed": -5644075521501607418,
     #    "randseed": -4277241514845461664} for t in ntrees],
