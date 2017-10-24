@@ -110,6 +110,7 @@ class SmartCampusExperimentStatistics(object):
         Extracts the relevant parameters from the specified ones, possibly changing some of their names to a shorter or
         more distinct one.
         :param exp_params:
+        :type exp_params: dict
         :param experiment_type: whether its a 'mininet' or 'networkx' experiment, default is self.experiment_type
         :return: dict of extracted params
         """
@@ -122,7 +123,7 @@ class SmartCampusExperimentStatistics(object):
         ## These modifications are common across all exp types
         # XXX: rename some params, esp. for printing cols
         exp_params['const_alg'] = exp_params.pop("heuristic")
-        exp_params['exp_type'] = exp_params.pop("experiment_type")
+        exp_params['exp_type'] = exp_params.pop("experiment_type", "networkx")  # old version didn't have this
         # XXX: since the only failure model we currently use is uniform, let's just extract the 'fprob'
         exp_params['fprob'] = float(exp_params.pop('failure_model').split('/')[1])
         # XXX: old version included topo type first, but we never made additional types
@@ -220,11 +221,6 @@ class SmartCampusExperimentStatistics(object):
         return stats
 
 
-# TODO: use these an average function that'll group rows by all param columns and average the other columns over the runs?
-VARIED_PARAMS = ('const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
-                 'npublishers', 'nsubscribers', 'topo', 'treatment')
-# maybe also pub-err-rate and rand-seeds?
-
 class NetworkxSeismicStatistics(object):
     """
     Parses the raw results (reachabilities) into a DataFrame.
@@ -240,10 +236,9 @@ class NetworkxSeismicStatistics(object):
 
         # Skip over all these metrics/records for now since we aren't using them
         # NOTE: unicast we'll actually use, but we can't add it in the for loop: see XXX note down below
-        skip_keys = {'stdev', 'all', 'overlap', 'nhops', 'failed_nodes', 'failed_links', 'unicast'}
-        # TODO: handle this by breaking it into multiple columns? or just save mean and unicast?
-        skip_keys.add('cost')
-
+        # Same with cost
+        skip_keys = {'stdev', 'all', 'nhops', 'failed_nodes', 'failed_links', 'unicast', 'cost'}
+        # TODO: add back in? 'overlap',
         # Since the 'const_alg' is a key in this dict with all the MDMT-selection policies' reachabilities
         # as the values, we'll actually be making multiple rows for each parsed run here.
         # Hence, we just build a new data frame for each run and concat them at the end.
@@ -254,7 +249,10 @@ class NetworkxSeismicStatistics(object):
             # 'const_alg' will be a list.
             this_run_data = exp_params.copy()
             for k, v in run.items():
-                if k in skip_keys:
+                # Special case: we recorded multiple metrics for this, but we'll just use mean.
+                if k == 'cost':
+                    this_run_data[k] = v['mean']
+                elif k in skip_keys:
                     continue
                 elif k == exp_params['const_alg']:
                     for select_policy, reach in v.items():
@@ -270,12 +268,13 @@ class NetworkxSeismicStatistics(object):
             # which we need to add as a new row AFTER building the DataFrame since just appending it to a row earlier
             # would have made for different-length indices given to the df constructor!
             special_row = this_run_data.copy()
-            special_row['ntrees'] = 0
+            # TODO: this?
+            # special_row['ntrees'] = 0
             for special_treatment in ('unicast', 'oracle'):
                 special_row['select_policy'] = special_treatment
                 special_row['const_alg'] = special_treatment
                 special_row['reach'] = run[special_treatment]
-                # TODO: handle unicast cost!
+                special_row['cost'] = run['cost']['unicast'] if special_treatment == 'unicast' else 0
                 this_df = this_df.append(special_row, ignore_index=True)
 
             data_frames.append(this_df)
@@ -299,10 +298,19 @@ class NetworkxSeismicStatistics(object):
         log.debug("running query: %s" % query_string)
         return self.stats.query(query_string)
 
+    VARIED_PARAMS = ('const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
+                     'npublishers', 'nsubscribers', 'topo', 'treatment')
+
     @classmethod
-    def average_over_runs(self, df):
-        """Averages the given DataFrame's values over all the runs for each unique treatment grouping."""
-        return df.groupby(VARIED_PARAMS).mean().reset_index().drop('run', axis=1)
+    def average_over_runs(cls, df):
+        """
+        Averages the given DataFrame's values over all the runs for each unique treatment grouping.
+        :type df: pd.DataFrame
+        """
+        # XXX: need to ensure we have all these parameters available
+        cols = set(df.columns.tolist())
+        group_params = list(set(cls.VARIED_PARAMS).intersection(cols))
+        return df.groupby(group_params).mean().reset_index().drop('run', axis=1)
 
     def __iadd__(self, other):
         self.stats = pd.concat((self.stats, other.stats), ignore_index=True)
@@ -403,7 +411,8 @@ if __name__ == '__main__':
     pd.set_option('display.max_columns', 15)  # seismic_events has 14 columns
     pd.set_option('display.width', 2500)
 
-    args = parse_args(sys.argv[1:])
+    args = sys.argv[1:]
+    args = parse_args(args)
     stats = SmartCampusExperimentStatistics(args)
     stats.parse_all()
 
@@ -414,8 +423,32 @@ if __name__ == '__main__':
     print 'original stats (%d):\n' % len(df), df
     # print stats.stats.stats.info()
 
-    print 'averaged over runs (%d):\n' % len(df), stats.stats.average_over_runs(df)
-    # print stats.stats.latencies(stats.stats.seismic_events())
+    original_stats = df
+
+    # policies_to_keep = ('oracle', 'unicast', 'max', 'mean')
+    # policies_to_keep = ('oracle', 'unicast')
+    policies_to_keep = ('oracle', 'unicast', 'importance-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'min-missing-chosen')
+    # const_algs_to_keep = ('diverse-paths', 'red-blue', 'steiner')
+    # for pol in policies_to_keep:
+    #     for alg in const_algs_to_keep:
+    query = '|'.join(['select_policy == "%s" ' % pol for pol in policies_to_keep])
+            # query = '|'.join(['const_alg == "%s" ' % alg for alg in const_algs_to_keep])
+
+
+            # query = "const_alg == '%s' & select_policy == '%s'" % (alg, pol)
+    #
+    # print 'QUERY:', query
+    # df = original_stats.query(query).query('|'.join(['const_alg == "%s" ' % pol for pol in ["red-blue", "unicast", "oracle"]]))
+    df = original_stats.query('select_policy == "mean"')
+    # print 'filtered stats (%d):\n' % len(df), df.head()
+
+    # final_stats = stats.stats.average_over_runs(df)
+    final_stats = df
+
+    print 'final stats:\n', final_stats
 
     if args.output_file:
-        df.to_csv(args.output_file, index=False)
+        fname = args.output_file
+        # fname = 'netx_results/ntrees.csv'
+        # final_stats.to_csv(fname, index=False)
+        original_stats.to_csv(fname, index=False)
