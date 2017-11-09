@@ -57,7 +57,8 @@ def parse_args(args):
     hosts [include_attributes]          - print the available hosts (with attributes if optional argument is yes/true; NO *ARGS/**KWARGS!)
     switches|devices                    - print the available switches (alias: devices)
     path src dst                        - build and install a path between src and dst using flow rules
-    m[ulti]cast addr src dst1 [dst2...] - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules (NO *ARGS/**KWARGS!)
+    m[ulti]cast addr src dst1 [dst2...] - build and install a multicast tree for IP address 'addr' from src to all of dst1,2... using flow rules
+    \t\t\t\t\t  (NO *ARGS! **KWARGS passed to build_flow_rules_from_multicast_tree(...)!)
     mdmts ntrees alg <mcast_args>       - same as mcast, except it builds 'ntrees' multiple maximally-disjoint multicast trees using the algorithm 'alg'
     redirect src old_dst new_dst        - redirect packets from src to old_dst by installing flow rules that convert ipv4_dst to that of new_dst
     del-flow switch_id flow_id          - delete the requested flow rule
@@ -98,6 +99,7 @@ if __name__ == "__main__":
     for a in args.command[1:]:
         if '=' in a:
             first, second = a.split('=')
+            # TODO: expand the 'second' into a bool if it should be (see below in hosts/switches)
             cmd_kwargs[first] = second
         else:
             cmd_args.append(a)
@@ -138,7 +140,7 @@ if __name__ == "__main__":
 
         print("Installing multicast tree:", list(mcast_tree.nodes()))
         matches = topo.build_matches(ipv4_src=topo.get_ip_address(src_host), ipv4_dst=address, eth_type='0x0800')
-        gflows, flows = topo.build_flow_rules_from_multicast_tree(mcast_tree, src_host, matches)
+        gflows, flows = topo.build_flow_rules_from_multicast_tree(mcast_tree, src_host, matches, **cmd_kwargs)
 
         print("installing groups:", gflows)
         for gf in gflows:
