@@ -1,4 +1,5 @@
 # Manages the Successfully Traversed Topology (STT) data structure
+import time
 
 import networkx as nx
 
@@ -14,14 +15,17 @@ class SttManager(object):
         super(SttManager, self).__init__()
         self.stt = nx.Graph()
 
-    def route_update(self, route, at_time, is_up=True):
+    def route_update(self, route, at_time=None, is_up=True):
         """
-        Updates the STT with the given route being up (or down) at a specific time.
+        Updates the STT with the given route being up (or down) at a possibly-specified time that defaults to now.
         :param route:
         :param is_up:
         :param at_time:
         :return:
         """
+
+        if at_time is None:
+            at_time = time.time()
 
         links = zip(route, route[1:])
         for u, v in links:
