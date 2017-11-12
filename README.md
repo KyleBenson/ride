@@ -48,7 +48,13 @@ Note that the config.py file contains some reset commands used to clean out and 
 
 You may need to tweak some settings inside config.py e.g. the IP addresses of the Mininet hosts might conflict with your OS's networking configuration esp. if you're running inside a virtual machine.
 
-This repository assumes that the [scale_client](https://github.com/KyleBenson/scale_client) and [seismic_warning_test](https://github.com/KyleBenson/seismic_warning_test) repos are on your PYTHONPATH.  Really, they'll need to be in *root*'s PYTHONPATH!  I typically use symbolic links to just put them in the same directory; make sure you use an absolute (NOT relative) path for this or it won't work right!
+This repository assumes that the python packages (i.e. folder containing `__init__.py`) within the following repositories are on your PYTHONPATH:
+* [scale_client](https://github.com/KyleBenson/scale_client)
+* [seismic_warning_test](https://github.com/KyleBenson/seismic_warning_test)
+* [coapthon](https://github.com/KyleBenson/CoAPthon.git) (our modified fork).
+  
+Really, they'll need to be in the *root* user's PYTHONPATH since that's how you'll be executing it!
+I typically use symbolic links to just put them in the same directory; note that you may need to use an absolute (NOT relative) path for this, although I think this issue may have been related to crossing filesystem boundaries (my repository was on my Mac OSX system while we actually ran Mininet inside a Linux VM).
    
 **Running the SCALE Client from within Mininet**: to properly run this, we opt to specify a different user that will have a virtual environment they can run the scale client in.  You can change the `SCALE_USER` at the top of the scale_config.py file. Make sure this user has the `virtualenvwrapper.sh` script available (you can edit the `SCALE_CLIENT_BASE_COMMAND` as well if you use virtualenv differently or want to forego it entirely), create a virtual environment with the name `ride_scale_client`, and install the dependencies (both for scale_client and for ride) in that environment with `pip install -r requirements.txt`
 

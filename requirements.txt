@@ -1,5 +1,6 @@
 ipaddress
-#networkx  # we use a specific version with personal modifications; see my fork
+#networkx  # we use a specific version with personal modifications; see my fork and notes in README.md
+#coapthon  # we use a specific version with personal modifications; see my fork and notes in README.md
 argparse
 requests
 
