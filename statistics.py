@@ -413,6 +413,11 @@ if __name__ == '__main__':
 
     args = sys.argv[1:]
     args = parse_args(args)
+
+    ## Manually set arguments
+    # args.debug = 'debug'
+    # args.output_file = 'netx_results/cost_ntrees.csv'
+
     stats = SmartCampusExperimentStatistics(args)
     stats.parse_all()
 
@@ -427,7 +432,14 @@ if __name__ == '__main__':
 
     # policies_to_keep = ('oracle', 'unicast', 'max', 'mean')
     # policies_to_keep = ('oracle', 'unicast')
-    policies_to_keep = ('oracle', 'unicast', 'importance-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'min-missing-chosen')
+
+    ## This query is for comparing the different selection-policies; it cuts out the max, mean, min results
+    # policies_to_keep = ('oracle', 'unicast', 'importance-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'min-missing-chosen')
+
+    ## For the overhead comparison, we should compare unicast and the different const-algs for each nsubscribers value
+    policies_to_keep = ('unicast', 'mean')
+
+    ## This is for comparing the different construction algorithms
     # const_algs_to_keep = ('diverse-paths', 'red-blue', 'steiner')
     # for pol in policies_to_keep:
     #     for alg in const_algs_to_keep:
@@ -438,17 +450,18 @@ if __name__ == '__main__':
             # query = "const_alg == '%s' & select_policy == '%s'" % (alg, pol)
     #
     # print 'QUERY:', query
-    # df = original_stats.query(query).query('|'.join(['const_alg == "%s" ' % pol for pol in ["red-blue", "unicast", "oracle"]]))
-    df = original_stats.query('select_policy == "mean"')
+    df = original_stats.query(query)
+    # df = df.query('|'.join(['const_alg == "%s" ' % pol for pol in ["red-blue", "unicast", "oracle"]]))
+    # df = original_stats.query('select_policy == "mean"')
     # print 'filtered stats (%d):\n' % len(df), df.head()
 
-    # final_stats = stats.stats.average_over_runs(df)
     final_stats = df
+    final_stats = stats.stats.average_over_runs(df)
 
     print 'final stats:\n', final_stats
 
     if args.output_file:
         fname = args.output_file
         # fname = 'netx_results/ntrees.csv'
-        # final_stats.to_csv(fname, index=False)
-        original_stats.to_csv(fname, index=False)
+        final_stats.to_csv(fname, index=False)
+        # original_stats.to_csv(fname, index=False)
