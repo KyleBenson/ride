@@ -1,0 +1,15 @@
+During a router upgrade, we ran the following command on several hosts (including google.com for Internet access check) that had to traverse the upgraded router to determine how long the hosts were unreachable from each other after processing the output using the script included in this directory:
+
+sleep $SECS_UNTIL_MAINTENANCE_STARTED; (ping -i 0.2 $HOST 2>&1) | tee ping_test
+
+
+ROUND 1 results:
+
+~30 secs. down-times at somewhere around 6:12, 6:13, and 9:25am
+~45-sec down-time at about 6:15am
+~5mins downtime at 6:32am: this much longer connectivity gap that appears separated into 2 in my results since exactly 3 pings were successfully echoed in between. The length of these separate gaps differed between the two hosts used for probing: ~100-secs. at about 6:32am and a ~165-200 secs. at about 6:34am.
+
+
+ROUND 2 results:
+
+TODO
