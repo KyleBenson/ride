@@ -256,6 +256,11 @@ class NetworkTopology(object):
         """
         return dsm_algs.get_edges_for_path(p)
 
+    def draw(self):
+        """Draws the topology"""
+        # XXX: just defer to another draw method for now by specifying empty overlay params
+        self.draw_paths([])
+
     def draw_multicast_trees(self, trees):
         """Draws the trees as graphs overlaid on the original topology"""
         dsm_algs.draw_overlaid_graphs(self.topo, trees)
