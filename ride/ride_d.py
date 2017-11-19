@@ -213,7 +213,9 @@ class RideD(object):
             # BIG OH: O(k(T+S)) as we assume intersection done in O(|first| + |second|) time
             overlaps = [(len(stt_set.intersection(t.edges())) / float(nx.number_of_edges(t)),
                          random.random(), t) for t in trees]
-            best = max(overlaps)[2]
+            best = max(overlaps)
+            log.debug("selected MDMT with metric value: %f" % best[0])
+            best = best[2]
             return best
 
         elif heuristic == self.MIN_MISSING_LINKS:
@@ -224,7 +226,9 @@ class RideD(object):
             # We use the size of a tree as a tie-breaker (prefer smaller ones)
             # BIG OH: O(k(T+S))
             missing = [(len(set(t.edges()) - stt_set), nx.number_of_edges(t), random.random(), t) for t in trees]
-            best = min(missing)[3]
+            best = min(missing)
+            log.debug("selected MDMT with metric value: %f" % best[0])
+            best = best[3]
             return best
 
         elif heuristic == self.MAX_REACHABLE_SUBSCRIBERS:
@@ -254,7 +258,9 @@ class RideD(object):
                     if nx.is_simple_path(stt_graph, path):
                         this_reachability += 1
                 dests_reachable.append((this_reachability, random.random(), tree))
-            best = max(dests_reachable)[2]
+            best = max(dests_reachable)
+            log.debug("selected MDMT with metric value: %f" % best[0])
+            best = best[2]
             return best
 
         elif heuristic == self.MAX_LINK_IMPORTANCE:
@@ -289,7 +295,9 @@ class RideD(object):
                         total_importance += f
                 importance.append((this_importance / total_importance, random.random(), tree))
 
-            best = max(importance)[2]
+            best = max(importance)
+            log.debug("selected MDMT with metric value: %f" % best[0])
+            best = best[2]
             return best
 
         else:
