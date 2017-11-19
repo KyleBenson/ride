@@ -49,3 +49,7 @@ class SttManager(object):
             edges.add((v, u))
 
         return edges
+
+    def reset(self):
+        """Resets the STT by clearing out all edges."""
+        self.stt = nx.Graph()
