@@ -43,9 +43,14 @@ class RideD(object):
     managing the list of publishers/subscribers for the Data Exchange broker.
     """
 
-    TREE_CHOOSING_HEURISTICS = ('max-overlap', 'min-missing', 'max-reachable', 'importance')
+    # Names of the MDMT selection policies
+    MAX_LINK_IMPORTANCE = 'importance'
+    MAX_REACHABLE_SUBSCRIBERS = 'max-reachable'
+    MIN_MISSING_LINKS = 'min-missing'
+    MAX_OVERLAPPING_LINKS = 'max-overlap'
+    MDMT_SELECTION_POLICIES = (MAX_OVERLAPPING_LINKS, MIN_MISSING_LINKS, MAX_REACHABLE_SUBSCRIBERS, MAX_LINK_IMPORTANCE)
 
-    def __init__(self, topology_mgr, dpid, addresses, ntrees=2, tree_choosing_heuristic='importance',
+    def __init__(self, topology_mgr, dpid, addresses, ntrees=2, tree_choosing_heuristic=MAX_LINK_IMPORTANCE,
                  tree_construction_algorithm=('red-blue',), **kwargs):
         """
         :param SdnTopology|str topology_mgr: used as adapter to SDN controller for
@@ -132,7 +137,7 @@ class RideD(object):
                                 dest='tree_construction_algorithm',
                                 help='''heuristic algorithm for building multicast trees.  First arg is the heuristic
                                 name; all others are passed as args to the heuristic. (default=%(default)s)''')
-        arg_parser.add_argument('--choosing-heuristic', '-c', default='importance', dest='tree_choosing_heuristic',
+        arg_parser.add_argument('--choosing-heuristic', '-c', default=cls.MAX_LINK_IMPORTANCE, dest='tree_choosing_heuristic',
                                 help='''multicast tree choosing heuristic to use (default=%(default)s)''')
 
         # Networking-related configurations
@@ -199,7 +204,7 @@ class RideD(object):
         # ENHANCE: could try using nx.intersection(G,H) but it requires the same nodes
         stt_set = self.stt_mgr.get_stt_edges()
         
-        if heuristic == 'max-overlap':
+        if heuristic == self.MAX_OVERLAPPING_LINKS:
             # IDEA: choose the tree with the most # edges overlapping the STT,
             # which means it has the most # 'known' working links.
             # We scale the total overlap by the number of edges in the tree
@@ -211,7 +216,7 @@ class RideD(object):
             best = max(overlaps)[2]
             return best
 
-        elif heuristic == 'min-missing':
+        elif heuristic == self.MIN_MISSING_LINKS:
             # IDEA: choose the tree with the lease # edges that haven't been
             # validated as 'currently functioning' by the publishers'
             # packets' paths, which lessens the probability that a link of
@@ -222,7 +227,7 @@ class RideD(object):
             best = min(missing)[3]
             return best
 
-        elif heuristic == 'max-reachable':
+        elif heuristic == self.MAX_REACHABLE_SUBSCRIBERS:
             # IDEA: choose the tree with the most # reachable destinations,
             # as estimated by checking whether the path taken to each
             # destination is validated as 'currently functioning' by the STT
@@ -252,7 +257,7 @@ class RideD(object):
             best = max(dests_reachable)[2]
             return best
 
-        elif heuristic == 'importance':
+        elif heuristic == self.MAX_LINK_IMPORTANCE:
             # IDEA: essentially a hybrid of max-overlap and max-reachable.
             # Instead of just counting # edges overlapping, count total
             # 'importance' of overlapping edges where the importance is

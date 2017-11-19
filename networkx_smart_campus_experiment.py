@@ -144,7 +144,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # Finally, check the tree chosen by the edge server heuristic(s)
         # for having the best estimated chance of data delivery
         choices = dict()
-        for method in RideD.TREE_CHOOSING_HEURISTICS:
+        for method in RideD.MDMT_SELECTION_POLICIES:
             choices[method] = rided.get_best_mdmt(PUBLICATION_TOPIC, method)
 
         for choice_method, best_tree in choices.items():
