@@ -323,7 +323,7 @@ class CampusTopologyGenerator(object):
         else:
             return self.generate()
 
-    def draw(self):
+    def draw(self, label_nodes=False):
         """Draw the graph using matplotlib in a color-coordinated manner."""
         try:
             import matplotlib.pyplot as plt
@@ -339,7 +339,7 @@ class CampusTopologyGenerator(object):
                                                     self.hosts + self.minor_building_routers])
             # then do a spring layout, keeping the inner nodes fixed in positions
             positions = nx.spring_layout(self.topo, pos=positions, fixed=self.core_nodes + self.server_nodes + self.major_building_routers + self.distribution_routers)
-            nx.draw(self.topo, node_color=node_colors, pos=positions)
+            nx.draw(self.topo, node_color=node_colors, pos=positions, with_labels=label_nodes)
             plt.show()
         except ImportError:
             print "ERROR: couldn't draw graph as matplotlib.pyplot couldn't be imported!"
@@ -354,6 +354,7 @@ class CampusTopologyGenerator(object):
 if __name__ == '__main__':
     test_run = False
     view_topo = test_run
+    label_nodes = True  # label the nodes if drawing the topology (not great for diagrams but fine for viewing it)
 
     if test_run:
         # build smaller topology for visualizing
@@ -395,5 +396,4 @@ if __name__ == '__main__':
     if view_topo:
         g = t.get()
         print nx.info(g)
-        t.draw()
-        t.write()
+        t.draw(label_nodes=label_nodes)
