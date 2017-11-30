@@ -204,6 +204,10 @@ class OnosSdnTopology(SdnTopology):
                     new_action = {"type": "TABLE", "tableId": int(value)}
                 elif action_type == "group":
                     new_action = {"type": "GROUP", "groupId": str(value)}
+                elif action_type == "queue":
+                    # WARNING: the ONOS API Docs actually show a different API for 'queue' that also specifies the port,
+                    #    but it doesn't work for v1.11.1
+                    new_action = {"type": "QUEUE", "queueId": str(a[1])}
                 else:
                     raise ValueError("Unrecognized or unimplemented action %s" % a)
                 actions.append(new_action)

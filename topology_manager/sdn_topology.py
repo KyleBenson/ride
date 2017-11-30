@@ -89,14 +89,17 @@ class SdnTopology(NetworkTopology):
 
     # Generic flow rule generating functions based on the topology
 
-    def build_flow_rules_from_path(self, path, use_matches=None, add_matches=None, **kwargs):
+    def build_flow_rules_from_path(self, path, use_matches=None, add_matches=None, use_queues=None, **kwargs):
         """
         Converts a simple path to a list of flow rules that can then be installed in the corresponding switches.
+        :param path: the path packets will follow through the topology
         :param use_matches: optionally use the specified 'matches'; if unspecified, by default the flow rules simply
          match based on in_port, ipv4_src, and ipv4_dst.
         :param add_matches: an optional dict to be used as additional parameters (key-value pairs) to build_matches
          (NOTE: this cannot be used in conjunction with use_matches! BUT it CAN be used to overwrite the default
          matches i.e. ipv4_src/ipv4_dst/in_port!)
+        :param use_queues: optionally forward through the specified queue instead of via the regular 'output' command
+               NOTE: every port on the path is expected to have the same 'queueId' available!
         :param kwargs: additional arguments passed to build_flow_rule()
         """
 
@@ -116,7 +119,10 @@ class SdnTopology(NetworkTopology):
             in_port, _ = self.get_ports_for_nodes(switch, src)
             out_port, _ = self.get_ports_for_nodes(switch, dst)
 
-            actions = self.build_actions(("output", out_port))
+            if use_queues is None:
+                actions = self.build_actions(("output", out_port))
+            else:
+                actions = self.build_actions(("queue", int(use_queues)), ("output", int(out_port)))
 
             if use_matches is None:
                 if add_matches is None:
