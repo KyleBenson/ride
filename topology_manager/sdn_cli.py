@@ -12,10 +12,7 @@ and properly format them.'''
 
 import argparse
 import logging
-#from os.path import isdir
-#from os import listdir
-#from getpass import getpass
-#password = getpass('Enter password: ')
+import json
 
 def parse_args(args):
 ##################################################################################
@@ -72,6 +69,8 @@ def parse_args(args):
     redirect source=<src_ip> old_dest=<old_dst_ip> new_dest=<new_dst_ip>
     The **kwargs may be passed directly to the relevant function or they may be passed to build_flow_rules[...]()
     e.g. specifying the 'priority' does the latter
+    These **kwargs can include non-string values e.g. dicts that will be parsed as if they're json.  For example:
+        add_matches='{"ipv4_src": "10.0.0.1"}'
     ''')
 
 
@@ -98,8 +97,17 @@ if __name__ == "__main__":
     cmd_kwargs = {}
     for a in args.command[1:]:
         if '=' in a:
-            first, second = a.split('=')
-            # TODO: expand the 'second' into a bool if it should be (see below in hosts/switches)
+            first, second = a.split('=', 1)  # allow argument value to contain '='
+            # try expanding the 'second' into something more complex than a string e.g. dict, list, bool, etc.
+            try:
+                second = json.loads(second)
+            # Must've just been a string...
+            except ValueError:
+                # But maybe it's a boolean value?
+                if second.lower() in ('y', 'yes', 't', 'true'):
+                    second = True
+                elif second.lower() in ('n', 'no', 'f', 'false'):
+                    second = False
             cmd_kwargs[first] = second
         else:
             cmd_args.append(a)
