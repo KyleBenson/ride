@@ -1,0 +1,6 @@
+topo,ntrees,select_policy,exp_type,npublishers,nsubscribers,treatment,const_alg,fprob,choicerandseed,failrandseed,oracle,randseed,reach
+campus_topo_200b-20h-20ibl.json,1,max,networkx,200,400,old_results_networkx/results2/ntrees/results_1t_0.10f_400s_200p_red-blue_200b-20h-20ibl,red-blue,0.1,6.67984480799e+17,8.85366512103e+18,0.68875,-1.42627391268e+18,0.52385
+campus_topo_200b-20h-20ibl.json,2,max,networkx,200,400,old_results_networkx/results2/ntrees/results_2t_0.10f_400s_200p_red-blue_200b-20h-20ibl,red-blue,0.1,6.67984480799e+17,8.85366512103e+18,0.68875,-1.42627391268e+18,0.60435
+campus_topo_200b-20h-20ibl.json,4,max,networkx,200,400,old_results_networkx/results2/ntrees/results_4t_0.10f_400s_200p_red-blue_200b-20h-20ibl,red-blue,0.1,6.67984480799e+17,8.85366512103e+18,0.68875,-1.42627391268e+18,0.62385
+campus_topo_200b-20h-20ibl.json,8,max,networkx,200,400,old_results_networkx/results2/ntrees/results_8t_0.10f_400s_200p_red-blue_200b-20h-20ibl,red-blue,0.1,6.67984480799e+17,8.85366512103e+18,0.68875,-1.42627391268e+18,0.63005
+campus_topo_200b-20h-20ibl.json,16,max,networkx,200,400,old_results_networkx/results2/ntrees/results_16t_0.10f_400s_200p_red-blue_200b-20h-20ibl,red-blue,0.1,6.67984480799e+17,8.85366512103e+18,0.68875,-1.42627391268e+18,0.6322
