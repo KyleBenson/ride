@@ -136,7 +136,7 @@ class SdnTopology(NetworkTopology):
             rules.append(self.build_flow_rule(switch, matches, actions, **kwargs))
         return rules
 
-    def build_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1', route_responses=False, **kwargs):
+    def build_flow_rules_from_multicast_tree(self, tree, source, matches, group_id='1', route_responses=None, **kwargs):
         """Converts a multicast tree to a list of flow rules that can then
         be installed in the corresponding switches.  They will be ordered
         with group flows first so iterating over the list to install them
@@ -151,8 +151,14 @@ class SdnTopology(NetworkTopology):
         :param source - source node/switch from which to start the search
         :param matches - match rules to be used for matching multicast packets
         :param group_id - group_id to assign this group rule to on all switches
-        :param route_responses: if True (is not by default), also build flow rules to route responses backwards
-         along the tree (NOTE: uses the default 'matches' provided by build_flow_rules_from_path(p))
+        :param route_responses: if not None, it specifies the matches (as key-value pairs rather than fully-built matches)
+         to use for also building flow rules that route responses backwards along the tree.
+        NOTE: You can simply specify an empty dict to not add any matches but still include response flow rules!
+         NOTE: be careful that your specified 'matches' will allow the client's response to actually
+         be routed e.g. you can't rely on the IP address since the dst_ipv4 at least will be translated before reaching
+         the client
+        NOTE: adds them to the default 'matches' provided by build_flow_rules_from_path(p) i.e. you
+         should probably only specify transport/ethernet layer matches since that will fill in the src/dst_ip)
         :param kwargs: additional arguments passed to build_flow_rule()
 
         :return group_flows, flows - pair of list of all flow rules to accomplish the multicast tree"""
@@ -203,14 +209,13 @@ class SdnTopology(NetworkTopology):
 
         # To ensure responses flow along the same route as the multicast query, we offer this option to install static
         # routes in the reverse direction:
-        if route_responses:
+        if route_responses is not None:
             # make sure we ignore switches!
-            leaves = set(n for n in tree.nodes() if tree.degree(n) == 1) - {source}
+            leaves = set(n for n in tree.nodes() if self.is_host(n)) - {source}
             for node in leaves:
                 path = nx.shortest_path(tree, node, source)
-                # TODO: include the 'matches' param?
-                response_flows = self.build_flow_rules_from_path(path)
-                print 'adding response flows for node %s: %s' % (node, response_flows)
+                response_flows = self.build_flow_rules_from_path(path, add_matches=route_responses)
+                log.debug('adding response flows for node %s: %s' % (node, response_flows))
                 flows.extend(response_flows)
 
         return group_flows, flows
