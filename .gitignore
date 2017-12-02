@@ -1,12 +1,22 @@
+# sym-linked external repos
+scale_client
+coapthon
+networkx
+seismic_warning_test
+mininet
+
+# CoAPthon does this stupid thing where it print the logging config to a file then reads it in, which pollutes our working directory...
+logging.conf
+
 # PyCharm
 .idea/
 
 # Workspace files
-networkx
-mininet
 *.json
 *.progress
 logs/
+results/
+.DS_STORE
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
