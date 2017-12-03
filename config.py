@@ -103,8 +103,10 @@ IP_SUBNET = '10.128.0.0/%d' % HOST_IP_N_MASK_BITS
 # HACK: rather than some ugly hacking at Mininet's lack of API for allocating the next IP address,
 # we just put the NAT/server interfaces in a hard-coded subnet.
 NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
+## multiple MDMTs (multicast alerting trees) are distinguished by unique IP address/UDP src port network addresses
+## NOTE: the UDP port is necessary so that replies can be routed along the particular MDMT used to disseminate the alert
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
-
+MULTICAST_ALERT_BASE_SRC_PORT = 4000
 
 import re
 from topology_manager.test_sdn_topology import mac_for_host

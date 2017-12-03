@@ -124,8 +124,10 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         self.show_cli = show_cli
 
         # HACK: We just manually allocate IP addresses rather than adding a controller API to request them.
+        # NOTE: we also have to specify a unique UDP src port for each tree so that responses can be properly routed
+        # back along the same tree (otherwise each MDMT would generate the same flow rules and overwrite each other!).
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
-        self.mcast_address_pool = [str(base_addr + i) for i in range(kwargs['ntrees'])]
+        self.mcast_address_pool = [(str(base_addr + i), MULTICAST_ALERT_BASE_SRC_PORT + i) for i in range(kwargs['ntrees'])]
 
         # Disable some of the more verbose and unnecessary loggers
         for _logger_name in LOGGERS_TO_DISABLE:
@@ -377,7 +379,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
         # We also have to manually configure the routes for the multicast addresses
         # the server will use.
-        for a in self.mcast_address_pool:
+        for a, p in self.mcast_address_pool:
             self.server.setHostRoute(a, self.server.intf().name)
 
         # this needs to come after starting network or no interfaces/IP addresses will be present
