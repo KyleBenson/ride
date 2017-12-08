@@ -1,21 +1,22 @@
 # Resilient IoT Data Exchange - Dissemination middleware
-import argparse
-
-import time
-
-import topology_manager
-from ride.config import MULTICAST_FLOW_RULE_PRIORITY
 
 CLASS_DESCRIPTION =  """Middleware layer for sending reliable IoT event notifications to a group of subscribers.
     It configures and chooses from multiple Maximally-Disjoint Multicast Trees (MDMTs) based on
     knowledge of network state.  This state is based on recently received publications and the
     routes their packets took, which all comprise the Successfully Traversed Topology (STT)."""
 
+import argparse
+import time
+from threading import Lock, Thread, ThreadError
 import random
 
-from stt_manager import SttManager
 import networkx as nx
+
+import topology_manager
+from ride.config import MULTICAST_FLOW_RULE_PRIORITY
+from stt_manager import SttManager
 from topology_manager.sdn_topology import SdnTopology
+
 import logging
 log = logging.getLogger(__name__)
 
@@ -75,11 +76,13 @@ class RideD(object):
         :param tuple[str] tree_construction_algorithm: which MDMT-construction algorithm to use (pos 0)
         followed by any args to that algorithm
         :param alert_sending_callback: if specified, will be used as the callback to actually send the raw alert data
-            through the underlying networking channel via the best current address (likely IPv4/UDP port #);
+            through the underlying networking channel via the best current MDMT (likely its network address: IPv4/UDP port #);
             if unspecified, you MUST subclass this class and implement this method as:
-            "__try_send_alert_packet_via(self, alert_context, address)" to
+            "__try_send_alert_packet_via(self, alert_context, mdmt)" to properly enable sending alerts.
             NOTE: you should handle setting up callbacks for subscriber responses that notify RideD of a successful
             delivery in this callback!  Consider just attaching it to the AlertContext
+            NOTE: make sure you make this callback thread-safe if it's asynchronous!  The AlertContext.thread_lock will
+            be locked when it's called so be careful accessing it or you might deadlock!
         :param kwargs: ignored (just present so we can pass args from other classes without causing errors)
         """
         super(RideD, self).__init__()
@@ -199,20 +202,27 @@ class RideD(object):
         """
         return self.dpid
 
-    def send_alert(self, msg, topic):
+    def send_alert(self, msg, topic, **retransmit_kwargs):
         """
         Resiliently send the specified message to the given alert topic by creating an AlertContext and using it to
         choose the best available MDMT and continually re-send packets over diverse paths until they arrive at all
         subscribers.
         :param msg:
         :param topic:
+        :param retransmit_kwargs: keyword arguments sent to _alert_retransmit_loop(...); to disable retransmission
+            specify max_retries=0
         :return: the alert being sent
         :rtype: RideD.AlertContext
         """
 
         alert_ctx = self._make_new_alert(msg, topic)
         self._do_send_alert(alert_ctx)
-        # TODO: schedule timeout/retransmission to complete initiating the alert
+
+        # start the retransmit_loop, but we don't need to save the thread since we won't directly join it
+        # but rather just let it expire after calling cancel_alert()
+        thread = Thread(target=self._alert_retransmit_loop, args=(alert_ctx,), kwargs=retransmit_kwargs,
+                        name="retx_thread_%s" % alert_ctx)
+        thread.start()
 
         return alert_ctx
 
@@ -233,6 +243,47 @@ class RideD(object):
         self.__try_send_alert_packet_via(alert_ctx, mdmt)
 
         return mdmt
+
+    def _alert_retransmit_loop(self, alert_ctx, timeout=2, max_retries=None):
+        """
+        Repeatedly tries to send the specified alert every timeout seconds until either attempting it max_retries times,
+        successfully delivering the alert to all subscribers, or cancel_alert() is explicitly called.
+        :param alert_ctx:
+        :type alert_ctx: RideD.AlertContext
+        :param timeout: timeout between attempts in seconds
+        :param max_retries: default=2*(#MDMTs)
+        :return:
+        """
+
+        if max_retries == 0:
+            return
+        elif max_retries is None:
+            max_retries = len(alert_ctx.mdmts) * 2
+
+        retry_attempts = 0
+        while alert_ctx.active and max_retries > retry_attempts:
+            log.debug("waiting %.2f secs to retransmit alert %s" % (timeout, alert_ctx))
+            # Sleep first since we've already attempted to send the alert and each attempt here is a RE-try
+            time.sleep(timeout)
+
+            # We need to acquire the lock and then check again if the alert is still active or else we might re-try
+            # after it's been canceled but it was blocked by the thread lock or sleep statement (it seems still active).
+            # WARNING: this will lock out anything from getting called that needs the thread_lock, so if we
+            # update the API to use the lock when e.g. record_mdmt_used then we'll need to add more locks...
+            with alert_ctx.thread_lock:
+                if alert_ctx.active:
+                    self._do_send_alert(alert_ctx)
+                    retry_attempts += 1
+
+        # this means that the alert wasn't finished or cancelled, so we must've hit max_retries!
+        if alert_ctx.active:
+            # NOTE: make sure to sleep and give this last attempt a chance to reach the subscribers!
+            time.sleep(timeout)
+            # WARNING: As above, should probably acquire the lock before checking its status but that would deadlock
+            # once we call cancel_alert(), so we should probably just tolerate multiple cancel calls...
+            if alert_ctx.active:
+                log.info("alert %s expired after %d re-tries..." % (alert_ctx, max_retries))
+                self.cancel_alert(alert_ctx, success=False)
 
     def notify_alert_response(self, responder, alert_ctx, mdmt_used):
         """
@@ -256,7 +307,8 @@ class RideD(object):
         alert_ctx.record_subscriber_reached(responder)
 
         if not alert_ctx.has_unreached_subscribers():
-            self.cancel_alert(alert_ctx)
+            log.info("alert %s successfully reached all subscribers! closing..." % alert_ctx)
+            self.cancel_alert(alert_ctx, success=True)
 
     def get_best_multicast_address(self, alert_context, heuristic=None):
         return self.get_address_for_mdmt(self.get_best_mdmt(alert_context, heuristic))
@@ -652,7 +704,7 @@ class RideD(object):
     ########################   ALERT CONTEXT OBJECT MANAGEMENT     #################################
     ################################################################################################
 
-    # alert_id = 0
+    alert_id = 0
 
     def _make_new_alert(self, msg, topic):
         """
@@ -663,21 +715,39 @@ class RideD(object):
         :rtype: RideD.AlertContext
         """
 
-        # TODO: add an ID to the alert if needed????  else remove the alert_id thing above....
+        # ENHANCE: thread-safe locking so multiple alerts can be sent from different threads simultaneously
 
         subs = self.get_subscribers_for_topic(topic)
         mdmts = self.mdmts[topic]
-        alert = self.AlertContext(msg, topic, subs, mdmts)
+        alert = self.AlertContext(msg, topic, subs, mdmts, self.alert_id)
+        self.alert_id += 1
         self._alerts.add(alert)
         return alert
 
-    def cancel_alert(self, alert):
+    def cancel_alert(self, alert, success=False):
         """
-        :param alert: cancel this alert gracefully and free any associated resources when possible
+        Gracefully cancels the specified alert, frees any associated resources when possible/necessary, and stops
+         retransmissions.  Note that if a retransmission attempt is currently in progress it will finish before cancel is run.
+        Also note that multiple calls to cancel_alert is tolerable, though the thread_lock will make them run synchronously.
+        :param alert:
+        :param success: True if all of the subscribers were successfully reached (currently un-used)
         :type alert: RideD.AlertContext
         """
-        # TODO: how to gracefully shut things down here?  probably need to stop any retransmissions?
-        self._alerts.remove(alert)
+
+        log.debug("cancelling alert %s that was finished %s" % (alert, "successfully" if success else "unsuccessfully"))
+
+        # First, we need to acquire the lock to ensure we aren't trying to cancel it in the middle of a retransmission
+        with alert.thread_lock:
+            # Stop the retransmission loop
+            alert.active = False
+
+            # QUESTION: any other resources to clean up?  Are we sure there aren't other references to this alert?
+            # The user app probably has a reference to it but hopefully they'll clean up that reference too...
+            try:
+                self._alerts.remove(alert)
+            except KeyError:
+                # This is okay as it probably just means that the alert has already been cancelled by another thread...
+                pass
 
 
     class AlertContext(object):
@@ -687,7 +757,7 @@ class RideD(object):
         This object contains little actual logic; it is more for book-keeping.
         """
 
-        def __init__(self, msg, topic, subscribers, mdmts):
+        def __init__(self, msg, topic, subscribers, mdmts, _id):
             """
             Initiate the context object, which will simply store/manage which subscribers have been reached,
             which MDMTs have been used, and where to route responses.
@@ -697,6 +767,7 @@ class RideD(object):
             :type subscribers: list
             :param mdmts: MDMTs available for sending this alert at the time of its creation
             :type mdmts: list
+            :param _id: numeric unique ID for this alert
             """
 
             self.msg = msg
@@ -705,10 +776,17 @@ class RideD(object):
             self.subscribers = set(subscribers)
             self.mdmts = mdmts
             # TODO: if we update the MDMTs, need some way of changing the available ones known by the context...
+            self.id = _id
 
             # This data will be updated as alerts are sent/retried/responded to
             self.subscribers_reached = set()
             self.mdmts_used = []
+
+            # track whether we should continue trying to contact subscribers to this alert or not
+            self.active = True
+
+            # Used by RideD to ensure that simultaneous updates to this object don't corrupt it
+            self.thread_lock = Lock()
 
         def record_mdmt_used(self, mdmt):
             """
@@ -717,6 +795,7 @@ class RideD(object):
             :param mdmt:
             :return:
             """
+            # THREADING: we don't bother locking since this should be called serially only from main send_alert or re-tx thread
             self.mdmts_used.append(mdmt)
 
         def is_mdmt_used(self, mdmt):
@@ -730,6 +809,8 @@ class RideD(object):
             """
             :return: The least recently used MDMT if all have been used, otherwise the first one that hasn't
             """
+            # THREADING: we don't bother locking since this should be called serially only from main send_alert or
+            # re-tx thread; also it's basically read-only and the for loop uses a copy of the MDMTs.
 
             # First, check if we perhaps haven't used them all yet...
             for m in self.mdmts:
@@ -756,7 +837,8 @@ class RideD(object):
             return self.mdmts_used[-max_count:]
 
         def record_subscriber_reached(self, sub):
-            self.subscribers_reached.add(sub)
+            with self.thread_lock:
+                self.subscribers_reached.add(sub)
 
         def has_unreached_subscribers(self):
             return self.n_unreached_subscribers() > 0
@@ -769,3 +851,5 @@ class RideD(object):
             """
             return self.subscribers - self.subscribers_reached
 
+        def __repr__(self):
+            return "RideD.Alert#%d(topic=%s)" % (self.id, self.topic)

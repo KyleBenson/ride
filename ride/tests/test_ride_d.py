@@ -1,5 +1,8 @@
 import unittest
 import os
+from threading import Thread
+from time import sleep
+
 import networkx as nx
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -10,6 +13,7 @@ from ride.ride_d import RideD
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 
 ALERT_TOPIC = 'alert'
+ALERT_MSG = "warning!"
 
 
 class TestMdmtSelection(unittest.TestCase):
@@ -48,8 +52,8 @@ class TestMdmtSelection(unittest.TestCase):
 
         self.rided = RideD(topology_mgr=self.topology, ntrees=self.ntrees, dpid=self.root,
                            addresses=mdmt_addresses, tree_choosing_heuristic=RideD.MAX_LINK_IMPORTANCE,
-                           # we don't actually send any packets so we just need a dummy callback
-                           alert_sending_callback=lambda x,y: True)
+                           # This test callback notifies us of subscribers reached and ensures the right MDMT was selected
+                           alert_sending_callback=self.__send_alert_test_callback)
 
         # XXX: manually set the MDMTs to avoid calling RideD.update(), which will try to run SDN operations in addition
         # to creating the MDMTs using the construction algorithms
@@ -63,24 +67,43 @@ class TestMdmtSelection(unittest.TestCase):
                                  ['h1-b1', 'b1', 'c2', 'c3', self.root]]
         for pub_route in self.publisher_routes:
             self.rided.set_publisher_route(pub_route[0], pub_route)
+        for pub in self.publishers:
+            self.rided.notify_publication(pub)
 
         # register the subscribers
         self.subscribers = ['h0-b0', 'h0-b1', 'h1-b1', 'h0-b3']
         for sub in self.subscribers:
             self.rided.add_subscriber(sub, ALERT_TOPIC)
 
-        self.alert = self.rided._make_new_alert("warning!", ALERT_TOPIC)
+        # We expect the MDMTs to be selected (via 'importance' policy) in this order for the following tests...
+        # TODO: verify the last one is correct?
+        self.expected_mdmts = ['tree4', 'tree2', 'tree3', 'tree1', 'tree4', 'tree2']
+        # ... based on these subscribers being reached during each attempt.
+        self.subs_reached_at_attempt = [('h0-b1', 'h1-b1'), #0
+                                        tuple(), tuple(), tuple(), # 1-3 no responses...
+                                        ('h0-b0',), #4
+                                        ('h0-b3',) #5 ; all done!
+                                        ]
+        # NOTES about the test cases:
+        # NOTE: we only do these tests for 'importance' since the others will have a tie between tree3/4
+        #  we should choose tree2 second due to update about subs reached...
+        #  because AlertContext tracks trees tried we should use tree3 third
+        #  furthermore, we should lastly try tree1 even though it had lowest importance!
+        #  then, despite T4 not having the highest metric anymore, we should go back to using it
+        #     since it's the least-recently selected one
+        #  TODO: why tree2? just because it's now in this ordered list of recent trees? expect this to change soon...
+
+        self.attempt_num = 0
+
+        self.alert = self.rided._make_new_alert(ALERT_MSG, ALERT_TOPIC)
 
     def test_basic_mdmt_selection(self):
         """Tests MDMT-selection (without alerting context) for the default policy by manually assigning
         MDMTs, publisher routes, notifying RideD about a few publications and verifying that the selected MDMT is
         the one expected given this information."""
 
-        for pub in self.publishers:
-            self.rided.notify_publication(pub)
-
         mdmt = self.rided.get_best_mdmt(self.alert, heuristic=self.rided.MAX_LINK_IMPORTANCE)
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree4')
+        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), self.expected_mdmts[0])
 
         mdmt = self.rided.get_best_mdmt(self.alert, heuristic=self.rided.MAX_OVERLAPPING_LINKS)
         self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree4')
@@ -109,33 +132,87 @@ class TestMdmtSelection(unittest.TestCase):
         """Tests MDMT-selection WITH alerting context in a similar manner to the basic tests.  Here we use an
         AlertContext object to change the MDMT choice based on claiming that some subscribers have already been alerted."""
 
-        for pub in self.publishers:
-            self.rided.notify_publication(pub)
+        # NOTE: we're actually using the _do_send_alert method instead of manually recording and doing notifications.
+        # The callback used to actually 'send the alert packet' (no network operations) will handle notifying subs.
 
-        # NOTE: we only do this test for importance now since the others will have a tie between tree3/4
-        mdmt = self.rided._do_send_alert(self.alert)
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree4')
+        for attempt_num, subs_reached in enumerate(self.subs_reached_at_attempt):
+            mdmt = self.rided._do_send_alert(self.alert)
+            self.assertEqual(self.rided.get_address_for_mdmt(mdmt), self.expected_mdmts[attempt_num])
 
-        # first, set context to be aware that both b0 hosts were alerted when this MDMT was used
-        self.rided.notify_alert_response('h0-b1', self.alert, mdmt)
-        self.rided.notify_alert_response('h1-b1', self.alert, mdmt)
+    ####    TEST ACTUAL send_alert(...) API     ######
 
-        # now we should choose T2 instead...
-        mdmt = self.rided._do_send_alert(self.alert)
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree2')
+    def test_send_alert(self):
+        """
+        Tests the main send_alert API that exercises everything previously tested along with the retransmit
+        capability.  This uses a custom testing callback instead of opening a socket and test servers to receive alerts.
+        """
 
-        # because AlertContext tracks trees tried we should now use T3
-        mdmt = self.rided._do_send_alert(self.alert)
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree3')
+        timeout = 0.2
+        expected_num_attempts = len(self.subs_reached_at_attempt)
 
-        # furthermore, we should lastly try tree1 even though it had lowest importance!
-        mdmt = self.rided._do_send_alert(self.alert)
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree1')
+        # Send the alert and ensure it took the right # retries
+        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=timeout, max_retries=expected_num_attempts+1)
+        sleep((expected_num_attempts + 1) * timeout)
+        self.assertFalse(alert.active)
+        self.assertEqual(self.attempt_num, expected_num_attempts)
+        self.assertEqual(len(alert.subscribers_reached), len(self.subscribers))  # not all subs reached????
 
-        # lastly, despite T4 not having the highest metric anymore, we should go back to using it
-        # since it's the least-recently selected one
-        mdmt = self.rided._do_send_alert(self.alert)
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree4')
+    def test_cancel_alert(self):
+        """Ensure that cancelling alerts works properly by cancelling it before it finishes and verify that some
+        subscribers remain unreached."""
+
+        timeout = 0.2
+        expected_num_attempts = len(self.subs_reached_at_attempt)
+
+        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=timeout, max_retries=expected_num_attempts+1)
+
+        # instead of waiting for it to finish, cancel the alert right before the last one gets sent
+        sleep((expected_num_attempts - 1.5) * timeout)
+        self.rided.cancel_alert(alert)
+        sleep(timeout)
+
+        # Now we should note that the last alert message wasn't sent!
+        self.assertFalse(alert.active)
+        self.assertEqual(self.attempt_num, expected_num_attempts - 1)
+        self.assertEqual(len(alert.subscribers_reached), len(self.subscribers) - 1)
+
+    def test_send_alert_unsuccessfully(self):
+        timeout = 0.2
+        expected_num_attempts = len(self.subs_reached_at_attempt)
+
+        # since we set max_retries to be less than the number required this alert should stop early despite not reaching all subs
+        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=timeout, max_retries=expected_num_attempts-2)
+        sleep((expected_num_attempts + 1) * timeout)
+        self.assertFalse(alert.active)
+        self.assertEqual(self.attempt_num, expected_num_attempts - 1)
+        self.assertEqual(len(alert.subscribers_reached), len(self.subscribers) - 1)  # not all subs reached????
+
+    def __send_alert_test_callback(self, alert, mdmt):
+        """
+        Custom callback to handle verifying that the expected MDMT was used in between each attempt and
+        notifies RideD of which subscribers were reached.
+        :param alert:
+        :type alert: RideD.AlertContext
+        :param mdmt:
+        :return:
+        """
+
+        self.assertTrue(alert.active, "__send_alert_test_callback should not fire if alert isn't active!")
+
+        expected_mdmt = self.expected_mdmts[self.attempt_num]
+        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), expected_mdmt,
+                         "incorrect MDMT selected for attempt %d: expected %s but got %s" % (self.attempt_num, expected_mdmt, mdmt))
+
+        for s in self.subs_reached_at_attempt[self.attempt_num]:
+            # XXX: because this callback is fired while the alert's thread_lock is acquired, we have to do this
+            # from inside another thread so that it will run after this callback returns.  Otherwise, deadlock!
+            # self.rided.notify_alert_response(s, alert, mdmt)
+            Thread(target=self.rided.notify_alert_response, args=(s, alert, mdmt)).start()
+
+        self.attempt_num += 1
+
+    # ENHANCE: test_send_alert_multi_threaded????
+    # ENHANCE: test_send_alert_network_socket
 
     ## helper functions
     def _build_mdmts(self, subscribers=None):
@@ -143,7 +220,6 @@ class TestMdmtSelection(unittest.TestCase):
         self.rided.mdmts = mdmts
         return mdmts
 
-    # TODO: test RideD.send_alert including use of timeout/retries!
 
 class TestImportanceMetric(unittest.TestCase):
     """Tests the RideD 'max-link-importance' metric/algorithm"""
