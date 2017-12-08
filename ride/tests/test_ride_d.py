@@ -14,7 +14,8 @@ from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 
 ALERT_TOPIC = 'alert'
 ALERT_MSG = "warning!"
-
+# timeout for between re-tries
+TIMEOUT = 0.2
 
 class TestMdmtSelection(unittest.TestCase):
     """Tests the RideD algorithms but NOT the SDN mechanisms"""
@@ -76,22 +77,20 @@ class TestMdmtSelection(unittest.TestCase):
             self.rided.add_subscriber(sub, ALERT_TOPIC)
 
         # We expect the MDMTs to be selected (via 'importance' policy) in this order for the following tests...
-        # TODO: verify the last one is correct?
-        self.expected_mdmts = ['tree4', 'tree2', 'tree3', 'tree1', 'tree4', 'tree2']
+        self.expected_mdmts = [('tree4',), ('tree2',), ('tree3',), ('tree1',), ('tree2',), ('tree1', 'tree3', 'tree4')]
         # ... based on these subscribers being reached during each attempt.
         self.subs_reached_at_attempt = [('h0-b1', 'h1-b1'), #0
                                         tuple(), tuple(), tuple(), # 1-3 no responses...
-                                        ('h0-b0',), #4
-                                        ('h0-b3',) #5 ; all done!
+                                        ('h0-b3',), #4
+                                        ('h0-b0',) #5 ; all done!
                                         ]
         # NOTES about the test cases:
         # NOTE: we only do these tests for 'importance' since the others will have a tie between tree3/4
         #  we should choose tree2 second due to update about subs reached...
         #  because AlertContext tracks trees tried we should use tree3 third
         #  furthermore, we should lastly try tree1 even though it had lowest importance!
-        #  then, despite T4 not having the highest metric anymore, we should go back to using it
-        #     since it's the least-recently selected one
-        #  TODO: why tree2? just because it's now in this ordered list of recent trees? expect this to change soon...
+        #  then, we should try tree2 as the highest current importance after a notification since we've tried all of them
+        #  finally, since we have a tie among all the others
 
         self.attempt_num = 0
 
@@ -103,7 +102,7 @@ class TestMdmtSelection(unittest.TestCase):
         the one expected given this information."""
 
         mdmt = self.rided.get_best_mdmt(self.alert, heuristic=self.rided.MAX_LINK_IMPORTANCE)
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), self.expected_mdmts[0])
+        self.assertIn(self.rided.get_address_for_mdmt(mdmt), self.expected_mdmts[0])
 
         mdmt = self.rided.get_best_mdmt(self.alert, heuristic=self.rided.MAX_OVERLAPPING_LINKS)
         self.assertEqual(self.rided.get_address_for_mdmt(mdmt), 'tree4')
@@ -137,7 +136,7 @@ class TestMdmtSelection(unittest.TestCase):
 
         for attempt_num, subs_reached in enumerate(self.subs_reached_at_attempt):
             mdmt = self.rided._do_send_alert(self.alert)
-            self.assertEqual(self.rided.get_address_for_mdmt(mdmt), self.expected_mdmts[attempt_num])
+            self.assertIn(self.rided.get_address_for_mdmt(mdmt), self.expected_mdmts[attempt_num])
 
     ####    TEST ACTUAL send_alert(...) API     ######
 
@@ -147,12 +146,11 @@ class TestMdmtSelection(unittest.TestCase):
         capability.  This uses a custom testing callback instead of opening a socket and test servers to receive alerts.
         """
 
-        timeout = 0.2
         expected_num_attempts = len(self.subs_reached_at_attempt)
 
         # Send the alert and ensure it took the right # retries
-        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=timeout, max_retries=expected_num_attempts+1)
-        sleep((expected_num_attempts + 1) * timeout)
+        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=TIMEOUT, max_retries=expected_num_attempts + 1)
+        sleep((expected_num_attempts + 1) * TIMEOUT)
         self.assertFalse(alert.active)
         self.assertEqual(self.attempt_num, expected_num_attempts)
         self.assertEqual(len(alert.subscribers_reached), len(self.subscribers))  # not all subs reached????
@@ -161,15 +159,14 @@ class TestMdmtSelection(unittest.TestCase):
         """Ensure that cancelling alerts works properly by cancelling it before it finishes and verify that some
         subscribers remain unreached."""
 
-        timeout = 0.2
         expected_num_attempts = len(self.subs_reached_at_attempt)
 
-        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=timeout, max_retries=expected_num_attempts+1)
+        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=TIMEOUT, max_retries=expected_num_attempts + 1)
 
         # instead of waiting for it to finish, cancel the alert right before the last one gets sent
-        sleep((expected_num_attempts - 1.5) * timeout)
+        sleep((expected_num_attempts - 1.5) * TIMEOUT)
         self.rided.cancel_alert(alert)
-        sleep(timeout)
+        sleep(TIMEOUT)
 
         # Now we should note that the last alert message wasn't sent!
         self.assertFalse(alert.active)
@@ -177,12 +174,11 @@ class TestMdmtSelection(unittest.TestCase):
         self.assertEqual(len(alert.subscribers_reached), len(self.subscribers) - 1)
 
     def test_send_alert_unsuccessfully(self):
-        timeout = 0.2
         expected_num_attempts = len(self.subs_reached_at_attempt)
 
         # since we set max_retries to be less than the number required this alert should stop early despite not reaching all subs
-        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=timeout, max_retries=expected_num_attempts-2)
-        sleep((expected_num_attempts + 1) * timeout)
+        alert = self.rided.send_alert(ALERT_MSG, ALERT_TOPIC, timeout=TIMEOUT, max_retries=expected_num_attempts - 2)
+        sleep((expected_num_attempts + 1) * TIMEOUT)
         self.assertFalse(alert.active)
         self.assertEqual(self.attempt_num, expected_num_attempts - 1)
         self.assertEqual(len(alert.subscribers_reached), len(self.subscribers) - 1)  # not all subs reached????
@@ -200,8 +196,8 @@ class TestMdmtSelection(unittest.TestCase):
         self.assertTrue(alert.active, "__send_alert_test_callback should not fire if alert isn't active!")
 
         expected_mdmt = self.expected_mdmts[self.attempt_num]
-        self.assertEqual(self.rided.get_address_for_mdmt(mdmt), expected_mdmt,
-                         "incorrect MDMT selected for attempt %d: expected %s but got %s" % (self.attempt_num, expected_mdmt, mdmt))
+        self.assertIn(self.rided.get_address_for_mdmt(mdmt), expected_mdmt,
+                         "incorrect MDMT selected for attempt %d: expected one of %s but got %s" % (self.attempt_num, expected_mdmt, mdmt))
 
         for s in self.subs_reached_at_attempt[self.attempt_num]:
             # XXX: because this callback is fired while the alert's thread_lock is acquired, we have to do this

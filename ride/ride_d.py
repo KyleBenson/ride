@@ -441,7 +441,7 @@ class RideD(object):
         # Work our way from best candidate to worst and select the first that we haven't used recently.
         # Since we make a copy of the MDMTs each time, they won't be the exact same graph between calls to this method.
         # Hence, we need to compare them by name to keep their ID consistent.
-        recent_mdmts_used = [t.name for t in alert_context.most_recently_used_mdmts()]
+        recent_mdmts_used = {t.name for t in alert_context.most_recently_used_mdmts()}
         for candidate in metrics:
             tree = candidate[mdmt_index]
             if tree.name not in recent_mdmts_used:
@@ -825,16 +825,18 @@ class RideD(object):
                 if len(accounted_for) == len(self.mdmts):
                     return m
 
-        def most_recently_used_mdmts(self, max_count=None):
+        def most_recently_used_mdmts(self):
             """
-            :param max_count: defaults to k-1, where k is # MDMTs
-            :return: the max_count most recently-used MDMTs for use in selecting a different one to try next
+            Returns up to k-1 (k=#MDMTs) of the most-recently-used MDMTs for use in selecting a different one to try next.
+            Note: If none have been tried or all have been tried an equal number of times, this will return an empty list.
+            :return:
             """
-
-            if max_count is None:
-                max_count = len(self.mdmts) - 1
-
-            return self.mdmts_used[-max_count:]
+            # determine how many MDMTs have been selected the greatest # times and return them
+            num_to_select = len(self.mdmts_used) % len(self.mdmts)
+            if num_to_select:
+                selected = self.mdmts_used[-num_to_select:]
+                return selected
+            return []
 
         def record_subscriber_reached(self, sub):
             with self.thread_lock:
