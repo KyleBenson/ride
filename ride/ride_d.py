@@ -272,6 +272,7 @@ class RideD(object):
             # update the API to use the lock when e.g. record_mdmt_used then we'll need to add more locks...
             with alert_ctx.thread_lock:
                 if alert_ctx.active:
+                    log.debug("retransmitting alert %s (attempt #%d)" % (alert_ctx, retry_attempts))
                     self._do_send_alert(alert_ctx)
                     retry_attempts += 1
 
@@ -536,6 +537,7 @@ class RideD(object):
             return self.stt_mgr.route_update(route, at_time)
         except KeyError:
             # ignore as we just don't know about this publisher
+            log.debug("publisher %s not found!  skipping... options are: %s" % (publisher, self.publisher_routes))
             pass
 
     def build_mdmts(self, subscribers=None):
