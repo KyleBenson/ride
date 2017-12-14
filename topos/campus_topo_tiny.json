@@ -1,0 +1,248 @@
+{
+    "directed": false, 
+    "graph": {
+        "name": "Campus Network Topology"
+    }, 
+    "links": [
+        {
+            "latency": 5.054322057352076, 
+            "source": 0, 
+            "target": 11, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 5.467635913771152, 
+            "source": 1, 
+            "target": 11, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.631622714746239, 
+            "source": 2, 
+            "target": 12, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 5.558218673439307, 
+            "source": 3, 
+            "target": 11, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 5.768381340896722, 
+            "source": 4, 
+            "target": 12, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 82.5950426423237, 
+            "source": 5, 
+            "target": 18, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 6.04305837919874, 
+            "source": 5, 
+            "target": 17, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 64.28792366424196, 
+            "source": 6, 
+            "target": 18, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.97011621575518, 
+            "source": 6, 
+            "target": 16, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 9.645348156743434, 
+            "source": 7, 
+            "target": 20, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 2.7876375977747303, 
+            "source": 8, 
+            "target": 14, 
+            "weight": 1.4
+        }, 
+        {
+            "latency": 2.1877156366435186, 
+            "source": 8, 
+            "target": 16, 
+            "weight": 1.4
+        }, 
+        {
+            "latency": 6.011465591697489, 
+            "source": 9, 
+            "target": 20, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 8.094851226779063, 
+            "source": 10, 
+            "target": 20, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 11.009844740995039, 
+            "source": 11, 
+            "target": 14, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.000134949801187, 
+            "source": 11, 
+            "target": 17, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 6.720987612271886, 
+            "source": 11, 
+            "target": 12, 
+            "weight": 1.8
+        }, 
+        {
+            "latency": 5.714847949158916, 
+            "source": 12, 
+            "target": 13, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.63585231765627, 
+            "source": 12, 
+            "target": 14, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 7.065417858945826, 
+            "source": 12, 
+            "target": 15, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 14.119599339053007, 
+            "source": 14, 
+            "target": 15, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 15.771149460113342, 
+            "source": 14, 
+            "target": 16, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 12.427579024971873, 
+            "source": 14, 
+            "target": 17, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 22.656245111757578, 
+            "source": 14, 
+            "target": 19, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 15.728802573550823, 
+            "source": 15, 
+            "target": 16, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 13.993509716654723, 
+            "source": 15, 
+            "target": 17, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 13.837480583527629, 
+            "source": 16, 
+            "target": 17, 
+            "weight": 1.2
+        }, 
+        {
+            "latency": 23.18696981244923, 
+            "source": 16, 
+            "target": 19, 
+            "weight": 1.0
+        }, 
+        {
+            "latency": 38.54274652290374, 
+            "source": 19, 
+            "target": 20, 
+            "weight": 1.0
+        }
+    ], 
+    "multigraph": false, 
+    "nodes": [
+        {
+            "name": "h1-b0"
+        }, 
+        {
+            "name": "h0-b0"
+        }, 
+        {
+            "name": "h0-b1"
+        }, 
+        {
+            "name": "h2-b0"
+        }, 
+        {
+            "name": "h2-b1"
+        }, 
+        {
+            "name": "g1"
+        }, 
+        {
+            "name": "g0"
+        }, 
+        {
+            "name": "h2-m0"
+        }, 
+        {
+            "name": "s0"
+        }, 
+        {
+            "name": "h1-m0"
+        }, 
+        {
+            "name": "h0-m0"
+        }, 
+        {
+            "name": "b0"
+        }, 
+        {
+            "name": "b1"
+        }, 
+        {
+            "name": "h1-b1"
+        }, 
+        {
+            "name": "c3"
+        }, 
+        {
+            "name": "c2"
+        }, 
+        {
+            "name": "c1"
+        }, 
+        {
+            "name": "c0"
+        }, 
+        {
+            "name": "x0"
+        }, 
+        {
+            "name": "d0"
+        }, 
+        {
+            "name": "m0"
+        }
+    ]
+}
