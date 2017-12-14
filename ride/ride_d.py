@@ -509,6 +509,9 @@ class RideD(object):
 
         # Verify all edges have some importance as we promised...
         if __debug__:
+            # Also verify it's actually a tree as otherwise that'd explain edges without an importance...
+            if not nx.is_tree(tree):
+                raise RuntimeError("MDMT %s is not a tree!  Edges: %s" % (tree.name, list(tree.edges())))
             edges_no_importance = [(u,v) for u, v, imp in tree.edges(data=cls.IMPORTANCE_ATTRIBUTE_NAME) if imp is None]
             if edges_no_importance:
                 raise RuntimeError("MDMT %s has edges with no importance: %s" % (tree.name, edges_no_importance))
