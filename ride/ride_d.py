@@ -453,6 +453,14 @@ class RideD(object):
 
         log.debug("selected MDMT '%s' via policy '%s' with metric value: %f" % (best.name, heuristic, candidate[0]))
 
+        # We need to return the ORIGINAL MDMT rather than the trimmed down one
+        for t in mdmts:
+            if t.name == best.name:
+                best = t
+                break
+        else:
+            raise RuntimeError("selected best MDMT with name %s not found in original MDMTs %s" % (best.name, str(mdmts)))
+
         return best
 
     # for identifying the attribute in the importance graphs that stores the 'link-importance' metric
