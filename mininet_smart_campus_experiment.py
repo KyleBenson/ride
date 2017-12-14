@@ -661,6 +661,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             # quit_time += 20
 
         sdn_topology_cfg = self._get_topology_manager_config()
+        # XXX: use controller IP specified in config.py if the default localhost was left
+        if sdn_topology_cfg['controller_ip'] == '127.0.0.1':
+            sdn_topology_cfg['controller_ip'] = CONTROLLER_IP
 
         ride_d_cfg = None if not self.with_ride_d else make_scale_config_entry(name="RideD", multicast=use_multicast,
                                                                   class_path="seismic_warning_test.ride_d_event_sink.RideDEventSink",
