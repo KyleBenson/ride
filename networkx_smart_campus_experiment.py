@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/env python
 
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
