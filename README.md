@@ -3,6 +3,8 @@ Resilient IoT Data Exchange (RIDE) using SDN and edge computing. This repository
 
 ## Getting Started
 
+We recommend using a Python `virtualenv` to both avoid polluting your system-wide Python distribution and also to support a slight hack used for the Mininet version (root runs a command that will be executed by non-root user so they'll both need this virtualenv).
+
 First, install the Python [requirements.txt](requirements.txt).
 
 **Networkx:** Note that you may need a 'bleeding edge' version of networkx for the default multicast tree generation (Steiner tree) algorithm.
@@ -41,6 +43,8 @@ JAVA_HOME=/usr/lib/jvm/java-8-oracle
 ```
 If you're running on a physical machine rather than a VM, you should probably change the user/password for the karaf GUI in `/opt/onos/apache-karaf-$KARAF_VERSION/etc/users.properties` to something more secure.
 Note that because ONOS uses a clustering service, you may run into problems with dynamic IP addresses (i.e. the master node is no longer available because your machine IS the master node but its IP address changed).
+
+NOTE: you might want to use `/opt/onos/bin/onos-user-key karaf ~/.ssh/id_rsa.pub` so you can run `/opt/onos/bin/onos` without typing in the password.  This is used to reset ONOS between each run so you'll probably NEED to!
 
 
 Make sure to get **Open vSwitch** set up properly too!  You can install it with Mininet's install script.
