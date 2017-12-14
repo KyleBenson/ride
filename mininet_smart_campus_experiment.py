@@ -1001,6 +1001,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # so let's do an explicit clean between each run.
         log.debug("Cleaning up Mininet...")
         p = Popen('sudo mn -c > /dev/null 2>&1', shell=True)
+        time.sleep(10 if not TESTING else 2)
         p.wait()
 
         # Clear out all the flows/groups from controller
