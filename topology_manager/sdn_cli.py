@@ -125,7 +125,7 @@ if __name__ == "__main__":
         if include_attrs:
             print("Switches:\n%s" % '\n'.join(str(h) for h in topo.get_switches(attributes=True)))
         else:
-            print("Switches:\n%s" % '\n'.join(topo.get_hosts()))
+            print("Switches:\n%s" % '\n'.join(topo.get_switches()))
 
     elif cmd == 'path':
         assert nargs >= 2, "path command must at least have the 2 hosts specified!"
