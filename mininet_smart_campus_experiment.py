@@ -386,40 +386,43 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         log.debug("\n".join("added host %s at IP %s" % (host.name, host.IP()) for host in self.net.hosts))
         log.debug('links: %s' % [(l.intf1.name, l.intf2.name) for l in self.net.links])
 
-        log.info('*** Pinging hosts so controller can gather IP addresses...')
-        # don't want the NAT involved as hosts won't get a route to it
-        # comms and the whole point of this is really just to establish the hosts in the
-        # controller's topology.  ALSO: we need to either modify this or call ping manually
-        # because having error_rate > 0 leads to ping loss, which could results in a host
-        # not being known!
-        loss = 0
+        # May need to ping the hosts again if links start up too late...
         hosts = [h for h in self.net.hosts if h != self.nat]
-        if ALL_PAIRS:
-            loss = self.net.ping(hosts=hosts, timeout=2)
-        else:
-            for h in hosts:
-                loss += self.net.ping((h, self.server), timeout=2)
-            loss /= len(hosts)
+        def ping_hosts(hosts):
+            log.info('*** Pinging hosts so controller can gather IP addresses...')
+            # don't want the NAT involved as hosts won't get a route to it
+            # comms and the whole point of this is really just to establish the hosts in the
+            # controller's topology.  ALSO: we need to either modify this or call ping manually
+            # because having error_rate > 0 leads to ping loss, which could results in a host
+            # not being known!
+            loss = 0
+            if ALL_PAIRS:
+                loss = self.net.ping(hosts=hosts, timeout=2)
+            else:
+                for h in hosts:
+                    loss += self.net.ping((h, self.server), timeout=2)
+                loss /= len(hosts)
 
-        if loss > 0:
-            log.warning("ping had a loss of %f" % loss)
+            if loss > 0:
+                log.warning("ping had a loss of %f" % loss)
 
-        # This needs to occur AFTER pingAll as the exchange of ARP messages
-        # is used by the controller (ONOS) to learn hosts' IP addresses
-        # Similarly to ping, we don't need all-pairs... just for the hosts to/from edge/cloud servers
-        if ALL_PAIRS:
-            self.net.staticArp()
-        else:
-            server_ip = self.server.IP()
-            server_mac = self.server.MAC()
-            cloud_ip = self.cloud.IP()
-            cloud_mac = self.cloud.MAC()
-            for src in hosts:
-                src.setARP(ip=server_ip, mac=server_mac)
-                src.setARP(ip=cloud_ip, mac=cloud_mac)
-                self.cloud.setARP(ip=src.IP(), mac=src.MAC())
-                self.server.setARP(ip=src.IP(), mac=src.MAC())
+            # This needs to occur AFTER pingAll as the exchange of ARP messages
+            # is used by the controller (ONOS) to learn hosts' IP addresses
+            # Similarly to ping, we don't need all-pairs... just for the hosts to/from edge/cloud servers
+            if ALL_PAIRS:
+                self.net.staticArp()
+            else:
+                server_ip = self.server.IP()
+                server_mac = self.server.MAC()
+                cloud_ip = self.cloud.IP()
+                cloud_mac = self.cloud.MAC()
+                for src in hosts:
+                    src.setARP(ip=server_ip, mac=server_mac)
+                    src.setARP(ip=cloud_ip, mac=cloud_mac)
+                    self.cloud.setARP(ip=src.IP(), mac=src.MAC())
+                    self.server.setARP(ip=src.IP(), mac=src.MAC())
 
+        ping_hosts(hosts)
         # Need to sleep so that the controller has a chance to converge its topology again...
         time.sleep(5)
 
@@ -431,6 +434,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         n_sdn_links = 0
         n_sdn_switches = 0
         n_sdn_hosts = 0
+        ntries = 1
         while n_sdn_hosts != expected_nhosts or n_sdn_links != expected_nlinks or n_sdn_switches != expected_nswitches:
             self.setup_topology_manager()
 
@@ -438,14 +442,24 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             n_sdn_links = self.topology_adapter.topo.number_of_edges()
             n_sdn_switches = len(self.topology_adapter.get_switches())
 
+            success = True
             if n_sdn_hosts != expected_nhosts:
                 log.warning("topology adapter didn't find all the hosts!  It only got %d/%d.  Trying topology adapter again..." % (n_sdn_hosts, len(hosts)))
+                success = False
             if expected_nlinks != n_sdn_links:
                 log.warning("topology adapter didn't find all the links!  Only got %d/%d.  Trying topology adapter again..." % (n_sdn_links, expected_nlinks))
+                success = False
             if expected_nswitches != n_sdn_switches:
                 log.warning("topology adapter didn't find all the switches!  Only got %d/%d.  Trying topology adapter again..." % (n_sdn_switches, expected_nswitches))
+                success = False
 
-            time.sleep(2)
+            time.sleep(2 if success else 10)
+
+            # Sometimes this hangs forever... we should probably try configuring hosts again
+            if ntries % 5 == 0 and not success:
+                log.warning("pinging hosts again since we still aren't ready with the complete topology...")
+                ping_hosts(hosts)
+            ntries += 1
 
         log.info('*** Network set up!\n*** Configuring experiment...')
 
