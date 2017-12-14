@@ -56,7 +56,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
       these representations and ensure the proper formatting is used as arguments to e.g. launching processes on hosts.
     """
 
-    def __init__(self, controller_ip='127.0.0.1', controller_port=8181,
+    def __init__(self, controller_ip=CONTROLLER_IP, controller_port=CONTROLLER_REST_API_PORT,
                  # need to save these two params to pass to RideD
                  tree_choosing_heuristic=DEFAULT_TREE_CHOOSING_HEURISTIC,
                  topology_adapter=DEFAULT_TOPOLOGY_ADAPTER,

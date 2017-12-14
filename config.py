@@ -14,6 +14,7 @@ OPTIMISED_PYTHON = not TESTING
 ##########         ONOS     CONFIG      ###########
 
 CONTROLLER_IP="10.0.2.15"
+CONTROLLER_REST_API_PORT=8181
 ONOS_ADMIN_USER=DEFAULT_USER  # user that can run ONOS commands, NOT who is running the ONOS service!
 ONOS_USER=ONOS_ADMIN_USER     # the user actually running the ONOS service
 ONOS_ADMIN_PORT=8101  # SSH port, NOT REST API port!
