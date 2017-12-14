@@ -603,6 +603,9 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
             logs_dir = os.path.join(root_dir, 'logs_%s' % base_dirname, 'run%d' % self.current_run_number)
             try:
                 os.makedirs(logs_dir)
+                # XXX: since root is running this, we need to adjust the permissions, but using mode=0777 in os.mkdir()
+                # doesn't work for some systems...
+                os.chmod(logs_dir, 0777)
             except OSError:
                 pass
         else:
@@ -610,6 +613,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         outputs_dir =  os.path.join(root_dir, 'outputs_%s' % base_dirname, 'run%d' % self.current_run_number)
         try:
             os.makedirs(outputs_dir)
+            os.chmod(outputs_dir, 0777)
         except OSError:
             pass
 
