@@ -603,8 +603,11 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # HACK: Need to set PYTHONPATH since we don't install our Python modules directly and running Mininet
         # as root strips this variable from our environment.
         env = os.environ.copy()
+        ride_dir = os.path.dirname(os.path.abspath(__file__))
         if 'PYTHONPATH' not in env:
-            env['PYTHONPATH'] = os.path.dirname(os.path.abspath(__file__))
+            env['PYTHONPATH'] = ride_dir + ':'
+        else:
+            env['PYTHONPATH'] = env['PYTHONPATH'] + ':' + ride_dir
 
         # The logs and output files go in nested directories rooted
         # at the same level as the whole experiment's output file.
