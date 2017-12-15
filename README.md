@@ -15,7 +15,9 @@ You can just clone [my networkx repo](https://github.com/KyleBenson/networkx/tre
    
 ### Mininet-based Experiments
 
-To run the Mininet-based experiments, we'll obviously need to install Mininet and its Python API (e.g. via pip).  We just cloned the source repo and symlinked it to inside this repo's main directory.
+WARNING: Mininet needs to run as root!  Therefore, you're going to have to set up your environment so that root shares the same Python `virtualenv` as your regular user!  You could alternatively run everything as root in which case you'll need to tweak the `config.py` some...
+
+To run the Mininet-based experiments, we'll obviously need to install Mininet and its Python API (e.g. via pip).  We just cloned the source repo and symlinked it to inside this repo's main directory so that Python can import classes for the Mininet API.
 We also seem to have made a change to a file in mininet for multiple experiment runs with switches we create:
 ```
 diff --git mininet/net.py mininet/net.py
@@ -35,7 +37,7 @@ index a7c159e..b518958 100755
 ```
 
 You'll also need to run an *SDN controller* locally (or remotely, though we never tried that).
-Currently we only fully support ONOS.  We install it using the directions on their website and configure it to run as a service with the following options file (in `/opt/onos/options`):
+Currently we only fully support ONOS (v1.11 seems to work best).  We install it from tarball using the directions on their website and configure it to run as a service with the following options file (in `/opt/onos/options`):
 ```
 ONOS_USER=sdn
 ONOS_APPS=openflow-base,drivers,openflow,fwd,proxyarp
@@ -48,9 +50,9 @@ NOTE: you might want to use `/opt/onos/bin/onos-user-key karaf ~/.ssh/id_rsa.pub
 
 
 Make sure to get **Open vSwitch** set up properly too!  You can install it with Mininet's install script.
-Note that the config.py file contains some reset commands used to clean out and restart OVS between experiment runs: you may wish to change these to e.g. `service ovs-vswitch restart`
+Note that the config.py file contains some reset commands used to clean out and restart OVS between experiment runs: you may wish to change these to e.g. `service ovs-vswitch restart` or `systemctl restart openvswitch-switch`
 
-You may need to tweak some settings inside config.py e.g. the IP addresses of the Mininet hosts might conflict with your OS's networking configuration esp. if you're running inside a virtual machine.
+You may need to tweak some settings inside config.py e.g. the IP addresses of the Mininet hosts might conflict with your OS's networking configuration esp. if you're running inside a virtual machine that uses a `10.0.*.*` address.
 
 This repository assumes that the python packages (i.e. folder containing `__init__.py`) within the following repositories are on your PYTHONPATH:
 * [scale_client](https://github.com/KyleBenson/scale_client)
@@ -62,6 +64,7 @@ I typically use symbolic links to just put them in the same directory; note that
    
 **Running the SCALE Client from within Mininet**: to properly run this, we opt to specify a different user that will have a virtual environment they can run the scale client in.  You can change the `SCALE_USER` at the top of the scale_config.py file. Make sure this user has the `virtualenvwrapper.sh` script available (you can edit the `SCALE_CLIENT_BASE_COMMAND` as well if you use virtualenv differently or want to forego it entirely), create a virtual environment with the name `ride_scale_client`, and install the dependencies (both for scale_client and for ride) in that environment with `pip install -r requirements.txt`
 
+Also note that you'll need to point the Scale Client to the proper SDN controller IP address.  Set the appropriate address of the machine you're running it on in `config.py`.
 
 ## Troubleshooting
 
@@ -89,6 +92,8 @@ NOTE about ARP: in order to deliver messages to a destination (especially via mu
 If you're using ONOS as your controller, which is our suggested default for the SdnTopology, make sure that your ONOS instance is up and running properly.  If it's not using the default port (8181), you'll need to set that manually in your configurations.
 
 We recommend installing ONOS from the tarball rather than from scratch (building from source), which the troubleshooting steps below relate to.
+
+NOTE: just use version 1.11.1 as it seems far more stable than the ones that caused the issues below!
 
 Sometimes ONOS just stops working properly... it might start, but the web server is not accessible and just keeps responding with NOT_FOUND.
 I'm unsure why, but reinstalling ONOS seems to help.  Do `onos-kill; onos-uninstall; mvn clean; onos-build; onos-install` to reinstall it one step at a time.
