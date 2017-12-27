@@ -4,7 +4,7 @@ If you have issues getting everything working after following these directions, 
 
 We recommend using a Python `virtualenv` to both avoid polluting your system-wide Python distribution and also to support a slight hack used for the Mininet version (root runs a command that will be executed by non-root user so they'll both need this virtualenv).
 
-First, install the Python [requirements.txt](requirements.txt).
+First, install the Python [requirements.txt](../requirements.txt).
 
 **Networkx:** Note that you may need a 'bleeding edge' version of networkx for the default multicast tree generation (Steiner tree) algorithm.
   As of 1/2017 it is not included in the officially released version, so we just checked out
