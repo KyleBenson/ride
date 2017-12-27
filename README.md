@@ -23,13 +23,13 @@ Follow the [installation instructions](docs/INSTALL.md) to install Ride.
 Here we briefly explain the workflow and how we implemented the architecture.
 Ride's theoretical architecture is as follows:
 
-![Ride Architecture Diagram](docs/ride_architecture.png)
+<img src="docs/ride_architecture.png" height=600>
 
 ### Overall flow
 
 Refer to the following figure and workflow sequence for an overview of the whole workflow:
 
-![Ride Workflow Diagram](docs/ride_workflow.png)
+<img src="docs/ride_workflow.png" height=400>
 
 1) Subscribers contact server to subscribe to alerts (as described below, they create the CoAP resource end-point at this time).
 2) Ride-D module on the server connects to SDN controller via its REST API (see `topology_manager` folder) for using network topology info to establish MDMTs (and install associated flow rules) for the alert subscribers.
