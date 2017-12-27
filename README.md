@@ -50,5 +50,5 @@ See the [REST API Adapter documentation](topology_manager/README.md) for more de
 
 To show an example scenario and study Ride's effectiveness in a motivating realistic scenario, we implemented a seismic alerting service that gathers ground shaking data from IoT sensors, detects possible earthquakes, and issues alerts to interested subscribers (i.e. human users or actuating devices).
 This application, based on the [Community Seismic Network (CSN) concept](http://csn.caltech.edu/), is built around our multi-purpose IoT system called SCALE.
-See the [SCALE Client integration notes](docs/SCALE_INTEGRATION.md) for details.
+See the [SCALE Client integration notes](docs/SCALE_CLIENT_INTEGRATION.md) for details.
 
