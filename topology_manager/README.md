@@ -4,6 +4,8 @@ Topology Manager & REST API
 The topology management subsystem provides a mechanism for interacting with the SDN controller through its REST APIs.
 This essentially makes an adapter for developing controller-agnostic SDN applications in Python to facilitate the SDN capabilities of RIDE.
 
+NOTE: although Floodlight SDN Controller was supported at one point, the SdnTopology API has evolved and we haven't tested the Floodlight adapter in a long time...
+
 Inheritance Model
 -----------------
 
