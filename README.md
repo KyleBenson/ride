@@ -15,6 +15,14 @@ You can just clone [my networkx repo](https://github.com/KyleBenson/networkx/tre
    
 ### Mininet-based Experiments
 
+Summary of requirements:
+* Mininet and Open vSwitch
+* [ONOS](https://wiki.onosproject.org/display/ONOS/Installing+and+running+ONOS) SDN controller
+* [SCALE client](https://github.com/KyleBenson/scale_client)
+* [seismic_warning_test](https://github.com/KyleBenson/seismic_warning_test), which contains the adapter code to integrate Ride into our test seismic warning app as a SCALE client app
+* [networkx with digraph fix and steinertree](https://github.com/KyleBenson/networkx/tree/digraph_fix)
+* [coapthon](https://github.com/KyleBenson/CoAPthon.git) (our modified fork).
+
 WARNING: Mininet needs to run as root!  Therefore, you're going to have to set up your environment so that root shares the same Python `virtualenv` as your regular user!  You could alternatively run everything as root in which case you'll need to tweak the `config.py` some...
 
 To run the Mininet-based experiments, we'll obviously need to install Mininet and its Python API (e.g. via pip).  We just cloned the source repo and symlinked it to inside this repo's main directory so that Python can import classes for the Mininet API.
