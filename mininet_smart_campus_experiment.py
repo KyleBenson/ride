@@ -58,7 +58,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
 
     def __init__(self, controller_ip=CONTROLLER_IP, controller_port=CONTROLLER_REST_API_PORT,
                  # need to save these two params to pass to RideD
-                 tree_choosing_heuristic=DEFAULT_TREE_CHOOSING_HEURISTIC,
+                 tree_choosing_heuristic=DEFAULT_TREE_CHOOSING_HEURISTIC, max_alert_retries=None,
                  topology_adapter=DEFAULT_TOPOLOGY_ADAPTER,
                  n_traffic_generators=0, traffic_generator_bandwidth=10,
                  show_cli=False, comparison=None,
@@ -70,6 +70,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         :param controller_port: REST API port of SDN controller
         :param tree_choosing_heuristic: explicit in this version since we are running an
          actual emulation and so cannot check all the heuristics at once
+        :param max_alert_retries: passed to Ride-D to control # times it retries sending alerts
         :param topology_adapter: type of REST API topology adapter we use: one of 'onos', 'floodlight'
         :param n_traffic_generators: number of background traffic generators to run iperf on
         :param traffic_generator_bandwidth: bandwidth (in Mbps; using UDP) to set the iperf traffic generators to
@@ -89,6 +90,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # save any additional parameters the Mininet version adds
         self.results['params']['experiment_type'] = 'mininet'
         self.results['params']['tree_choosing_heuristic'] = self.tree_choosing_heuristic = tree_choosing_heuristic
+        self.results['params']['max_alert_retries'] = self.max_alert_retries = max_alert_retries
         self.results['params']['n_traffic_generators'] = self.n_traffic_generators = n_traffic_generators
         self.results['params']['traffic_generator_bandwidth'] = self.traffic_generator_bandwidth = traffic_generator_bandwidth
 
@@ -692,6 +694,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
                                                                   addresses=self.mcast_address_pool, ntrees=self.ntrees,
                                                                   tree_construction_algorithm=self.tree_construction_algorithm,
                                                                   tree_choosing_heuristic=self.tree_choosing_heuristic,
+                                                                  max_retries=self.max_alert_retries,
                                                                   dpid=self.get_host_dpid(self.server),
                                                                   topology_mgr=sdn_topology_cfg,
                                                                   )

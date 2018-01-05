@@ -30,6 +30,7 @@ debug_level = 'warn'
 verbose = True
 print_cmd = True
 nruns = 10
+run_start_num = 0  # change this to add additional runs to experiments e.g. after each 10 runs set to 10, 20, etc.
 reverse_cmds = False
 using_mininet = True
 # Mininet can't handle multiple runs per process instance (weird OS-level errors occur sometimes after a few runs)
@@ -110,25 +111,25 @@ def get_nhosts_treatment(nsubs, npubs):
 EXPERIMENTAL_TREATMENTS = {
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
     # 'construction-reroute': [
-    'npubs-reroute': [
-    # 'construction-selection': [
-        {
-            # 'tree_construction_algorithm': alg,
-            # 'tree_choosing_heuristic': choice,
-            # TODO: not p*2 just static 20 or maybe 10?
-            'npublishers': p, 'nsubscribers': 400,
-            # 'ntrees': t,
-            'fprob': f,
-            # 'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
-            'reroute_policy': rrp,
-        }
-        for rrp in ['disjoint', 'shortest']
-        for p in [100, 200, 400, 800]
-        # for t in [2, 4]
-        for f in [0.1, 0.2]
-        # for choice in RideD.MDMT_SELECTION_POLICIES
-        # for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
-        ],
+    # 'npubs-reroute': [
+    # # 'construction-selection': [
+    #     {
+    #         # 'tree_construction_algorithm': alg,
+    #         # 'tree_choosing_heuristic': choice,
+    #         # TODO: not p*2 just static 20 or maybe 10?
+    #         'npublishers': p, 'nsubscribers': 400,
+    #         # 'ntrees': t,
+    #         'fprob': f,
+    #         # 'topology_filename': 'topos/campus_topo_20b-2h-5ibl.json',
+    #         'reroute_policy': rrp,
+    #     }
+    #     for rrp in ['disjoint', 'shortest']
+    #     for p in [100, 200, 400, 800]
+    #     # for t in [2, 4]
+    #     for f in [0.1, 0.2]
+    #     # for choice in RideD.MDMT_SELECTION_POLICIES
+    #     # for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
+    #     ],
     # 'tree_choosing_heuristic': RideD.MDMT_SELECTION_POLICIES,
     # 'reroute_policy': ['disjoint', 'shortest'],
     # look at varying fprobs too as 0.1 may be too low for >2-4 trees
@@ -137,6 +138,8 @@ EXPERIMENTAL_TREATMENTS = {
     # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
+    ## NOTE: the rest of these parameter explorations do not have the parameter included in the default output_filename
+    'nretries': [{'max_alert_retries': rt, 'output_filename': 'results_%dretries.json' % rt} for rt in [0, 1, 3, 7]]
 }
 
 CONTROL_FLOW_PARAMS = {
@@ -193,6 +196,9 @@ def makecmds(output_dirname=''):
                         pass
 
                 args3 = getargs(output_dirname=this_dirname, **args3)
+                # ensure we actually output everything to this directory (mostly for when fname is manually specified)
+                if not args3['output_filename'].startswith(this_dirname):
+                    args3['output_filename'] = os.path.join(this_dirname, args3['output_filename'])
 
                 # When we spawn a new process for each run, we need to specify the run# and increment the seeds correctly!
                 if one_proc_per_run:
@@ -203,6 +209,7 @@ def makecmds(output_dirname=''):
                     random.seed(rs)
 
                     for run_num in range(args3['nruns']):
+                        run_num += run_start_num
                         args4 = args3.copy()
                         args4['nruns'] = 1
                         args4['run_start_num'] = run_num
@@ -225,6 +232,8 @@ def makecmds(output_dirname=''):
                         yield args4
 
                 else:
+                    if run_start_num > 0:
+                        args3['run_start_num'] = run_start_num
                     yield args3
 
 

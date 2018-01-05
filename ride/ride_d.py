@@ -55,7 +55,7 @@ class RideD(object):
     MDMT_SELECTION_POLICIES = (MAX_OVERLAPPING_LINKS, MIN_MISSING_LINKS, MAX_REACHABLE_SUBSCRIBERS, MAX_LINK_IMPORTANCE)
 
     def __init__(self, topology_mgr, dpid, addresses, ntrees=2, tree_choosing_heuristic=MAX_LINK_IMPORTANCE,
-                 tree_construction_algorithm=('red-blue',), alert_sending_callback=None, **kwargs):
+                 tree_construction_algorithm=('red-blue',), alert_sending_callback=None, max_retries=None, **kwargs):
         """
         :param SdnTopology|str topology_mgr: used as adapter to SDN controller for
          maintaining topology and multicast tree information
@@ -83,6 +83,8 @@ class RideD(object):
             delivery in this callback!  Consider just attaching it to the AlertContext
             NOTE: make sure you make this callback thread-safe if it's asynchronous!  The AlertContext.thread_lock will
             be locked when it's called so be careful accessing it or you might deadlock!
+        :param max_retries: number of times sending an alert will be retried (using a different MDMT each time).
+            default=2*ntrees
         :param kwargs: ignored (just present so we can pass args from other classes without causing errors)
         """
         super(RideD, self).__init__()
@@ -136,6 +138,7 @@ class RideD(object):
         self._alerts = set()
 
         self.__try_send_alert_packet_via = alert_sending_callback
+        self.max_retries = max_retries if max_retries is not None else 2 * ntrees
 
     @classmethod
     def get_arg_parser(cls):
@@ -251,14 +254,14 @@ class RideD(object):
         :param alert_ctx:
         :type alert_ctx: RideD.AlertContext
         :param timeout: timeout between attempts in seconds
-        :param max_retries: default=2*(#MDMTs)
+        :param max_retries: default=self.max_retries(which by default is 2*(#MDMTs))
         :return:
         """
 
         if max_retries == 0:
             return
         elif max_retries is None:
-            max_retries = len(alert_ctx.mdmts) * 2
+            max_retries = self.max_retries
 
         retry_attempts = 0
         while alert_ctx.active and max_retries > retry_attempts:
