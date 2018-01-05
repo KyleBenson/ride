@@ -145,7 +145,8 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # for having the best estimated chance of data delivery
         choices = dict()
         for method in RideD.MDMT_SELECTION_POLICIES:
-            choices[method] = rided.get_best_mdmt(PUBLICATION_TOPIC, method)
+            alert_ctx = rided._make_new_alert("dummy msg", PUBLICATION_TOPIC)
+            choices[method] = rided.get_best_mdmt(alert_ctx, method)
 
         for choice_method, best_tree in choices.items():
             best_tree_idx = trees.index(best_tree)
