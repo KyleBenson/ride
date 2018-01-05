@@ -10,6 +10,7 @@ import sys
 import os
 import json
 import pandas as pd
+import parse
 
 from seismic_warning_test.statistics import SeismicStatistics as MininetSeismicStatistics
 
@@ -204,9 +205,12 @@ class SmartCampusExperimentStatistics(object):
 
 
         elif experiment_type == 'networkx':
-            # just use the file name without .json as treatment
+            # just use the file name without .json or other file extensions (i.e. the run# if that's included...) as treatment
             assert filename.endswith('.json'), "why does results file not end with .json???"
             treatment = filename[:-len('.json')]
+            # ensure the trailing text is a run# before trimming it!
+            if '.' in treatment and parse.parse('.{:d}', treatment[treatment.rfind('.'):]):
+                treatment = treatment[:treatment.rfind('.')]
             stats = NetworkxSeismicStatistics(results, treatment=treatment, **exp_params)
 
             # we'll combine all the parsed results into a single data frame
@@ -219,6 +223,20 @@ class SmartCampusExperimentStatistics(object):
             exit(1)
 
         return stats
+
+    VARIED_PARAMS = ('const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
+                     'npublishers', 'nsubscribers', 'topo', 'treatment')
+
+    @classmethod
+    def average_over_runs(cls, df):
+        """
+        Averages the given DataFrame's values over all the runs for each unique treatment grouping.
+        :type df: pd.DataFrame
+        """
+        # XXX: need to ensure we have all these parameters available
+        cols = set(df.columns.tolist())
+        group_params = list(set(cls.VARIED_PARAMS).intersection(cols))
+        return df.groupby(group_params).mean().reset_index().drop('run', axis=1)
 
 
 class NetworkxSeismicStatistics(object):
@@ -297,20 +315,6 @@ class NetworkxSeismicStatistics(object):
         query_string = ' & '.join(('%s == "%s"' % (k, v) for k, v in param_matches.items()))
         log.debug("running query: %s" % query_string)
         return self.stats.query(query_string)
-
-    VARIED_PARAMS = ('const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
-                     'npublishers', 'nsubscribers', 'topo', 'treatment')
-
-    @classmethod
-    def average_over_runs(cls, df):
-        """
-        Averages the given DataFrame's values over all the runs for each unique treatment grouping.
-        :type df: pd.DataFrame
-        """
-        # XXX: need to ensure we have all these parameters available
-        cols = set(df.columns.tolist())
-        group_params = list(set(cls.VARIED_PARAMS).intersection(cols))
-        return df.groupby(group_params).mean().reset_index().drop('run', axis=1)
 
     def __iadd__(self, other):
         self.stats = pd.concat((self.stats, other.stats), ignore_index=True)
@@ -456,7 +460,7 @@ if __name__ == '__main__':
     # print 'filtered stats (%d):\n' % len(df), df.head()
 
     final_stats = df
-    final_stats = stats.stats.average_over_runs(df)
+    final_stats = stats.average_over_runs(df)
 
     print 'final stats:\n', final_stats
 
