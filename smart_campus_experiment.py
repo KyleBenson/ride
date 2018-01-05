@@ -28,7 +28,7 @@ DISTANCE_METRIC = 'latency'  # for shortest path calculations
 class SmartCampusExperiment(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, nruns=1, nsubscribers=5, npublishers=5,
+    def __init__(self, nruns=1, nsubscribers=5, npublishers=5, run_start_num=0,
                  failure_model=None, topology_filename=None,
                  debug='info', output_filename='results.json',
                  choice_rand_seed=None, rand_seed=None,
@@ -43,6 +43,7 @@ class SmartCampusExperiment(object):
                  **kwargs):
         """
         :param nruns:
+        :param run_start_num:
         :param ntrees:
         :param tree_construction_algorithm:
         :param nsubscribers:
@@ -61,7 +62,7 @@ class SmartCampusExperiment(object):
         """
         super(SmartCampusExperiment, self).__init__()
         self.nruns = nruns
-        self.current_run_number = None
+        self.current_run_number = run_start_num
         self.ntrees = ntrees
         self.nsubscribers = nsubscribers
         self.npublishers = npublishers
@@ -140,6 +141,9 @@ class SmartCampusExperiment(object):
         # experimental treatment parameters
         arg_parser.add_argument('--nruns', '-r', type=int, default=1,
                             help='''number of times to run experiment (default=%(default)s)''')
+        arg_parser.add_argument('--run-start-num', type=int, default=0, dest='run_start_num',
+                            help='''run number to start at.  Used for doing several runs with the same treatment
+                            but in different processes rather than all in one (default=%(default)s)''')
         arg_parser.add_argument('--nsubscribers', '-s', type=int, default=5,
                             help='''number of multicast subscribers (terminals) to reach (default=%(default)s)''')
         arg_parser.add_argument('--npublishers', '-p', type=int, default=5,
@@ -245,7 +249,6 @@ class SmartCampusExperiment(object):
         # start the actual experimentation
         for r in range(self.nruns):
             log.info("Starting run %d" % r)
-            self.current_run_number = r
             # ENHANCE: may only need to set this up once...
             self.setup_topology()
 
@@ -261,6 +264,8 @@ class SmartCampusExperiment(object):
                     progress_file.flush()  # so we can tail it
                 except IOError as e:
                     log.warn("Error writing to progress file: %s" % e)
+
+            self.current_run_number += 1
         self.output_results()
 
     def set_interrupt_signal(self):

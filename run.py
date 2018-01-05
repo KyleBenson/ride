@@ -32,6 +32,11 @@ print_cmd = True
 nruns = 10
 reverse_cmds = False
 using_mininet = True
+# Mininet can't handle multiple runs per process instance (weird OS-level errors occur sometimes after a few runs)
+# WARNING: don't mix this with a version that doesn't as the smart_campus_experiment will be using a different random #
+# for each run due to the times the RNG was used between each.
+# You also can't set seeds explicitly through the params this way!  See the 'explicit_seeds' variable instead....
+one_proc_per_run = using_mininet
 if using_mininet:
     if getpass.getuser() != 'root' and not testing:
         print "ERROR: Mininet must be run as root!"
@@ -222,7 +227,39 @@ def makecmds(output_dirname=''):
                         pass
 
                 args3 = getargs(output_dirname=this_dirname, **args3)
-                yield args3
+
+                # When we spawn a new process for each run, we need to specify the run# and increment the seeds correctly!
+                if one_proc_per_run:
+                    # XXX: HACK to ensure that we get the same sequence of seeds for each treatment we have to seed the
+                    # RNG explicitly and re-seed it for each treatment to reset the sequence.
+                    # When we move on to the next parameter exploration, we'll get a new random seed that's based on the
+                    # previous value but this won't give us a continuation of the sequence since it's now a seed!
+                    random.seed(rs)
+
+                    for run_num in range(args3['nruns']):
+                        args4 = args3.copy()
+                        args4['nruns'] = 1
+                        args4['run_start_num'] = run_num
+
+                        # We're automatically generating new seeds, but we want to keep the originals around for resetting.
+                        new_crs, new_rs, new_frs = get_next_seeds()
+                        args4['choice_rand_seed'] = new_crs
+                        args4['rand_seed'] = new_rs
+                        args4['faiure_rand_seed'] = new_frs
+
+                        # We also need to change the 'output_filename' to avoid overwriting it with each new run!
+                        fname = args4['output_filename']
+                        if not fname.endswith('.json'):
+                            print "WARNING: output_filename %s doesn't end with '.json'!!  Appending run number instead, which may break things..."
+                            fname += '.%d' % run_num
+                        else:
+                            fname = fname.replace('.json', '.%d.json' % run_num)
+                        args4['output_filename'] = fname
+
+                        yield args4
+
+                else:
+                    yield args3
 
 
 def getargs(output_dirname='', **kwargs):
@@ -270,7 +307,7 @@ def get_next_seeds(nseeds=3):
 def run_tests_on_cmd(**kwargs):
     if os.path.exists(kwargs['output_filename']):
         print "WARNING: file %s already exists!" % kwargs['output_filename']
-    assert os.path.exists(kwargs['topo'][1]), "topology file %s doesn't exist!" % kwargs['topo'][1]
+    assert os.path.exists(kwargs['topology_filename']), "topology file %s doesn't exist!" % kwargs['topology_filename']
 
 
 def run_experiment(jobs_finished, total_jobs, kwargs):
@@ -296,11 +333,12 @@ def run_experiment(jobs_finished, total_jobs, kwargs):
     if not testing:
         try:
             if using_mininet:
+                # probably don't need this as it's already done in the experiment....
                 # Clean SDN Controller (ONOS) and Mininet just in case
-                p = subprocess.Popen('%s %s' % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
-                p.wait()
-                p = subprocess.Popen('sudo mn -c %s' % IGNORE_OUTPUT, shell=True)
-                p.wait()
+                # p = subprocess.Popen('%s %s' % (CONTROLLER_RESET_CMD, IGNORE_OUTPUT), shell=True)
+                # p.wait()
+                # p = subprocess.Popen('sudo mn -c %s' % IGNORE_OUTPUT, shell=True)
+                # p.wait()
 
                 # Need to set params used for real system configs.
                 # ENHANCE: include port #, topology_adapter_type, etc...
