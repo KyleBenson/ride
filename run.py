@@ -109,14 +109,6 @@ def get_nhosts_treatment(nsubs, npubs):
 # same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
-    # 'ilp': [{'tree_construction_algorithm': [('ilp',), ('steiner',), ('diverse-paths',), ('red-blue',)],
-    #          'npublishers': p, 'nsubscribers': p*2, 'ntrees': t, 'fprob': f,
-    #          'topology_filename': 'topos/campus_topo_10b-4h-2ibl.json',
-    #          }
-    #         for p in [5, 10]
-    #         for t in [2, 4]
-    #         for f in [0.1, 0.2]
-    #         ]
     # 'construction-reroute': [
     'npubs-reroute': [
     # 'construction-selection': [
@@ -139,38 +131,12 @@ EXPERIMENTAL_TREATMENTS = {
         ],
     # 'tree_choosing_heuristic': RideD.MDMT_SELECTION_POLICIES,
     # 'reroute_policy': ['disjoint', 'shortest'],
-    #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
-    #    "failrandseed": -5644075521501607418,
-    #    "randseed": -4277241514845461664} for t in ntrees],
     # look at varying fprobs too as 0.1 may be too low for >2-4 trees
     # 'ntrees': [{'ntrees': t, 'fprob': f} for t in ntrees for f in [0.2, 0.4]],
     # 'ntrees': ntrees,
     # 'fprob': fprobs,
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
-    # we want to vary ntrees and fprobs together to see how the versions of the heuristic perform
-    # 'steiner-double': [{'ntrees': t, 'fprob': f} for t in [8, 4, 2] for f in fprobs[:3]]
-    # vary topology for inter-building connectivity
-    #'topo-sizes': [{'topology_filename': 'topos/campus_topo_%db-%dh-%dibl.json' % (nbuilds, nhosts, ibl),
-                    #'npublishers': nbuilds, 'nsubscribers': nbuilds*2,
-                    # 'output_filename': "%db-%dh-%d.json" % (nbuilds, nhosts, ibl),
-                    #}
-                   #for nbuilds, nhosts, ibl in
-            # might want to check if lower numbers with repeats improves
-            # if this big topo with ncores=8 makes a difference, try mid-range ibls
-            # (400, 80, 400),
-            #[(b, 8, ibl) for b,ibl in ((20,3),(40,5),(50,6),(80,8), (200,20))] +  # keep nhosts constant
-            #[(80, 16, 8), (200, 40, 20), (400,80,400)]  # see if nhosts makes a difference
-            # did the 400b topo have 8 cores?
-        #],  # (200, 20, 20)
-    #'topo-ibl': [{'topology_filename': 'topos/campus_topo_200b-20h-%dibl.json' % ibl,
-                  #} for ibl in [0, 10, 20, 40, 60, 80, 200, 400, 800]],
-    # vary topology size (need to vary nhosts along with it)
-    # 'topo-redundant': [{'topology_filename': 'topos/' + fname} for fname in
-    #                    ['campus_topo_200b-20h-1000ibl-redundant.json', 'campus_topo_200b-20h-1000ibl-redundant2.json']]
-    # 'publication_error_rate': [{'publication_error_rate': r, "choicerandseed": -5732823796696650875,
-    #                             "failrandseed": 2648076232431673581,  # seeds are from results3/nhosts
-    #                             "randseed": -7114345580798557657} for r in [0.01, 0.05, 0.1, 0.2, 0.4, 0.8]]
 }
 
 CONTROL_FLOW_PARAMS = {
