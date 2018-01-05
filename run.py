@@ -134,10 +134,10 @@ EXPERIMENTAL_TREATMENTS = {
         for p in [100, 200, 400, 800]
         # for t in [2, 4]
         for f in [0.1, 0.2]
-        # for choice in RideD.TREE_CHOOSING_HEURISTICS
+        # for choice in RideD.MDMT_SELECTION_POLICIES
         # for alg in [[('steiner',), ('diverse-paths',), ('red-blue',)]]
         ],
-    # 'tree_choosing_heuristic': RideD.TREE_CHOOSING_HEURISTICS,
+    # 'tree_choosing_heuristic': RideD.MDMT_SELECTION_POLICIES,
     # 'reroute_policy': ['disjoint', 'shortest'],
     #'ntrees': [{'ntrees': t, "choicerandseed": 7004174147253483861,
     #    "failrandseed": -5644075521501607418,
