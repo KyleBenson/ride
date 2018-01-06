@@ -11,6 +11,11 @@ WITH_LOGS = True  # output seismic client/server stdout to a log file
 # When True, runs host processes in mininet with -OO command for optimized python code
 OPTIMISED_PYTHON = not TESTING
 
+# Enumerate all of the parameters varied by the various experiments mostly for the purpose of grouping results in
+# the statistics.py parsers
+VARIED_PARAMETERS = ['const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
+                     'npublishers', 'nsubscribers', 'topo', 'treatment', 'max_alert_retries']
+
 ##########         ONOS     CONFIG      ###########
 
 CONTROLLER_IP="10.0.2.15"

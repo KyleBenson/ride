@@ -13,6 +13,7 @@ import pandas as pd
 import parse
 
 from seismic_warning_test.statistics import SeismicStatistics as MininetSeismicStatistics
+from config import VARIED_PARAMETERS
 
 # skip over these metrics when looking for reachability results from heuristics
 AVAILABLE_METRICS = {'run', 'nhops', 'overlap', 'cost'}
@@ -224,9 +225,6 @@ class SmartCampusExperimentStatistics(object):
 
         return stats
 
-    VARIED_PARAMS = ('const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
-                     'npublishers', 'nsubscribers', 'topo', 'treatment')
-
     @classmethod
     def average_over_runs(cls, df):
         """
@@ -235,7 +233,10 @@ class SmartCampusExperimentStatistics(object):
         """
         # XXX: need to ensure we have all these parameters available
         cols = set(df.columns.tolist())
-        group_params = list(set(cls.VARIED_PARAMS).intersection(cols))
+        # For mininet version, we shouldn't average across all of the sequence #s but rather later manually choose
+        # which ones to use for plots.
+        group_params = list(set(VARIED_PARAMETERS + ['seq']).intersection(cols))
+
         return df.groupby(group_params).mean().reset_index().drop('run', axis=1)
 
 
@@ -412,7 +413,7 @@ if __name__ == '__main__':
         exit()
 
     # lets you print the data frames out on a wider screen
-    pd.set_option('display.max_columns', 15)  # seismic_events has 14 columns
+    pd.set_option('display.max_columns', 25)
     pd.set_option('display.width', 2500)
 
     args = sys.argv[1:]
@@ -434,27 +435,27 @@ if __name__ == '__main__':
 
     original_stats = df
 
-    # policies_to_keep = ('oracle', 'unicast', 'max', 'mean')
+    policies_to_keep = ('oracle', 'unicast', 'max', 'mean')
     # policies_to_keep = ('oracle', 'unicast')
 
     ## This query is for comparing the different selection-policies; it cuts out the max, mean, min results
     # policies_to_keep = ('oracle', 'unicast', 'importance-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'min-missing-chosen')
 
     ## For the overhead comparison, we should compare unicast and the different const-algs for each nsubscribers value
-    policies_to_keep = ('unicast', 'mean')
+    # policies_to_keep = ('unicast', 'mean')
 
     ## This is for comparing the different construction algorithms
     # const_algs_to_keep = ('diverse-paths', 'red-blue', 'steiner')
     # for pol in policies_to_keep:
     #     for alg in const_algs_to_keep:
-    query = '|'.join(['select_policy == "%s" ' % pol for pol in policies_to_keep])
+    # query = '|'.join(['select_policy == "%s" ' % pol for pol in policies_to_keep])
             # query = '|'.join(['const_alg == "%s" ' % alg for alg in const_algs_to_keep])
 
 
             # query = "const_alg == '%s' & select_policy == '%s'" % (alg, pol)
     #
     # print 'QUERY:', query
-    df = original_stats.query(query)
+    # df = original_stats.query(query)
     # df = df.query('|'.join(['const_alg == "%s" ' % pol for pol in ["red-blue", "unicast", "oracle"]]))
     # df = original_stats.query('select_policy == "mean"')
     # print 'filtered stats (%d):\n' % len(df), df.head()
