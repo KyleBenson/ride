@@ -13,7 +13,7 @@ import random
 import networkx as nx
 
 import topology_manager
-from ride.config import MULTICAST_FLOW_RULE_PRIORITY
+from ride.config import MULTICAST_FLOW_RULE_PRIORITY, DEFAULT_TREE_CONSTRUCTION_ALGORITHM, DEFAULT_TREE_CHOOSING_HEURISTIC
 from stt_manager import SttManager
 from topology_manager.sdn_topology import SdnTopology
 
@@ -54,8 +54,9 @@ class RideD(object):
     MAX_OVERLAPPING_LINKS = 'max-overlap'
     MDMT_SELECTION_POLICIES = (MAX_OVERLAPPING_LINKS, MIN_MISSING_LINKS, MAX_REACHABLE_SUBSCRIBERS, MAX_LINK_IMPORTANCE)
 
-    def __init__(self, topology_mgr, dpid, addresses, ntrees=2, tree_choosing_heuristic=MAX_LINK_IMPORTANCE,
-                 tree_construction_algorithm=('red-blue',), alert_sending_callback=None, max_retries=None, **kwargs):
+    def __init__(self, topology_mgr, dpid, addresses, ntrees=2, tree_choosing_heuristic=DEFAULT_TREE_CHOOSING_HEURISTIC,
+                 tree_construction_algorithm=DEFAULT_TREE_CONSTRUCTION_ALGORITHM,
+                 alert_sending_callback=None, max_retries=None, **kwargs):
         """
         :param SdnTopology|str topology_mgr: used as adapter to SDN controller for
          maintaining topology and multicast tree information
@@ -155,11 +156,12 @@ class RideD(object):
         # Algorithmic configuration
         arg_parser.add_argument('--ntrees', '-t', type=int, default=2,
                                 help='''number of redundant multicast trees to build (default=%(default)s)''')
-        arg_parser.add_argument('--mcast-construction-algorithm', type=str, default=('steiner',), nargs='+',
+        arg_parser.add_argument('--mcast-construction-algorithm', type=str,
+                                default=DEFAULT_TREE_CONSTRUCTION_ALGORITHM, nargs='+',
                                 dest='tree_construction_algorithm',
                                 help='''heuristic algorithm for building multicast trees.  First arg is the heuristic
                                 name; all others are passed as args to the heuristic. (default=%(default)s)''')
-        arg_parser.add_argument('--choosing-heuristic', '-c', default=cls.MAX_LINK_IMPORTANCE, dest='tree_choosing_heuristic',
+        arg_parser.add_argument('--choosing-heuristic', '-c', default=DEFAULT_TREE_CHOOSING_HEURISTIC, dest='tree_choosing_heuristic',
                                 help='''multicast tree choosing heuristic to use (default=%(default)s)''')
 
         # Networking-related configurations
