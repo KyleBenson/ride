@@ -100,7 +100,7 @@ class SmartCampusExperiment(object):
         # These fields will be set for each run so as to avoid passing them around as parameters.
         self.subscribers = None
         self.publishers = None
-        self.server = None
+        self.edge_server = None
         self.cloud = None
         self.failed_nodes, self.failed_links = (None, None)
 
@@ -380,10 +380,10 @@ class SmartCampusExperiment(object):
         self.publishers = self.choose_publishers()
         # NOTE: this is unnecessary as we only have a single server in our test topos.  If we use multiple, need
         # to actually modify RideD here with updated server.
-        self.server = self.choose_server()
+        self.edge_server = self.choose_server()
         self.failed_nodes, self.failed_links = self.get_failed_nodes_links()
 
-        assert self.server not in self.failed_nodes, "shouldn't be failing the server!  useless run...."
+        assert self.edge_server not in self.failed_nodes, "shouldn't be failing the server!  useless run...."
 
     def teardown_experiment(self):
         """

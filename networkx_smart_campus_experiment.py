@@ -35,6 +35,14 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
             # freeze graph to prevent any accidental topological changes
             nx.freeze(self.topo.topo)
 
+    @classmethod
+    def get_arg_parser(cls, parents=None, add_help=True):
+        """Overrides base class just to ensure we add the --help command"""
+        if parents is not None:
+            return super(NetworkxSmartCampusExperiment, cls).get_arg_parser(parents=parents, add_help=add_help)
+        else:
+            return super(NetworkxSmartCampusExperiment, cls).get_arg_parser(add_help=add_help)
+
     def run_experiment(self):
         """Check what percentage of subscribers are still reachable
         from the server after the failure model has been applied
@@ -70,7 +78,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # start up and configure RideD middleware for building/choosing trees
         # We need to specify dummy addresses that won't actually be used for anything.
         addresses = ["10.0.0.%d" % d for d in range(self.ntrees)]
-        rided = RideD(self.topo, self.server, addresses, self.ntrees, construction_algorithm=self.tree_construction_algorithm[0],
+        rided = RideD(self.topo, self.edge_server, addresses, self.ntrees, construction_algorithm=self.tree_construction_algorithm[0],
                       const_args=self.tree_construction_algorithm[1:])
         # HACK: since we never made an actual API for the controller, we just do this manually...
         for s in subscribers:
@@ -85,11 +93,11 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # XXX: because the RideC implementation requires an actual SDN controller adapter, we just repeat the logic
         # for computing 'redirection' routes (publisher-->edge after cloud failure) here...
         if self.reroute_policy == 'shortest':
-            pub_routes = {pub: self.topo.get_path(pub, self.server, weight=DISTANCE_METRIC) for pub in self.publishers}
+            pub_routes = {pub: self.topo.get_path(pub, self.edge_server, weight=DISTANCE_METRIC) for pub in self.publishers}
         else:
             if self.reroute_policy != 'disjoint':
                 log.error("unknown reroute_policy '%s'; defaulting to 'disjoint'...")
-            pub_routes = {p[0]: p for p in self.topo.get_multi_source_disjoint_paths(self.publishers, self.server, weight=DISTANCE_METRIC)}
+            pub_routes = {p[0]: p for p in self.topo.get_multi_source_disjoint_paths(self.publishers, self.edge_server, weight=DISTANCE_METRIC)}
             assert list(sorted(pub_routes.keys())) == list(sorted(self.publishers)), "not all hosts accounted for in disjoint paths: %s" % pub_routes.values()
 
         for pub in self.publishers:
@@ -106,19 +114,19 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         for tree in trees:
             tree.graph['heuristic'] = self.get_mcast_heuristic_name()
             # sanity check that the returned trees reach all destinations
-            assert all(nx.has_path(tree, self.server, sub) for sub in subscribers)
+            assert all(nx.has_path(tree, self.edge_server, sub) for sub in subscribers)
 
         # ORACLE
         # First, use a copy of whole topology as the 'oracle' heuristic,
         # which sees what subscribers are even reachable by ANY path.
-        reach = self.get_oracle_reachability(subscribers, self.server, failed_topology)
+        reach = self.get_oracle_reachability(subscribers, self.edge_server, failed_topology)
         result['oracle'] = reach
 
         # UNICAST
         # Second, get the reachability for the 'unicast' heuristic,
         # which sees what subscribers are reachable on the failed topology
         # via the path they'd normally be reached on the original topology
-        paths = [nx.shortest_path(self.topo.topo, self.server, s, weight=DISTANCE_METRIC) for s in subscribers]
+        paths = [nx.shortest_path(self.topo.topo, self.edge_server, s, weight=DISTANCE_METRIC) for s in subscribers]
         # record the cost of the paths whether they would succeed or not
         unicast_cost = sum(self.topo.topo[u][v].get(COST_METRIC, 1) for p in paths\
                            for u, v in zip(p, p[1:]))
@@ -131,7 +139,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         # ALL TREES' REACHABILITIES: all, min, max, mean, stdev
         # Next, check all the redundant multicast trees together to get their respective (and aggregate) reachabilities
         topos_to_check = [self.get_failed_topology(t, self.failed_nodes, self.failed_links) for t in trees]
-        reaches = self.get_reachability(self.server, subscribers, topos_to_check)
+        reaches = self.get_reachability(self.edge_server, subscribers, topos_to_check)
         heuristic = trees[0].graph['heuristic']  # we assume all trees from same heuristic
         result[heuristic]['all'] = reaches[-1]
         reaches = reaches[:-1]
@@ -159,7 +167,7 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
         nhops = []
         for t in trees:
             for s in subscribers:
-                nhops.append(len(nx.shortest_path(t, s, self.server)) - 1)
+                nhops.append(len(nx.shortest_path(t, s, self.edge_server)) - 1)
         result['nhops'] = dict(mean=np.mean(nhops), stdev=np.std(nhops), min=min(nhops), max=max(nhops))
 
         # Record the pair-wise overlap between the trees
