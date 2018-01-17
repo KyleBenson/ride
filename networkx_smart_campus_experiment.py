@@ -5,11 +5,11 @@
 
 import logging
 log = logging.getLogger(__name__)
-
+import random
 import numpy as np
 import networkx as nx
 
-from smart_campus_experiment import SmartCampusExperiment, random, DISTANCE_METRIC
+from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
 from ride.ride_d import RideD
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 
@@ -34,6 +34,9 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
             self.topo = NetworkxSdnTopology(self.topology_filename)
             # freeze graph to prevent any accidental topological changes
             nx.freeze(self.topo.topo)
+
+            self.hosts = self.topo.get_hosts()
+            self.servers = self.topo.get_servers()
 
     @classmethod
     def get_arg_parser(cls, parents=None, add_help=True):

@@ -114,6 +114,11 @@ NAT_SERVER_IP_ADDRESS = '11.0.0.%d/24'
 MULTICAST_ADDRESS_BASE = u'224.0.0.1'  # must be unicode!
 MULTICAST_ALERT_BASE_SRC_PORT = 4000
 
+DEFAULT_ERROR_RATE = 0.0
+DEFAULT_LATENCY = 10.0  # in ms
+DEFAULT_JITTER = 1.0    # in ms
+DEFAULT_BANDWIDTH = 10  # in Mbps
+
 import re
 from topology_manager.test_sdn_topology import mac_for_host
 

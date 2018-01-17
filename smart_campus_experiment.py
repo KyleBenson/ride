@@ -9,30 +9,21 @@ multicast tree-constructing and choosing algorithms for creation of
 # @author: Kyle Benson
 # (c) Kyle Benson 2017
 
-import json
 import os
 import argparse
 import logging
 log = logging.getLogger(__name__)
-import random
-import signal
-import time
-from abc import abstractmethod, ABCMeta
 
 import networkx as nx
 import ride
 from ride.config import *
+from network_experiment import NetworkExperiment
 from failure_model import SmartCampusFailureModel
 DISTANCE_METRIC = 'latency'  # for shortest path calculations
 
-class SmartCampusExperiment(object):
-    __metaclass__ = ABCMeta
+class SmartCampusExperiment(NetworkExperiment):
 
-    def __init__(self, nruns=1, nsubscribers=5, npublishers=5, run_start_num=0,
-                 failure_model=None, topology_filename=None,
-                 debug='info', output_filename='results.json',
-                 choice_rand_seed=None, rand_seed=None,
-                 error_rate=0.0,
+    def __init__(self, nsubscribers=5, npublishers=5, failure_model=None, topology_filename=None,
                  ## RideD params
                  ntrees=4, tree_construction_algorithm=DEFAULT_TREE_CONSTRUCTION_ALGORITHM,
                  ## RideC params
@@ -42,8 +33,6 @@ class SmartCampusExperiment(object):
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
         """
-        :param nruns:
-        :param run_start_num:
         :param ntrees:
         :param tree_construction_algorithm:
         :param nsubscribers:
@@ -51,18 +40,12 @@ class SmartCampusExperiment(object):
         :param reroute_policy: used by RideC to determine the publishers' routes to edge server (after re-route from cloud in our real scenario)
         :param failure_model:
         :param topology_filename:
-        :param debug:
-        :param output_filename:
-        :param choice_rand_seed:
-        :param rand_seed:
-        :param error_rate:
         :param with_ride_d:
         :param with_ride_c:
         :param kwargs:
         """
         super(SmartCampusExperiment, self).__init__()
-        self.nruns = nruns
-        self.current_run_number = run_start_num
+
         self.ntrees = ntrees
         self.nsubscribers = nsubscribers
         self.npublishers = npublishers
@@ -70,28 +53,12 @@ class SmartCampusExperiment(object):
         self.topology_filename = topology_filename
         self.topo = None  # built later in setup_topology()
 
-        self.output_filename = output_filename
-        if self.output_filename is None:
-            log.warning("output_filename is None!  Using default of results.json")
-            self.output_filename = 'results.json'
         self.tree_construction_algorithm = tree_construction_algorithm
         self.reroute_policy = reroute_policy
-        self.error_rate = error_rate
 
         self.with_ride_c = with_ride_c
         self.with_ride_d = with_ride_d
         self.with_cloud = with_ride_c
-
-        log_level = logging.getLevelName(debug.upper())
-        logging.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
-
-        # this is used for choosing pubs/subs/servers/other hosts ONLY
-        self.random = random.Random(choice_rand_seed)
-        # this RNG is used for everything else (tie-breakers, algorithms, etc.)
-        random.seed(rand_seed)
-        # QUESTION: do we need one for the algorithms as well?  probably not because
-        # each algorithm could call random() a different number of times and so the
-        # comparison between the algorithms wouldn't really be consistent between runs.
 
         if failure_model is None:
             failure_model = SmartCampusFailureModel()
@@ -104,26 +71,17 @@ class SmartCampusExperiment(object):
         self.cloud = None
         self.failed_nodes, self.failed_links = (None, None)
 
-        # results are output as JSON to file after the experiment runs
-        self.results = {'results': [], # each is a single run containing: {run: run#, heuristic_name: percent_reachable}
-                        'params': {'ntrees': ntrees,
+        self.results['params'].update({'ntrees': ntrees,
                                    'nsubscribers': nsubscribers,
                                    'npublishers': npublishers,
                                    'failure_model': self.failure_model.get_params(),
+                                   'failrandseed': kwargs.get('failure_rand_seed', None),
                                    'heuristic': self.get_mcast_heuristic_name(),
                                    'reroute_policy': self.reroute_policy,
-                                   'topo': topology_filename,
-                                   'error_rate': self.error_rate,
-                                   'choicerandseed': choice_rand_seed,
-                                   'randseed': rand_seed,
-                                   'failrandseed': kwargs.get('failure_rand_seed', None),
-                                   # NOTE: subclasses should store their type here!
-                                   'experiment_type': None
-                                   }
-                        }
+                                   'topo': topology_filename,})
 
     @classmethod
-    def get_arg_parser(cls, parents=(SmartCampusFailureModel.arg_parser,
+    def get_arg_parser(cls, parents=(SmartCampusFailureModel.arg_parser, NetworkExperiment.get_arg_parser(),
                                      ride.ride_d.RideD.get_arg_parser()),
                        add_help=False):
         """
@@ -139,32 +97,14 @@ class SmartCampusExperiment(object):
         arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION,
                                              parents=parents, add_help=add_help)
         # experimental treatment parameters
-        arg_parser.add_argument('--nruns', '-r', type=int, default=1,
-                            help='''number of times to run experiment (default=%(default)s)''')
-        arg_parser.add_argument('--run-start-num', type=int, default=0, dest='run_start_num',
-                            help='''run number to start at.  Used for doing several runs with the same treatment
-                            but in different processes rather than all in one (default=%(default)s)''')
         arg_parser.add_argument('--nsubscribers', '-s', type=int, default=5,
                             help='''number of multicast subscribers (terminals) to reach (default=%(default)s)''')
         arg_parser.add_argument('--npublishers', '-p', type=int, default=5,
                             help='''number of IoT sensor publishers to contact edge server (default=%(default)s)''')
-        arg_parser.add_argument('--error-rate', type=float, default=0.0, dest='error_rate',
-                            help='''error rate of links (default=%(default)s)''')
         arg_parser.add_argument('--topology-filename', '--topo', type=str, default='topos/campus_topo.json', dest='topology_filename',
                             help='''file name of topology to use (default=%(default)s)''')
-
-        # experiment interaction control
-        arg_parser.add_argument('--debug', '-d', type=str, default='info', nargs='?', const='debug',
-                            help='''set debug level for logging facility (default=%(default)s, %(const)s when specified with no arg)''')
-        arg_parser.add_argument('--output-file', '-o', type=str, default=None, dest='output_filename',
-                            help='''name of output file for recording JSON results
-                            (by default we generate a filename located in 'results'
-                            directory, with '.json' extension, that includes a summary of experiment parameters:
-                            see SmartCampusExperiment.build_default_results_file_name())''')
-        arg_parser.add_argument('--choice-rand-seed', type=int, default=None, dest='choice_rand_seed',
-                            help='''random seed for choices of subscribers & servers (default=%(default)s)''')
-        arg_parser.add_argument('--rand-seed', type=int, default=None, dest='rand_seed',
-                            help='''random seed used by other classes via calls to random module (default=%(default)s)''')
+        arg_parser.add_argument('--reroute-policy', '--route', type=str, default=DEFAULT_REROUTE_POLICY, dest='reroute_policy',
+                            help='''policy for (re)routing publishers to the edge server (default=%(default)s)''')
 
         return arg_parser
 
@@ -220,82 +160,11 @@ class SmartCampusExperiment(object):
 
         return cls(**args)
 
-    def run_all_experiments(self):
-        """Runs the requested experimental configuration
-        for the requested number of times, saving the results to an output file."""
-
-        # Log progress to a file so that we can check on
-        # long-running simulations to see how far they've gotten.
-        progress_filename = self.output_filename.replace(".json", ".progress")
-        # in case we hadn't specified a .json output file:
-        if progress_filename == self.output_filename:
-            progress_filename += ".progress"
-
-        # ensure the directory exists...
-        try:
-            os.mkdir(os.path.dirname(progress_filename))
-        except OSError:  # dir exists
-            pass
-
-        try:
-            progress_file = open(progress_filename, "w")
-            progress_file.write("Starting experiments at time %s\n" % time.ctime())
-        except IOError as e:
-            log.warn("Error opening progress file for writing: %s" % e)
-            progress_file = None
-
-        self.set_interrupt_signal()
-
-        # start the actual experimentation
-        for r in range(self.nruns):
-            log.info("Starting run %d" % r)
-            # ENHANCE: may only need to set this up once...
-            self.setup_topology()
-
-            self.setup_experiment()
-            result = self.run_experiment()
-            self.teardown_experiment()
-
-            self.record_result(result)
-
-            if progress_file is not None:
-                try:
-                    progress_file.write("Finished run %d at %s\n" % (r, time.ctime()))
-                    progress_file.flush()  # so we can tail it
-                except IOError as e:
-                    log.warn("Error writing to progress file: %s" % e)
-
-            self.current_run_number += 1
-        self.output_results()
-
-    def set_interrupt_signal(self):
-        # catch termination signal and immediately output results so we don't lose ALL that work
-        def __sigint_handler(sig, frame):
-            # HACK: try changing filename so we know it wasn't finished
-            self.output_filename = self.output_filename.replace('.json', '_UNFINISHED.json')
-            log.critical("SIGINT received! Outputting current results to %s and exiting" % self.output_filename)
-            self.output_results()
-            exit(1)
-        signal.signal(signal.SIGINT, __sigint_handler)
-
     def record_result(self, result):
-        """Result is a dict that includes the experimental results for the current run i.e. percentage of subscribers
-        reachable, what parameters were used, etc.  This method also records additional parameters such as run #,
-        failed_nodes/links, etc."""
-
         # First, add additional parameters used on this run.
         result['failed_nodes'] = self.failed_nodes
         result['failed_links'] = self.failed_links
-        result['run'] = self.current_run_number
-        self.results['results'].append(result)
-
-    def output_results(self):
-        """Outputs the results to a file"""
-        log.info("Results: %s" % json.dumps(self.results, sort_keys=True, indent=2))
-        if os.path.exists(self.output_filename):
-            log.warning("Output file being overwritten: %s" % self.output_filename)
-        with open(self.output_filename, "w") as f:
-            json.dump(self.results, f, sort_keys=True, indent=2)
+        return super(SmartCampusExperiment, self).record_result(result)
 
     def get_failed_nodes_links(self):
         """Returns which nodes/links failed according to the failure model.
@@ -320,53 +189,10 @@ class SmartCampusExperiment(object):
         log.debug("Publishers: %s" % pubs)
         return pubs
 
-    def _choose_random_hosts(self, nhosts):
-        """
-        Chooses a uniformly random sampling of hosts to act as some group.
-        If nhosts > total_hosts, will return all hosts.
-        :param nhosts:
-        :return:
-        """
-        hosts = self.topo.get_hosts()
-        sample = self.random.sample(hosts, min(nhosts, len(hosts)))
-        return sample
-
     def choose_server(self):
         server = self.random.choice(self.topo.get_servers())
         log.debug("Server: %s" % server)
         return server
-
-    @abstractmethod
-    def setup_topology(self):
-        """
-        Construct and configure appropriately the topology based on the previously
-        specified topology_adapter_type and topology_filename.
-        :return:
-        """
-        pass
-
-    @staticmethod
-    def build_mcast_heuristic_name(*args):
-        """The heuristic is given with arguments so we use this function
-        to convert it to a compact human-readable form.  This is a
-        separate static function for use by other classes."""
-        if len(args) > 1:
-            interior = ",".join(args[1:])
-            return "%s[%s]" % (args[0], interior)
-        else:
-            return args[0]
-
-    def get_mcast_heuristic_name(self):
-        return self.build_mcast_heuristic_name(*self.tree_construction_algorithm)
-
-    @abstractmethod
-    def run_experiment(self):
-        """
-        Run the actual experiment and return the results in a dict to be recorded.
-
-        :returns dict results:
-        """
-        raise NotImplementedError
 
     def setup_experiment(self):
         """
@@ -385,12 +211,19 @@ class SmartCampusExperiment(object):
 
         assert self.edge_server not in self.failed_nodes, "shouldn't be failing the server!  useless run...."
 
-    def teardown_experiment(self):
-        """
-        Cleans up the experiment in preparation for the next call to setup (or being finished).
-        By default does nothing.
-        """
-        pass
+    @staticmethod
+    def build_mcast_heuristic_name(*args):
+        """The heuristic is given with arguments so we use this function
+        to convert it to a compact human-readable form.  This is a
+        separate static function for use by other classes."""
+        if len(args) > 1:
+            interior = ",".join(args[1:])
+            return "%s[%s]" % (args[0], interior)
+        else:
+            return args[0]
+
+    def get_mcast_heuristic_name(self):
+        return self.build_mcast_heuristic_name(*self.tree_construction_algorithm)
 
     ### Helper functions for working with failures and calculating reachability in our topology
 

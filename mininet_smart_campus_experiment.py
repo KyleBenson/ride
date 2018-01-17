@@ -9,12 +9,12 @@ LOGGERS_TO_DISABLE = ('sdn_topology', 'topology_manager.sdn_topology', 'connecti
 
 import os
 import random
+from collections import OrderedDict
 import argparse
 import time
 import ipaddress
 
 from mininet.node import Host, OVSKernelSwitch
-from mininet.link import TCLink
 
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
@@ -99,10 +99,6 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         # This gets passed to seismic hosts
         self.debug_level = kwargs.get('debug', 'error')
 
-        # XXX: BUG: we couldn't get multiple runs per process working completely for Mininet, so issue a warning:
-        if kwargs.get('nruns', 1) > 1:
-            raise NotImplementedError("Cannot support >1 runs per process in Mininet currently!")
-
         # Disable some of the more verbose and unnecessary loggers
         for _logger_name in LOGGERS_TO_DISABLE:
             l = logging.getLogger(_logger_name)
@@ -181,53 +177,43 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
 
         for switch in self.topo.get_switches():
             mac = get_mac_for_switch(switch)
-            s = self.net.addSwitch(switch, dpid=mac, cls=OVSKernelSwitch)
-            log.debug("adding switch %s at DPID %s" % (switch, s.dpid))
-            self.switches.append(s)
+            s = self.add_switch(switch, mac)
             if self.topo.is_cloud_gateway(switch):
                 self.cloud_gateways.append(s)
 
         for host in self.topo.get_hosts():
             _ip, _mac = get_ip_mac_for_host(host)
-            h = self.net.addHost(host, ip=_ip, mac=_mac)
-            self.hosts.append(h)
+            self.add_host(host, _ip, _mac)
 
         for server in self.topo.get_servers():
-            # HACK: we actually add a switch in case the server is multi-homed since it's very
-            # difficult to work with multiple interfaces on a host (e.g. ONOS can only handle
-            # a single MAC address per host).
             server_switch_name = server.replace('s', 'e')
             server_switch_dpid = get_mac_for_switch(server_switch_name, is_server=True)
-            # Keep server name for switch so that the proper links will be added later.
-            server_switch = self.net.addSwitch(server, dpid=server_switch_dpid, cls=OVSKernelSwitch)
             host = 'h' + server
             _ip, _mac = get_ip_mac_for_host(host)
-            s = self.net.addHost(host, ip=_ip, mac=_mac)
-            self.servers.append(s)
-            self.server_switches[s] = server_switch
+
+            # Keep server name for switch so that the proper links will be added later.
+            srv, server_switch = self.add_server(name=host, ip=_ip, mac=_mac,
+                                                 server_switch_name=server, server_switch_dpid=server_switch_dpid)
+
             # XXX: this experiment only uses a single server
-            self.edge_server = s
+            self.edge_server = srv
             self.edge_server_switch = server_switch
-            l = self.net.addLink(self.edge_server_switch, self.edge_server)
-            self.server_switch_links[s] = l
 
         for cloud in self.topo.get_clouds():
             # Only consider the cloud special if we've enabled doing so
             if self.with_cloud:
-                # HACK: Same hack with adding local server
                 cloud_switch_name = cloud.replace('x', 'f')
                 cloud_switch_dpid = get_mac_for_switch(cloud_switch_name, is_cloud=True)
-                # Keep server name for switch so that the proper links will be added later.
-                cloud_switch = self.net.addSwitch(cloud, dpid=cloud_switch_dpid, cls=OVSKernelSwitch)
-                self.cloud_switches.append(cloud_switch)
                 # ENHANCE: handle multiple clouds
                 host = 'h' + cloud
                 _ip, _mac = get_ip_mac_for_host(host)
-                self.cloud = self.net.addHost(host, ip=_ip, mac=_mac)
-                self.servers.append(self.cloud)
-                self.server_switches[self.cloud] = cloud_switch
-                l = self.net.addLink(cloud_switch, self.cloud)
-                self.server_switch_links[self.cloud] = l
+
+                # Keep server name for switch so that the proper links will be added later.
+                _cloud, cloud_switch = self.add_server(name=host, ip=_ip, mac=_mac,
+                                                     server_switch_name=cloud, server_switch_dpid=cloud_switch_dpid)
+
+                self.cloud_switches.append(cloud_switch)
+                self.cloud = _cloud
             # otherwise just add a host to prevent topology errors
             else:
                 self.net.addHost(cloud)
@@ -237,25 +223,12 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
             from_link = link[0]
             to_link = link[1]
 
-
-            # TODO: refactor stuff below this except for attributes
-
-
-            log.debug("adding link from %s to %s" % (from_link, to_link))
-
             # Get link attributes for configuring realistic traffic control settings
-            # For configuration options, see mininet.link.TCIntf.config()
             attributes = link[2]
-            _bw = attributes.get('bw', 10)  # in Mbps
-            _delay = '%fms' % attributes.get('latency', 10)
+            _bw = attributes.get('bw')  # in Mbps
+            _delay = attributes.get('latency')
             # TODO: increase jitter for cloud!
-            _jitter = '1ms'
-            _loss = self.error_rate
-
-            l = self.net.addLink(self.net.get(from_link), self.net.get(to_link),
-                                 cls=TCLink, bw=_bw, delay=_delay, jitter=_jitter, loss=_loss
-                                 )
-            self.links.append(l)
+            self.add_link(from_link, to_link, bandwidth=_bw, latency=_delay)
 
         self.add_nat(self.edge_server)
 
@@ -271,21 +244,14 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         """
         return [self.net.get(n) for n in nodes]
 
-    def choose_publishers(self):
-        """
-        Choose the actual Mininet Hosts (rather than just strings) that will
-        be publishers.
-        :return List[Host] publishers:
-        """
-        return self._get_mininet_nodes(super(MininetSmartCampusExperiment, self).choose_publishers())
+    def _choose_random_hosts(self, nhosts, from_list=None):
+        return super(MininetSmartCampusExperiment, self)._choose_random_hosts(nhosts, from_list=self.devices)
 
-    def choose_subscribers(self):
-        """
-        Choose the actual Mininet Hosts (rather than just strings) that will
-        be subscribers.
-        :return List[Host] subscribers:
-        """
-        return self._get_mininet_nodes(super(MininetSmartCampusExperiment, self).choose_subscribers())
+    # XXX: filter out servers from list of hosts
+    @property
+    def devices(self):
+        # NOTE: the server host is e.g. hs0!!
+        return [h for h in self.hosts if (h.name.startswith('h') and '-' in h.name)]
 
     def choose_server(self):
         """
@@ -302,6 +268,21 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         # NOTE: we can just pass the links as strings
         return self._get_mininet_nodes(fnodes), flinks
 
+    def setup_experiment(self):
+
+        # Need to select the publishers first before configuring the mininet network
+        SmartCampusExperiment.setup_experiment(self)
+        MininetSdnExperiment.setup_experiment(self)
+
+        # We also have to manually configure the routes for the multicast addresses
+        # the server will use.
+        for a, p in self.mcast_address_pool:
+            self.edge_server.setHostRoute(a, self.edge_server.intf().name)
+
+        # this needs to come after starting network or no interfaces/IP addresses will be present
+        log.debug("\n".join("added host %s at IP %s" % (host.name, host.IP()) for host in self.net.hosts))
+        log.debug('links: %s' % [(l.intf1.name, l.intf2.name) for l in self.net.links])
+
     def run_experiment(self):
         """
         Configures all appropriate settings, runs the experiment, and
@@ -315,22 +296,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         :rtype dict:
         """
 
-        self.start_network()
-
-        # We also have to manually configure the routes for the multicast addresses
-        # the server will use.
-        for a, p in self.mcast_address_pool:
-            self.edge_server.setHostRoute(a, self.edge_server.intf().name)
-
-        # this needs to come after starting network or no interfaces/IP addresses will be present
-        log.debug("\n".join("added host %s at IP %s" % (host.name, host.IP()) for host in self.net.hosts))
-        log.debug('links: %s' % [(l.intf1.name, l.intf2.name) for l in self.net.links])
-
-        self.ensure_network_setup()
-
         self.setup_traffic_generators()
-
-        ##    STARTING EXPERIMENT
 
         # NOTE: it takes a second or two for the clients to actually start up!
         # log.debug('*** Starting clients at time %s' % time.time())
@@ -410,7 +376,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         NOTE: iperf v2 added the capability to tell the server when to exit after some time.
         However, we explicitly terminate the server anyway to avoid incompatibility issues."""
 
-        generators = self._get_mininet_nodes(self._choose_random_hosts(self.n_traffic_generators))
+        generators = self._choose_random_hosts(self.n_traffic_generators)
 
         # TODO: include the cloud_server as a possible traffic generation/reception
         # point here?  could also use other hosts as destinations...
@@ -801,6 +767,8 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         # which is default 'timeout' for CoapServer.listen()
         log.debug("*** sleeping to give client procs a chance to finish...")
         time.sleep(20)
+        # Additionally, we'll clean up the hosts first then the servers to give them even more time to finish.
+        self.popens = OrderedDict(reversed(self.popens.items()))
         super(MininetSmartCampusExperiment, self).cleanup_procs()
 
     @property

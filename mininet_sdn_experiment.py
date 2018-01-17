@@ -1,5 +1,6 @@
 # @author: Kyle Benson
 # (c) Kyle Benson 2018
+
 import logging
 log = logging.getLogger(__name__)
 
@@ -7,16 +8,19 @@ import argparse
 from subprocess import Popen
 import errno
 import time
+from collections import OrderedDict
 
 from mininet.net import Mininet
-from mininet.node import RemoteController, Switch, Host
+from mininet.link import TCLink
+from mininet.node import RemoteController, Switch, Host, OVSKernelSwitch
 from mininet.cli import CLI
 
 import topology_manager.sdn_topology
+from network_experiment import NetworkExperiment
 from config import *
 
 
-class MininetSdnExperiment(object):
+class MininetSdnExperiment(NetworkExperiment):
     """
     An abstract object used for running automated experiments in Mininet.  The basic idea is that you'll subclass it
     (see MininetSmartCampusExperiment as an example) to set up additional configurations and control the overall
@@ -28,6 +32,17 @@ class MininetSdnExperiment(object):
 
     def __init__(self, controller_ip=CONTROLLER_IP, controller_port=CONTROLLER_REST_API_PORT,
                  topology_adapter=DEFAULT_TOPOLOGY_ADAPTER, show_cli=False, **kwargs):
+        """
+        :param controller_ip:
+        :param controller_port:
+        :param topology_adapter:
+        :param show_cli:
+        :param kwargs:
+        """
+
+        # XXX: BUG: we couldn't get multiple runs per process working completely for Mininet, so issue a warning:
+        if kwargs.get('nruns', 1) > 1:
+            raise NotImplementedError("Cannot support >1 runs per process in Mininet currently!")
 
         try:
             super(MininetSdnExperiment, self).__init__(**kwargs)
@@ -41,13 +56,9 @@ class MininetSdnExperiment(object):
         self.controller_port = controller_port
         self.controller_ip = controller_ip
 
-        # These will all be filled in by calling setup_topology()
-        # NOTE: make sure you reset these between runs so that you don't collect several runs worth of e.g. hosts!
+        # The Mininet network, which will be created in setup_topology()
         self.net = None
-        self.switches = []
-        self.links = []
-        self.hosts = []
-        self.servers = list()
+
         # XXX: see note in setup_topology() about replacing server hosts with a switch to ease multi-homing
         # These dicts maps the server Mininet node to the serving Mininet switch/link
         self.server_switches = dict()
@@ -56,29 +67,15 @@ class MininetSdnExperiment(object):
         # Save Popen objects to later ensure procs terminate before exiting Mininet or we'll end up with hanging procs.
         # The key should be a string representing what this proc is running e.g. some name or even the whole command.
         # Note that these may include iperf commands too!
-        self.popens = dict()
+        # We use an OrderedDict so as to preserve the order we clean them up at the end
+        self.popens = OrderedDict()
 
         # We'll optionally drop to a CLI after the experiment completes for further poking around
         self.show_cli = show_cli
 
-    def run_experiment(self):
-        """
-        Configures all appropriate settings, runs the experiment, and finally tears it down before returning the results.
-
-        This is not actually implemented, but here's an outline of how to use the helper functions to get started:
-
-        setup_topology()
-        start_network()
-        ensure_network_setup()
-        run your custom experiment!
-        teardown_experiment()
-        """
-
-        raise NotImplementedError("You must implement your experimental workflow yourself!  However, see docstring"
-                                  "for an outline of how you can use the provided helper functions to get started.")
-
     @classmethod
-    def get_arg_parser(cls, parents=(topology_manager.sdn_topology.SdnTopology.get_arg_parser(),), add_help=False):
+    def get_arg_parser(cls, parents=(topology_manager.sdn_topology.SdnTopology.get_arg_parser(),
+                                     NetworkExperiment.get_arg_parser()), add_help=False):
         """
         Argument parser that can be combined with others when this class is used in a script.
         Need to not add help options to use that feature, though.
@@ -99,6 +96,11 @@ class MininetSdnExperiment(object):
                                 the experiment and keeps the network topology up.''')
         return arg_parser
 
+    def setup_experiment(self):
+        """Finishes setting up the network by default."""
+        self.start_network()
+        self.ensure_network_setup()
+
     def setup_topology(self):
         """
         Builds the Mininet network, including all hosts, servers, switches, links, and NATs.
@@ -118,6 +120,79 @@ class MininetSdnExperiment(object):
                                          ip=self.controller_ip,
                                          port=OPENFLOW_CONTROLLER_PORT,
                                          )
+
+    def add_switch(self, switch, dpid):
+        s = self.net.addSwitch(switch, dpid=dpid, cls=OVSKernelSwitch)
+        log.debug("adding switch %s at DPID %s" % (switch, s.dpid))
+        self.switches.append(s)
+        return s
+
+    def add_host(self, hostname, ip, mac):
+        log.debug("Adding host %s with IP=%s and MAC=%s" % (hostname, ip, mac))
+        h = self.net.addHost(hostname, ip=ip, mac=mac)
+        self.hosts.append(h)
+        return h
+
+    def add_server(self, name, ip, mac, with_switch=True, server_switch_name=None, server_switch_dpid=None):
+        """
+        HACK: adds a server host with the specified attributes attached to a switch (unless otherwise specified).
+        This additional switch enables easier multi-homing e.g. older ONOS can only handle a single MAC address per host.
+        :param name:
+        :param ip:
+        :param mac:
+        :param with_switch:
+        :param server_switch_name:
+        :param server_switch_dpid:
+        :return: (server, server_switch) if with_switch is True, else just server
+        """
+
+        server_host = self.add_host(name, ip=ip, mac=mac)
+        self.servers.append(server_host)
+
+        if with_switch:
+            server_switch = self.add_switch(server_switch_name, dpid=server_switch_dpid)
+            self.server_switches[server_host] = server_switch
+
+            # NOTE: we don't treat this like the other links
+            l = self.add_link(name, server_switch_name, use_tc=False)
+            self.server_switch_links[server_host] = l
+
+            return server_host, server_switch
+        else:
+            return server_host
+
+    def add_link(self, from_link, to_link, use_tc=True, bandwidth=None, latency=None, jitter=None, error_rate=None):
+        """
+        Adds a link from the specified node ID to the destination and (unless otherwise specified) sets
+        channel characteristics appropriately, deferring to the defaults set in self.
+
+        :param from_link:
+        :param to_link:
+        :param use_tc: whether to use Linux traffic control (TC) to emulate channel characteristics
+        :param bandwidth:
+        :param latency:
+        :param jitter:
+        :param error_rate:
+        :return:
+        """
+
+        if use_tc:
+            bw = bandwidth if bandwidth is not None else self.bandwidth
+            delay = '%fms' % (latency if latency is not None else self.latency)
+            jitter = '%fms' % (jitter if jitter is not None else self.jitter)
+            loss = error_rate if error_rate is not None else self.error_rate
+
+            log.debug("adding link from %s to %s with channel: latency=%s, jitter=%s, loss=%f, BW=%s" % \
+                      (from_link, to_link, delay, jitter, loss, bw))
+
+            # For configuration options, see mininet.link.TCIntf.config()
+            l = self.net.addLink(self.net.get(from_link), self.net.get(to_link), cls=TCLink,
+                                 bw=bw, delay=delay, jitter=jitter, loss=loss)
+        else:
+            log.debug("adding link from %s to %s without TC" % (from_link, to_link))
+            l = self.net.addLink(self.net.get(from_link), self.net.get(to_link))
+        self.links.append(l)
+        return l
 
     def add_nat(self, connection_point):
         """Add a NAT to the specified host/server.  We use this primarily so the server can communicate with the
@@ -180,10 +255,12 @@ class MininetSdnExperiment(object):
             if ALL_PAIRS:
                 loss = self.net.ping(hosts=hosts, timeout=2)
             else:
+                losses = []
                 for h in hosts:
                     for s in self.servers:
-                        loss += self.net.ping((h, s), timeout=2)
-                loss /= len(hosts) * len(self.servers)
+                        if s != h:
+                            losses.append(self.net.ping((h, s), timeout=2))
+                loss = sum(losses)/float(len(losses))
 
             if loss > 0:
                 log.warning("ping had a loss of %f" % loss)
@@ -198,17 +275,17 @@ class MininetSdnExperiment(object):
                     server_ip = s.IP()
                     server_mac = s.MAC()
                     for src in hosts:
-                        src.setARP(ip=server_ip, mac=server_mac)
-                        s.setARP(ip=src.IP(), mac=src.MAC())
+                        if s != src:
+                            src.setARP(ip=server_ip, mac=server_mac)
+                            s.setARP(ip=src.IP(), mac=src.MAC())
 
         ping_hosts(hosts)
         # Need to sleep so that the controller has a chance to converge its topology again...
         time.sleep(5)
         # Now connect the SdnTopology and verify that all the non-NAT hosts, links, and switches are available through it
-        expected_nhosts = len(hosts) + len(self.servers)  # ignore NAT, but include servers
-        # Don't forget that we added switches for the servers to easily multi-home them
-        expected_nlinks = len(self.links) + len(self.server_switch_links)
-        expected_nswitches = len(self.switches) + len(self.server_switches)
+        expected_nhosts = len(hosts)   # ignore NAT, but include servers
+        expected_nlinks = len(self.links)
+        expected_nswitches = len(self.switches)
         n_sdn_links = 0
         n_sdn_switches = 0
         n_sdn_hosts = 0
