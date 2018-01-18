@@ -262,11 +262,14 @@ class MininetSdnExperiment(NetworkExperiment):
                 loss = self.net.ping(hosts=hosts, timeout=2)
             else:
                 losses = []
+                if not hosts or not self.servers:
+                    log.warning("Empty hosts/servers list!  Can't do non-ALL_PAIRS ping!")
+
                 for h in hosts:
                     for s in self.servers:
                         if s != h:
                             losses.append(self.net.ping((h, s), timeout=2))
-                loss = sum(losses)/float(len(losses))
+                loss = sum(losses)/float(len(losses)) if losses else 0
 
             if loss > 0:
                 log.warning("ping had a loss of %f" % loss)
