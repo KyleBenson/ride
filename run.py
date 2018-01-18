@@ -109,6 +109,8 @@ def get_nhosts_treatment(nsubs, npubs):
 # the random seeds here if you want to re-run previous experiments with new parameters and have the
 # same pubs/subs/failures etc.
 EXPERIMENTAL_TREATMENTS = {
+    ## this is a good setup for testing that most things are working okay
+    'fprob': [0.0, 0.1]
     # NOTE: TRY itertools.product HERE FOR CROSS PRODUCTS
     # 'construction-reroute': [
     # 'npubs-reroute': [
@@ -139,7 +141,7 @@ EXPERIMENTAL_TREATMENTS = {
     # built with above func, looks like: [{nsubs:10, npubs:20}, {nsubs:20, npubs:10}]
     # 'nhosts': nhosts if nhosts is not None else get_nhosts_treatment(nsubscribers, npublishers),
     ## NOTE: the rest of these parameter explorations do not have the parameter included in the default output_filename
-    'nretries': [{'max_alert_retries': rt, 'output_filename': 'results_%dretries.json' % rt} for rt in [0, 1, 3, 7]]
+    # 'nretries': [{'max_alert_retries': rt, 'output_filename': 'results_%dretries.json' % rt} for rt in [0, 1, 3, 7]]
 }
 
 CONTROL_FLOW_PARAMS = {
@@ -363,8 +365,8 @@ if __name__ == '__main__':
     total_jobs = len(all_cmds)
 
     # use a process pool to run jobs in parallel for the Networkx Experiment
-    using_pool = (nprocs != 1)
-    using_pool = True
+    # NOTE: we still use it for Mininet, but only because we need to spawn a new process for each run
+    using_pool = (nprocs != 1) or using_mininet
     # track the returned (empty) results to see if any processes crash
     results = []
     if using_pool:
