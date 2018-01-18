@@ -150,6 +150,11 @@ class MininetSdnExperiment(NetworkExperiment):
         self.servers.append(server_host)
 
         if with_switch:
+            if server_switch_name is None:
+                server_switch_name = name + '_sw'
+            if server_switch_dpid is None and mac is not None:
+                server_switch_dpid = '55:55:' + mac
+
             server_switch = self.add_switch(server_switch_name, dpid=server_switch_dpid)
             self.server_switches[server_host] = server_switch
 
