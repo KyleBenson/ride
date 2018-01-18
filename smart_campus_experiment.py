@@ -44,7 +44,7 @@ class SmartCampusExperiment(NetworkExperiment):
         :param with_ride_c:
         :param kwargs:
         """
-        super(SmartCampusExperiment, self).__init__()
+        super(SmartCampusExperiment, self).__init__(**kwargs)
 
         self.ntrees = ntrees
         self.nsubscribers = nsubscribers

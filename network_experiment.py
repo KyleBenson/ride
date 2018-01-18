@@ -48,7 +48,6 @@ class NetworkExperiment(object):
 
         log_level = logging.getLevelName(debug.upper())
         logging.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
-        print 'log level:', log_level
 
         self.nruns = nruns
         self.current_run_number = run_start_num
@@ -159,7 +158,7 @@ class NetworkExperiment(object):
 
         # start the actual experimentation
         for r in range(self.nruns):
-            log.info("Starting run %d" % r)
+            log.info("Starting run %d" % self.current_run_number)
 
             self.setup_topology()
 
@@ -171,7 +170,7 @@ class NetworkExperiment(object):
 
             if progress_file is not None:
                 try:
-                    progress_file.write("Finished run %d at %s\n" % (r, time.ctime()))
+                    progress_file.write("Finished run %d at %s\n" % (self.current_run_number, time.ctime()))
                     progress_file.flush()  # so we can tail it
                 except IOError as e:
                     log.warn("Error writing to progress file: %s" % e)
