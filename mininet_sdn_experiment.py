@@ -163,7 +163,7 @@ class MininetSdnExperiment(NetworkExperiment):
 
     def add_link(self, from_link, to_link, use_tc=True, bandwidth=None, latency=None, jitter=None, error_rate=None):
         """
-        Adds a link from the specified node ID to the destination and (unless otherwise specified) sets
+        Adds a link from the specified node ID (or Mininet node) to the destination and (unless otherwise specified) sets
         channel characteristics appropriately, deferring to the defaults set in self.
 
         :param from_link:
@@ -176,6 +176,12 @@ class MininetSdnExperiment(NetworkExperiment):
         :return:
         """
 
+        # XXX: handle either names or actual Mininet nodes
+        if isinstance(from_link, basestring):
+            from_link = self.net.get(from_link)
+        if isinstance(to_link, basestring):
+            to_link = self.net.get(to_link)
+
         if use_tc:
             bw = bandwidth if bandwidth is not None else self.bandwidth
             delay = '%fms' % (latency if latency is not None else self.latency)
@@ -186,11 +192,11 @@ class MininetSdnExperiment(NetworkExperiment):
                       (from_link, to_link, delay, jitter, loss, bw))
 
             # For configuration options, see mininet.link.TCIntf.config()
-            l = self.net.addLink(self.net.get(from_link), self.net.get(to_link), cls=TCLink,
+            l = self.net.addLink(from_link, to_link, cls=TCLink,
                                  bw=bw, delay=delay, jitter=jitter, loss=loss)
         else:
             log.debug("adding link from %s to %s without TC" % (from_link, to_link))
-            l = self.net.addLink(self.net.get(from_link), self.net.get(to_link))
+            l = self.net.addLink(from_link, to_link)
         self.links.append(l)
         return l
 
