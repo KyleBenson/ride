@@ -88,7 +88,7 @@ class MininetSdnExperiment(NetworkExperiment):
         # need to not add help options to use that feature, though
         # TODO: document some behavior that changes with the Mininet version:
         # -- pubs/subs are actual client processes
-        arg_parser = argparse.ArgumentParser(add_help=add_help)
+        arg_parser = argparse.ArgumentParser(add_help=add_help, parents=parents)
 
         arg_parser.add_argument('--cli', '-cli', dest='show_cli', action='store_true',
                                 help='''displays the Mininet CLI after running the experiment. This is useful for
