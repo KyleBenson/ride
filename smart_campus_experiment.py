@@ -94,7 +94,7 @@ class SmartCampusExperiment(NetworkExperiment):
 
         # TODO: add RideC parameters?
 
-        arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION,
+        arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION, conflict_handler='resolve',
                                              parents=parents, add_help=add_help)
         # experimental treatment parameters
         arg_parser.add_argument('--nsubscribers', '-s', type=int, default=5,
@@ -121,24 +121,25 @@ class SmartCampusExperiment(NetworkExperiment):
         if isinstance(args, argparse.Namespace):
             args = vars(args)
 
-        # Pass empty args to get the default configurations.
-        defaults = cls.get_arg_parser().parse_args(args=[])
+        defaults = cls.get_arg_parser()
 
         # Extract topology file name
         try:
-            topo_fname = args.get('topology_filename', defaults.topology_filename)
+            topo_fname = args.get('topology_filename', defaults.get_default('topology_filename'))
             topo_fname = os.path.splitext(os.path.basename(topo_fname).split('_')[2])[0]
         except IndexError:
             # topo_fname must not be formatted as expected: just use it plain but remove _'s to avoid confusing code parsing the topo for its params
-            topo_fname = os.path.splitext(os.path.basename(args.get('topology_filename', defaults.topology_filename).replace('_', '')))[0]
+            topo_fname = os.path.splitext(os.path.basename(args.get('topology_filename', defaults.get_default('topology_filename')).replace('_', '')))[0]
 
         output_filename = 'results_%dt_%0.2ff_%ds_%dp_%s_%s_%s_%0.2fe.json' % \
-                          (args.get('ntrees', defaults.ntrees), args.get('fprob', defaults.fprob),
-                           args.get('nsubscribers', defaults.nsubscribers), args.get('npublishers', defaults.npublishers),
-                           cls.build_mcast_heuristic_name(*args.get('tree_construction_algorithm', defaults.tree_construction_algorithm)),
+                          (args.get('ntrees', defaults.get_default('ntrees')),
+                           args.get('fprob', defaults.get_default('fprob')),
+                           args.get('nsubscribers', defaults.get_default('nsubscribers')),
+                           args.get('npublishers', defaults.get_default('npublishers')),
+                           cls.build_mcast_heuristic_name(*args.get('tree_construction_algorithm', defaults.get_default('tree_construction_algorithm'))),
                            # not currently configurable via cmd line...
                            args.get('reroute_policy', DEFAULT_REROUTE_POLICY),
-                           topo_fname, args.get('error_rate', defaults.error_rate))
+                           topo_fname, args.get('error_rate', defaults.get_default('error_rate')))
 
         output_filename = os.path.join(dirname, output_filename)
 
