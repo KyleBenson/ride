@@ -5,7 +5,6 @@
 
 import logging
 log = logging.getLogger(__name__)
-LOGGERS_TO_DISABLE = ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool')
 
 import os
 import random
@@ -98,11 +97,6 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
 
         # This gets passed to seismic hosts
         self.debug_level = kwargs.get('debug', 'error')
-
-        # Disable some of the more verbose and unnecessary loggers
-        for _logger_name in LOGGERS_TO_DISABLE:
-            l = logging.getLogger(_logger_name)
-            l.setLevel(logging.WARNING)
 
     @classmethod
     def get_arg_parser(cls, parents=(SmartCampusExperiment.get_arg_parser(), MininetSdnExperiment.get_arg_parser()), add_help=True):

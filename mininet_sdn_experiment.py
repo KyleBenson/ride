@@ -73,6 +73,11 @@ class MininetSdnExperiment(NetworkExperiment):
         # We'll optionally drop to a CLI after the experiment completes for further poking around
         self.show_cli = show_cli
 
+        # Disable some of the more verbose and unnecessary loggers
+        for _logger_name in LOGGERS_TO_DISABLE:
+            l = logging.getLogger(_logger_name)
+            l.setLevel(logging.ERROR)
+
     @classmethod
     def get_arg_parser(cls, parents=(topology_manager.sdn_topology.SdnTopology.get_arg_parser(),
                                      NetworkExperiment.get_arg_parser()), add_help=False):

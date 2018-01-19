@@ -16,6 +16,9 @@ OPTIMISED_PYTHON = not TESTING
 VARIED_PARAMETERS = ['const_alg', 'select_policy', 'reroute_policy', 'exp_type', 'error_rate', 'fprob', 'ntrees',
                      'npublishers', 'nsubscribers', 'topo', 'treatment', 'max_alert_retries']
 
+# Disable some of the more verbose and unnecessary loggers
+LOGGERS_TO_DISABLE = ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool')
+
 ##########         ONOS     CONFIG      ###########
 
 CONTROLLER_IP="10.0.2.15"
@@ -200,3 +203,4 @@ ALL_PAIRS = False
 # ENHANCE: base this on the traffic_generator_bandwidth parameter
 IOT_CONGESTION_INTERVAL = 0.1
 DEFAULT_TOPOLOGY_ADAPTER = 'onos'
+SHORTEST_PATH_DISTANCE_METRIC = 'latency'
