@@ -395,7 +395,9 @@ class MininetSdnExperiment(NetworkExperiment):
         them explicitly and then make sure they exited after that.  We do this because Mininet can leak open processes
         if they aren't properly closed."""
 
-        def wait_then_kill(proc, timeout=1, wait_time=2):
+        log.debug("cleaning up procs: %s" % list(self.popens))
+
+        def wait_then_kill(proc, name, timeout=1, wait_time=2):
             assert isinstance(proc, Popen)  # for typing
             for i in range(wait_time / timeout):
                 ret = proc.poll()
@@ -403,7 +405,7 @@ class MininetSdnExperiment(NetworkExperiment):
                     break
                 time.sleep(timeout)
             else:
-                log.error("process never quit: killing it...")
+                log.error("process never quit: killing popen %s..." % name)
                 try:
                     proc.kill()
                 except OSError:
@@ -413,21 +415,23 @@ class MininetSdnExperiment(NetworkExperiment):
 
             return ret
 
-        for cmd, p in self.popens.items():
-            ret = wait_then_kill(p)
+        for name, p in self.popens.items():
+            ret = wait_then_kill(p, name)
             if ret is None:
-                log.error("Proc never quit: %s" % cmd)
+                log.error("Proc never quit: %s" % name)
             elif ret != 0:
                 # NOTE: you may need to pipe this in from your client manually
                 if ret == errno.ENETUNREACH:
                     # TODO: handle this error appropriately: record failed clients in results?
-                    log.error("Proc failed due to unreachable network: %s" % cmd)
+                    log.error("Proc failed due to unreachable network: %s" % name)
                 else:
-                    log.error("Exit code %d from proc %s" % (p.returncode, cmd))
+                    log.error("Exit code %d from proc %s" % (p.returncode, name))
 
-        # TODO: this should stay in RIDE version!
         # XXX: somehow there still seem to be client processes surviving the .kill() commands; this finishes them off:
+        # NOTE: SCALE-based experiment-specific!
         p = Popen(CLEANUP_SCALE_CLIENTS, shell=True)
+        p.wait()
+        p = Popen(CLEANUP_CLIENTS_COMMAND % 'iperf', shell=True)
         p.wait()
 
     def cleanup_mininet(self):
@@ -550,11 +554,6 @@ class MininetSdnExperiment(NetworkExperiment):
         except OSError:
             pass
 
-        # make the paths relative to the root directory in which the whole experiment output file is stored
-        # as otherwise the paths are dependent on where the cwd is
-        logs_dir = os.path.relpath(logs_dir, root_dir) if WITH_LOGS else None
-        outputs_dir = os.path.relpath(outputs_dir, root_dir)
-
         self.logs_dir = logs_dir
         self.outputs_dir = outputs_dir
 
@@ -562,8 +561,16 @@ class MininetSdnExperiment(NetworkExperiment):
 
     def record_result(self, result):
         """Override to also record the outputs/logs_dirs"""
-        result['outputs_dir'] = self.outputs_dir
-        result['logs_dir'] = self.logs_dir
+
+        # make the paths relative to the root directory in which the whole experiment output file is stored
+        # as otherwise the paths are dependent on where the cwd is
+        # WARNING: if a custom path was specified this may cause an error!
+        root_dir = os.path.dirname(self.output_filename)
+        logs_dir = os.path.relpath(self.logs_dir, root_dir) if self.logs_dir else None
+        outputs_dir = os.path.relpath(self.outputs_dir, root_dir) if self.outputs_dir else None
+        result['outputs_dir'] = outputs_dir
+        result['logs_dir'] = logs_dir
+
         return super(MininetSdnExperiment, self).record_result(result)
 
     def redirect_output_to_log(self, cmd, filename):
@@ -573,6 +580,57 @@ class MininetSdnExperiment(NetworkExperiment):
         if logs_dir is None:
             _, logs_dir = self.build_outputs_logs_dirs()
         return cmd + " > %s 2>&1" % os.path.join(logs_dir, filename)
+
+    def run_proc(self, cmd, host, name=None, **kwargs):
+        """Runs the specified command on the requested Mininet host.  Saves the popen object to later ensure all procs
+        quit completely before exiting mininet.
+        :param cmd: the command to run, which may contain shell symbols
+        :param host: the Mininet host to run the command on
+        :param name: the name to store this command under in the popens attribute; must be unique! (default=host.name)
+        :param kwargs: optional additional kwargs passed to Mininet.Host.popen
+        """
+
+        # the node.sendCmd option in mininet only allows a single
+        # outstanding command at a time and cancels any current
+        # ones when net.CLI is called.  Hence, we need popen.
+        log.debug("cmd@%s: %s" % (host.name, cmd))
+        p = host.popen(cmd, shell=True, **kwargs)
+
+        # save the popen to ensure it quits later, but ensure there's not already a popen by that name
+        if name is None:
+            name = host.name
+        if name in self.popens:
+            name = "%s[cmd=%s]" % (name, cmd)
+            if name in self.popens:
+                log.warning("Two identical commands being run on host!  Can't generate unique name...\n%s" % name)
+        self.popens[name] = p
+
+        return p
+
+    def iperf(self, client, server, port=None, bandwidth=None, duration=None):
+        """Runs iperf (UDP) between the specified hosts.
+        :param client: source of iperf traffic
+        :param server: destination of iperf traffic
+        :param port: the port number to use (default=IPERF_BASE_PORT)
+        :param bandwidth: the requested bandwidth (default=self.bandwidth)
+        :param duration: seconds to run it for (default=EXPERIMENT_DURATION)
+        """
+
+        if bandwidth is None:
+            bandwidth = self.bandwidth
+        if duration is None:
+            duration = EXPERIMENT_DURATION
+
+        # can't do self.net.iperf([g,s]) as there's no option to put it in the background
+        log.info("iperf from %s to %s" % (client, server))
+        client_cmd = 'iperf -p %d -t %d -u -b %fM -c %s &' % (port, duration,
+                                                              bandwidth, server.IP())
+        client_name = "iperf %s -> %s" % (client, server)
+        srv_cmd = 'iperf -p %d -t %d -u -s &' % (port, duration)
+        srv_name = "iperf %s -> %s" % (server, client)
+
+        self.run_proc(client_cmd, client, client_name)
+        self.run_proc(srv_cmd, server, srv_name)
 
     ####   Helper functions for working with Mininet nodes/links    ####
 

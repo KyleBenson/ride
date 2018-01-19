@@ -19,6 +19,9 @@ VARIED_PARAMETERS = ['const_alg', 'select_policy', 'reroute_policy', 'exp_type',
 # Disable some of the more verbose and unnecessary loggers
 LOGGERS_TO_DISABLE = ('sdn_topology', 'topology_manager.sdn_topology', 'connectionpool', 'urllib3.connectionpool')
 
+# Useful to blow away commands that never quit after Mininet closed
+CLEANUP_CLIENTS_COMMAND="ps aux | grep '%s' | grep -v 'grep' | awk '{print $2;}' | xargs -n 1 kill -9"
+
 ##########         ONOS     CONFIG      ###########
 
 CONTROLLER_IP="10.0.2.15"
@@ -58,7 +61,7 @@ SCALE_EXTRA_ARGS=\
 VIRTUAL_ENV_CMD="export WORKON_HOME=~/.venvs; source ~/.local/bin/virtualenvwrapper.sh; workon ride_scale_client;"
 # WARNING: this took a long time to get actually working as the quotes are quite finicky... careful modifying!
 SCALE_CLIENT_BASE_COMMAND='su -c "pushd .; %s popd; python %s -m scale_client %s %%s" ' % (VIRTUAL_ENV_CMD, "-OO" if OPTIMISED_PYTHON else "", SCALE_EXTRA_ARGS) + SCALE_USER
-CLEANUP_SCALE_CLIENTS="ps aux | grep '\-m scale_client' | grep -v 'grep' | awk '{print $2;}' | xargs -n 1 kill -9"
+CLEANUP_SCALE_CLIENTS=CLEANUP_CLIENTS_COMMAND % '\-m scale_client'
 
 ##### Misc.
 IGNORE_OUTPUT = ' > /dev/null 2>&1'

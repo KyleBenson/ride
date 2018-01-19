@@ -373,6 +373,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         However, we explicitly terminate the server anyway to avoid incompatibility issues."""
 
         generators = self._choose_random_hosts(self.n_traffic_generators)
+        bandwidth = self.traffic_generator_bandwidth
 
         # TODO: include the cloud_server as a possible traffic generation/reception
         # point here?  could also use other hosts as destinations...
@@ -382,14 +383,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         # We enumerate the generators to fill the range of ports so that the server
         # can listen for each iperf client.
         for n, g in enumerate(generators):
-            log.info("iperf from %s to %s" % (g, srv))
-            # can't do self.net.iperf([g,s]) as there's no option to put it in the background
-            i = g.popen('iperf -p %d -t %d -u -b %dM -c %s &' % (IPERF_BASE_PORT + n, EXPERIMENT_DURATION,
-                                                                 self.traffic_generator_bandwidth, srv.IP()))
-            # TODO: this hasn't been tested as we never really used the traffic generation mechanism... verify they'll close!
-            self.popens["client iperf from %s to %s" % (g, srv)] = i
-            i = srv.popen('iperf -p %d -t %d -u -s &' % (IPERF_BASE_PORT + n, EXPERIMENT_DURATION))
-            self.popens["server iperf from %s to %s" % (srv, g)] = i
+            self.iperf(g, srv, bandwidth=bandwidth, port=IPERF_BASE_PORT+n)
 
     def setup_seismic_test(self, sensors, subscribers, server):
         """
@@ -550,9 +544,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         if WITH_LOGS:
             cmd = self.redirect_output_to_log(cmd, 'srv')
 
-        log.debug(cmd)
-        p = server.popen(cmd, shell=True, env=env)
-        self.popens['srv'] = p
+        self.run_proc(cmd, server, env=env)
 
         if self.with_cloud:
             # Now for the cloud, which differs only by the facts that it doesn't run RideC, is always unicast alerting
@@ -579,9 +571,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
             if WITH_LOGS:
                 cmd = self.redirect_output_to_log(cmd, 'cloud')
 
-            log.debug(cmd)
-            p = self.cloud.popen(cmd, shell=True, env=env)
-            self.popens['cloud'] = p
+            self.run_proc(cmd, self.cloud, env=env)
 
         # XXX: to prevent the 0-latency control plane from resulting in the controller immediately routing around
         # quake-induced failures, we set static routes from each cloud gateway to the subscribers based on their
@@ -695,12 +685,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
                 unique_filename = '%s_%s' % (unique_filename, client_id)
                 cmd = self.redirect_output_to_log(cmd, unique_filename)
 
-            # the node.sendCmd option in mininet only allows a single
-            # outstanding command at a time and cancels any current
-            # ones when net.CLI is called.  Hence, we need popen.
-            log.debug(cmd)
-            p = client.popen(cmd, shell=True, env=env)
-            self.popens[client_id] = p
+            self.run_proc(cmd, client, env=env)
 
     def record_result(self, result):
         """Save additional results outputs (or convert to the right format) before outputting them."""
