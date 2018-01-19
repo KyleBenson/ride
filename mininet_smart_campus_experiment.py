@@ -110,9 +110,12 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
 
         # argument parser that can be combined with others when this class is used in a script
         # need to not add help options to use that feature, though
+        # WARNING: this inheritance isn't as smart as object inheritance, so it will cause conflicts when multiply
+        #    inheriting argparers!  Hence, we use resolve to just pick the first; be careful not to use overlapping
+        #    commands to mean different things!!
         # TODO: document some behavior that changes with the Mininet version:
         # -- pubs/subs are actual client processes
-        arg_parser = argparse.ArgumentParser(parents=parents, add_help=add_help)
+        arg_parser = argparse.ArgumentParser(parents=parents, add_help=add_help, conflict_handler='resolve')
         # experimental treatment parameters: all taken from parents
         # background traffic generation
         arg_parser.add_argument('--ngenerators', '-g', default=0, dest='n_traffic_generators', type=int,
