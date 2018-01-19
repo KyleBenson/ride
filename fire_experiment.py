@@ -160,6 +160,10 @@ class FireExperiment(MininetSdnExperiment):
 
         super(FireExperiment, self).setup_experiment()
 
+        # TODO: run VerneMQ brokers
+        # self.run_proc(vmq_cmd, self.icp, 'icp broker')
+        # self.run_proc(vmq_cmd, self.bms, 'bms broker')
+
         # TODO: choose which devs publish what topics?  which devs are video feeds? where are FFs?
 
     def run_experiment(self):
@@ -174,7 +178,7 @@ class FireExperiment(MininetSdnExperiment):
         iperfs = []  # 4-tuples
         iperf_res = []  # actual parsed results
         srv = self.icp
-        mn_iperfs = False  # this blocks
+        mn_iperfs = True  # this blocks
         # so run it in background as a proc directly, which sort of lets us parse the results from files but we've had some problems...
 
         for i, v in enumerate(video_hosts):
