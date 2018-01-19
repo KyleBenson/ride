@@ -13,7 +13,7 @@ import argparse
 import time
 import ipaddress
 
-from mininet.node import Host, OVSKernelSwitch
+from mininet.node import Host
 
 from topology_manager.networkx_sdn_topology import NetworkxSdnTopology
 from smart_campus_experiment import SmartCampusExperiment, DISTANCE_METRIC
@@ -297,7 +297,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
 
         # NOTE: it takes a second or two for the clients to actually start up!
         # log.debug('*** Starting clients at time %s' % time.time())
-        logs_dir, outputs_dir = self.setup_seismic_test(self.publishers, self.subscribers, self.edge_server)
+        self.setup_seismic_test(self.publishers, self.subscribers, self.edge_server)
         # log.debug('*** Done starting clients at time %s' % time.time())
 
         ####    FAILURE MODEL     ####
@@ -359,8 +359,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         if remaining_time > 0:
             time.sleep(remaining_time)
 
-        return {'outputs_dir': outputs_dir, 'logs_dir': logs_dir,
-                'quake_start_time': quake_time,
+        return {'quake_start_time': quake_time,
                 'data_path_changes': output_dp_changes,
                 'publishers': {p.IP(): p.name for p in self.publishers},
                 'subscribers': {s.IP(): s.name for s in self.subscribers}}
@@ -403,8 +402,6 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         :param List[Host] sensors:
         :param List[Host] subscribers:
         :param Host server:
-        :returns logs_dir, outputs_dir: the directories (relative to the experiment output
-         file) in which the logs and output files, respectively, are stored for this run
         """
 
         delay = SEISMIC_EVENT_DELAY  # seconds before sensors start picking
@@ -419,30 +416,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         else:
             env['PYTHONPATH'] = env['PYTHONPATH'] + ':' + ride_dir
 
-        # The logs and output files go in nested directories rooted
-        # at the same level as the whole experiment's output file.
-        # We typically name the output file as results_$PARAMS.json, so cut off the front and extension
-        root_dir = os.path.dirname(self.output_filename)
-        base_dirname = os.path.splitext(os.path.basename(self.output_filename))[0]
-        if base_dirname.startswith('results_'):
-            base_dirname = base_dirname[8:]
-        if WITH_LOGS:
-            logs_dir = os.path.join(root_dir, 'logs_%s' % base_dirname, 'run%d' % self.current_run_number)
-            try:
-                os.makedirs(logs_dir)
-                # XXX: since root is running this, we need to adjust the permissions, but using mode=0777 in os.mkdir()
-                # doesn't work for some systems...
-                os.chmod(logs_dir, 0777)
-            except OSError:
-                pass
-        else:
-            logs_dir = None
-        outputs_dir =  os.path.join(root_dir, 'outputs_%s' % base_dirname, 'run%d' % self.current_run_number)
-        try:
-            os.makedirs(outputs_dir)
-            os.chmod(outputs_dir, 0777)
-        except OSError:
-            pass
+        outputs_dir, logs_dir = self.build_outputs_logs_dirs()
 
         ##############################
         ### SETUP EDGE / CLOUD SERVERS
@@ -574,7 +548,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + srv_cfg)
 
         if WITH_LOGS:
-            cmd += " > %s 2>&1" % os.path.join(logs_dir, 'srv')
+            cmd = self.redirect_output_to_log(cmd, 'srv')
 
         log.debug(cmd)
         p = server.popen(cmd, shell=True, env=env)
@@ -603,7 +577,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
 
             cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + cloud_cfg)
             if WITH_LOGS:
-                cmd += " > %s 2>&1" % os.path.join(logs_dir, 'cloud')
+                cmd = self.redirect_output_to_log(cmd, 'cloud')
 
             log.debug(cmd)
             p = self.cloud.popen(cmd, shell=True, env=env)
@@ -719,7 +693,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
                 elif client in subscribers:
                     unique_filename = 's'
                 unique_filename = '%s_%s' % (unique_filename, client_id)
-                cmd += " > %s 2>&1" % os.path.join(logs_dir, unique_filename)
+                cmd = self.redirect_output_to_log(cmd, unique_filename)
 
             # the node.sendCmd option in mininet only allows a single
             # outstanding command at a time and cancels any current
@@ -727,12 +701,6 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
             log.debug(cmd)
             p = client.popen(cmd, shell=True, env=env)
             self.popens[client_id] = p
-
-        # make the paths relative to the root directory in which the whole experiment output file is stored
-        # as otherwise the paths are dependent on where the cwd is
-        logs_dir = os.path.relpath(logs_dir, root_dir) if WITH_LOGS else None
-        outputs_dir = os.path.relpath(outputs_dir, root_dir)
-        return logs_dir, outputs_dir
 
     def record_result(self, result):
         """Save additional results outputs (or convert to the right format) before outputting them."""

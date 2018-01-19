@@ -4,6 +4,7 @@
 import logging
 log = logging.getLogger(__name__)
 
+import os
 import argparse
 from subprocess import Popen
 import errno
@@ -73,6 +74,10 @@ class MininetSdnExperiment(NetworkExperiment):
         # We'll optionally drop to a CLI after the experiment completes for further poking around
         self.show_cli = show_cli
 
+        # used to store log files (for debugging) and output files (results) from host processes ran during experiments
+        self.logs_dir = None
+        self.outputs_dir = None
+
         # Disable some of the more verbose and unnecessary loggers
         for _logger_name in LOGGERS_TO_DISABLE:
             l = logging.getLogger(_logger_name)
@@ -91,9 +96,7 @@ class MininetSdnExperiment(NetworkExperiment):
 
         # argument parser that can be combined with others when this class is used in a script
         # need to not add help options to use that feature, though
-        # TODO: document some behavior that changes with the Mininet version:
-        # -- pubs/subs are actual client processes
-        arg_parser = argparse.ArgumentParser(add_help=add_help, parents=parents)
+        arg_parser = argparse.ArgumentParser(add_help=add_help, parents=parents, conflict_handler='resolve')
 
         arg_parser.add_argument('--cli', '-cli', dest='show_cli', action='store_true',
                                 help='''displays the Mininet CLI after running the experiment. This is useful for
@@ -501,6 +504,75 @@ class MininetSdnExperiment(NetworkExperiment):
                 # len(leftover_groups) == 0, "Not all groups were cleared after experiment! Still left: %s" % leftover_groups
         else:
             log.warning("No topology adapter!  Cannot reset it between runs...")
+
+    def build_outputs_logs_dirs(self, output_filename=None):
+        """
+        Creates, stores in self, and returns the path to two directories:
+            outputs_dir starts with 'outputs_' for putting the outputs of whatever host processes you run in
+            logs_dir starts with 'logs_' for redirecting the raw output from those processes for debugging purposes.
+        The latter may be disabled by setting WITH_LOGS=False in config.py, but this method will just return None for
+        that directory (stil returns a 2-tuple).
+
+        NOTE: we used to try doing multiple runs per process, which is why these directories also have nested 'run#'
+            dirs inside of them, but we opt not to remove this as too much else would need to change...
+
+        :param output_filename: optionally specify the output filename, which will have its file extension removed and
+                will be prepended as per above for the dir names (default=self.output_filename)
+        :returns outputs_dir, logs_dir: the directories (relative to the experiment output
+         file) in which the output and log files, respectively, are stored for this run
+        """
+
+        if output_filename is None:
+            output_filename = self.output_filename
+
+        # The logs and output files go in nested directories rooted
+        # at the same level as the whole experiment's output file.
+        # We typically name the output file as results_$PARAMS.json, so cut off the front and extension
+        root_dir = os.path.dirname(output_filename)
+        base_dirname = os.path.splitext(os.path.basename(output_filename))[0]
+        if base_dirname.startswith('results_'):
+            base_dirname = base_dirname[8:]
+        if WITH_LOGS:
+            logs_dir = os.path.join(root_dir, 'logs_%s' % base_dirname, 'run%d' % self.current_run_number)
+            try:
+                os.makedirs(logs_dir)
+                # XXX: since root is running this, we need to adjust the permissions, but using mode=0777 in os.mkdir()
+                # doesn't work for some systems...
+                os.chmod(logs_dir, 0777)
+            except OSError:
+                pass
+        else:
+            logs_dir = None
+        outputs_dir =  os.path.join(root_dir, 'outputs_%s' % base_dirname, 'run%d' % self.current_run_number)
+        try:
+            os.makedirs(outputs_dir)
+            os.chmod(outputs_dir, 0777)
+        except OSError:
+            pass
+
+        # make the paths relative to the root directory in which the whole experiment output file is stored
+        # as otherwise the paths are dependent on where the cwd is
+        logs_dir = os.path.relpath(logs_dir, root_dir) if WITH_LOGS else None
+        outputs_dir = os.path.relpath(outputs_dir, root_dir)
+
+        self.logs_dir = logs_dir
+        self.outputs_dir = outputs_dir
+
+        return outputs_dir, logs_dir
+
+    def record_result(self, result):
+        """Override to also record the outputs/logs_dirs"""
+        result['outputs_dir'] = self.outputs_dir
+        result['logs_dir'] = self.logs_dir
+        return super(MininetSdnExperiment, self).record_result(result)
+
+    def redirect_output_to_log(self, cmd, filename):
+        """Returns a modified version of the command string that redirects all output to a log file composed of the
+        logs_dir and the specified output filename."""
+        logs_dir = self.logs_dir
+        if logs_dir is None:
+            _, logs_dir = self.build_outputs_logs_dirs()
+        return cmd + " > %s 2>&1" % os.path.join(logs_dir, filename)
 
     ####   Helper functions for working with Mininet nodes/links    ####
 
