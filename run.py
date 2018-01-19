@@ -220,7 +220,7 @@ def makecmds(output_dirname=''):
                         new_crs, new_rs, new_frs = get_next_seeds()
                         args4['choice_rand_seed'] = new_crs
                         args4['rand_seed'] = new_rs
-                        args4['faiure_rand_seed'] = new_frs
+                        args4['failure_rand_seed'] = new_frs
 
                         # We also need to change the 'output_filename' to avoid overwriting it with each new run!
                         fname = args4['output_filename']
