@@ -95,9 +95,6 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
         self.mcast_address_pool = [(str(base_addr + i), MULTICAST_ALERT_BASE_SRC_PORT + i) for i in range(kwargs['ntrees'])]
 
-        # This gets passed to seismic hosts
-        self.debug_level = kwargs.get('debug', 'error')
-
     @classmethod
     def get_arg_parser(cls, parents=(SmartCampusExperiment.get_arg_parser(), MininetSdnExperiment.get_arg_parser()), add_help=True):
         """
