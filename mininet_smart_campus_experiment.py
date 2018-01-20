@@ -95,9 +95,6 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         base_addr = ipaddress.IPv4Address(MULTICAST_ADDRESS_BASE)
         self.mcast_address_pool = [(str(base_addr + i), MULTICAST_ALERT_BASE_SRC_PORT + i) for i in range(kwargs['ntrees'])]
 
-        # This gets passed to seismic hosts
-        self.debug_level = kwargs.get('debug', 'error')
-
     @classmethod
     def get_arg_parser(cls, parents=(SmartCampusExperiment.get_arg_parser(), MininetSdnExperiment.get_arg_parser()), add_help=True):
         """
@@ -354,7 +351,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
                 log.debug("done applying failure model at %f" % time.time())
 
         # wait for the experiment to finish by sleeping for the amount of time we haven't used up already
-        remaining_time = exp_start_time + EXPERIMENT_DURATION - time.time()
+        remaining_time = exp_start_time + self.experiment_duration - time.time()
         log.info("*** Waiting %f seconds for experiment to complete..." % remaining_time)
         if remaining_time > 0:
             time.sleep(remaining_time)
@@ -399,7 +396,7 @@ class MininetSmartCampusExperiment(MininetSdnExperiment, SmartCampusExperiment):
         """
 
         delay = SEISMIC_EVENT_DELAY  # seconds before sensors start picking
-        quit_time = EXPERIMENT_DURATION
+        quit_time = self.experiment_duration
 
         # HACK: Need to set PYTHONPATH since we don't install our Python modules directly and running Mininet
         # as root strips this variable from our environment.

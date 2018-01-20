@@ -48,6 +48,7 @@ class NetworkExperiment(object):
 
         log_level = logging.getLevelName(debug.upper())
         logging.basicConfig(format='%(levelname)s:%(module)s:%(message)s', level=log_level)
+        self.debug_level = debug  # save this so we can pass it to host procs ran during experiments
 
         self.nruns = nruns
         self.current_run_number = run_start_num
