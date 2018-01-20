@@ -66,7 +66,11 @@ class MininetSdnExperiment(NetworkExperiment):
         # These dicts maps the server Mininet node to the serving Mininet switch/link
         self.server_switches = dict()
         self.server_switch_links = dict()
+
         self.nats = dict()  # NAT host --> connection point host mapping
+        # we actually build the NATs during start_network, so they'll be saved as (connection_point, nat_name) pairs until then
+        self._nats_to_add = []
+
         # Save Popen objects to later ensure procs terminate before exiting Mininet or we'll end up with hanging procs.
         # The key should be a string representing what this proc is running e.g. some name or even the whole command.
         # Note that these may include iperf commands too!
@@ -220,42 +224,85 @@ class MininetSdnExperiment(NetworkExperiment):
         self.links.append(l)
         return l
 
-    def add_nat(self, connection_point):
-        """Add a NAT to the specified host/server.  We use this primarily so the server can communicate with the
-        SDN controller's REST API. """
-        # NOTE: because we didn't add it to the actual SdnTopology, we don't need
+    def add_nat(self, connection_point, nat_name=None, nat_ip=None):
+        """Add a NAT to the specified node in the network.  It will actually be built in 'start_network' since we have
+        to build the network first in order to properly configure hosts.  Hence, self.nats will not contain nats until
+        that point.
+        NOTE: We use this primarily so the server can communicate with the SDN controller's REST API.
+        WARNING: it's unclear that this will handle multiple NATs properly, so be wary of doing so!
+
+        :param connection_point: the Mininet node to connect the NAT to, which can be a Switch or even Host
+            WARNING: if you connect the NAT to a host node, only that node will get a default route that lets it connect via the NAT!
+        :param nat_name: you can optionally name the NAT, or let Mininet do it for you
+        :param nat_ip: you can optionally specify the IP address or we'll use the subnet given in config.py
+            WARNING: if you specify it and are connecting to a server make sure they're in the same subnet!
+        """
+
+        self._nats_to_add.append((connection_point, nat_name, nat_ip))
+
+    def _build_nats(self):
+        """Actually starts the NATs.  Override this to do some different configuration..."""
+
+        # RIDE-specific NOTE: because we didn't add it to the actual SdnTopology, we don't need
         # to worry about it getting failed.  However, we do need to ensure it
         # connects directly to the server to avoid failures disconnecting it.
         # HACK: directly connect NAT to the server, set a route for it, and
         # handle this hacky IP address configuration
-        nat_ip = NAT_SERVER_IP_ADDRESS % (len(self.nats) + 2)
-        srv_ip = NAT_SERVER_IP_ADDRESS % (len(self.nats) + 3)
-        nat = self.net.addNAT(connect=connection_point)
-        nat.configDefault(ip=nat_ip)
-        # Now we set the IP address for the server's new interface.
-        # NOTE: we have to set the default route after starting Mininet it seems...
-        srv_iface = sorted(connection_point.intfNames())[-1]
-        connection_point.intf(srv_iface).setIP(srv_ip)
 
-        self.nats[nat] = connection_point
-        return nat
+        for connection_point, nat_name, nat_ip in self._nats_to_add:
+            # we have a few different options of kwargs to specify, so just build a dict
+            kwargs = dict()
+            if not nat_ip:
+                # we should only generate one if we're going to do the same for the host interface or else we could be outside the subnet!
+                if isinstance(connection_point, Host):
+                    nat_ip = NAT_SERVER_IP_ADDRESS % (len(self.nats) + 2)
+            if nat_ip:
+                kwargs['ip'] = nat_ip
+
+            if nat_name:
+                kwargs['name'] = nat_name
+
+            nat = self.net.addNAT(connect=connection_point, **kwargs)
+
+            # Now we have to handle things differently depending on whether this connection_point is a switch or host
+            if isinstance(connection_point, Host):
+
+                # configure the host connection point and set its default route so that it can route via the NAT
+                srv_ip = NAT_SERVER_IP_ADDRESS % (len(self.nats) + 3)
+                srv_iface = sorted(connection_point.intfNames())[-1]
+                connection_point.intf(srv_iface).setIP(srv_ip)
+
+            # This will set up the nat host
+            if nat_ip:
+                nat.configDefault(ip=nat_ip)
+            else:
+                nat.configDefault()
+
+            self.nats[nat] = connection_point
 
     def start_network(self):
         """Actually start the Mininet network."""
         log.info('*** Starting network')
         log.debug("Building Network...")
         self.net.build()
+
+        # Now that the network is built (and hosts configured), we can add the NAT.  By doing this, Mininet will handle
+        # setting default routes for the hosts.
+        self._build_nats()
+
         log.debug("Network built; starting...")
         self.net.start()
         log.debug("Started!  Waiting for switch connections...")
         self.net.waitConnected()  # ensure switches connect
         log.debug("Switches connected!")
 
+        # XXX: if we attach the nat to a host rather than switch, the default gateway won't be set properly so we now
         # set the default routes for each NAT'ed host, which MUST be done after the network starts
         for nat, host in self.nats.items():
-            nat_ip = nat.IP()
-            srv_iface = host.intfNames()[-1]
-            host.setDefaultRoute('via %s dev %s' % (nat_ip, srv_iface))
+            if isinstance(host, Host):
+                nat_ip = nat.IP()
+                srv_iface = host.intfNames()[-1]
+                host.setDefaultRoute('via %s dev %s' % (nat_ip, srv_iface))
 
     def ensure_network_setup(self):
         """
@@ -310,6 +357,7 @@ class MininetSdnExperiment(NetworkExperiment):
 
         ping_hosts(hosts)
         # Need to sleep so that the controller has a chance to converge its topology again...
+        log.info("*** waiting for controller to recognize all hosts...")
         time.sleep(5)
         # Now connect the SdnTopology and verify that all the non-NAT hosts, links, and switches are available through it
         expected_nhosts = len(hosts)   # ignore NAT, but include servers
@@ -319,7 +367,7 @@ class MininetSdnExperiment(NetworkExperiment):
         n_sdn_switches = 0
         n_sdn_hosts = 0
         ntries = 1
-        while n_sdn_hosts != expected_nhosts or n_sdn_links != expected_nlinks or n_sdn_switches != expected_nswitches:
+        while n_sdn_hosts < expected_nhosts or n_sdn_links < expected_nlinks or n_sdn_switches < expected_nswitches:
             self.setup_topology_manager()
 
             n_sdn_hosts = len(self.topology_adapter.get_hosts())
