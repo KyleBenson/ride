@@ -33,7 +33,8 @@ class MininetSdnExperiment(NetworkExperiment):
     """
 
     def __init__(self, controller_ip=CONTROLLER_IP, controller_port=CONTROLLER_REST_API_PORT,
-                 topology_adapter=DEFAULT_TOPOLOGY_ADAPTER, show_cli=False, **kwargs):
+                 topology_adapter=DEFAULT_TOPOLOGY_ADAPTER, show_cli=False,
+                 experiment_duration=EXPERIMENT_DURATION, **kwargs):
         """
         :param controller_ip:
         :param controller_port:
@@ -72,6 +73,7 @@ class MininetSdnExperiment(NetworkExperiment):
         # We use an OrderedDict so as to preserve the order we clean them up at the end
         self.popens = OrderedDict()
 
+        self.experiment_duration = experiment_duration
         # We'll optionally drop to a CLI after the experiment completes for further poking around
         self.show_cli = show_cli
 
@@ -103,6 +105,9 @@ class MininetSdnExperiment(NetworkExperiment):
                                 help='''displays the Mininet CLI after running the experiment. This is useful for
                                 debugging problems as it prevents the OVS/controller state from being wiped after
                                 the experiment and keeps the network topology up.''')
+        arg_parser.add_argument('--duration', '-q', dest='experiment_duration', type=int, default=EXPERIMENT_DURATION,
+                                help='''duration to run the actual experiment for, which defaults to a value set
+                                in config.py''')
         return arg_parser
 
     def setup_experiment(self):
@@ -645,7 +650,7 @@ class MininetSdnExperiment(NetworkExperiment):
         :return:
         """
 
-        base_args = "-q %d --log %s" % (EXPERIMENT_DURATION, self.debug_level)
+        base_args = "-q %d --log %s" % (self.experiment_duration, self.debug_level)
         cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + cmd)
 
         if WITH_LOGS:
@@ -662,7 +667,7 @@ class MininetSdnExperiment(NetworkExperiment):
         :param server: destination of iperf traffic
         :param port: the port number to use (default=IPERF_BASE_PORT)
         :param bandwidth: the requested bandwidth (default=self.bandwidth)
-        :param duration: seconds to run it for (default=EXPERIMENT_DURATION)
+        :param duration: seconds to run it for (default=self.experiment_duration)
                WARNING: server doesn't quit! use_mininet version for now...
         :param output_results: if specified, outputs the results to a file whose name is either the string specified
             (prepended with the client/server name) or 'iperf_<client/server name>'
@@ -681,7 +686,7 @@ class MininetSdnExperiment(NetworkExperiment):
         if bandwidth is None:
             bandwidth = self.bandwidth
         if duration is None:
-            duration = EXPERIMENT_DURATION
+            duration = self.experiment_duration
 
         # We typically don't do this because it blocks!
         if use_mininet:
