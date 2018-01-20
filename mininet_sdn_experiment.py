@@ -224,7 +224,7 @@ class MininetSdnExperiment(NetworkExperiment):
         self.links.append(l)
         return l
 
-    def add_nat(self, connection_point, nat_name=None):
+    def add_nat(self, connection_point, nat_name=None, nat_ip=None):
         """Add a NAT to the specified node in the network.  It will actually be built in 'start_network' since we have
         to build the network first in order to properly configure hosts.  Hence, self.nats will not contain nats until
         that point.
@@ -232,10 +232,13 @@ class MininetSdnExperiment(NetworkExperiment):
         WARNING: it's unclear that this will handle multiple NATs properly, so be wary of doing so!
 
         :param connection_point: the Mininet node to connect the NAT to, which can be a Switch or even Host
+            WARNING: if you connect the NAT to a host node, only that node will get a default route that lets it connect via the NAT!
         :param nat_name: you can optionally name the NAT, or let Mininet do it for you
+        :param nat_ip: you can optionally specify the IP address or we'll use the subnet given in config.py
+            WARNING: if you specify it and are connecting to a server make sure they're in the same subnet!
         """
 
-        self._nats_to_add.append((connection_point, nat_name))
+        self._nats_to_add.append((connection_point, nat_name, nat_ip))
 
     def _build_nats(self):
         """Actually starts the NATs.  Override this to do some different configuration..."""
@@ -246,21 +249,32 @@ class MininetSdnExperiment(NetworkExperiment):
         # HACK: directly connect NAT to the server, set a route for it, and
         # handle this hacky IP address configuration
 
-        for connection_point, nat_name in self._nats_to_add:
-            nat_ip = NAT_SERVER_IP_ADDRESS % (len(self.nats) + 2)
+        for connection_point, nat_name, nat_ip in self._nats_to_add:
+            # we have a few different options of kwargs to specify, so just build a dict
+            kwargs = dict()
+            if not nat_ip:
+                # we should only generate one if we're going to do the same for the host interface or else we could be outside the subnet!
+                if isinstance(connection_point, Host):
+                    nat_ip = NAT_SERVER_IP_ADDRESS % (len(self.nats) + 2)
+            if nat_ip:
+                kwargs['ip'] = nat_ip
+
             if nat_name:
-                nat = self.net.addNAT(connect=connection_point, name=nat_name, ip=nat_ip)
-            else:
-                nat = self.net.addNAT(connect=connection_point, ip=nat_ip)
+                kwargs['name'] = nat_name
+
+            nat = self.net.addNAT(connect=connection_point, **kwargs)
 
             # Now we have to handle things differently depending on whether this connection_point is a switch or host
             if isinstance(connection_point, Host):
-                nat.configDefault(ip=nat_ip)
 
                 # configure the host connection point and set its default route so that it can route via the NAT
                 srv_ip = NAT_SERVER_IP_ADDRESS % (len(self.nats) + 3)
                 srv_iface = sorted(connection_point.intfNames())[-1]
                 connection_point.intf(srv_iface).setIP(srv_ip)
+
+            # This will set up the nat host
+            if nat_ip:
+                nat.configDefault(ip=nat_ip)
             else:
                 nat.configDefault()
 
