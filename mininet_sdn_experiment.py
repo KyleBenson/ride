@@ -78,8 +78,9 @@ class MininetSdnExperiment(NetworkExperiment):
         self.show_cli = show_cli
 
         # used to store log files (for debugging) and output files (results) from host processes ran during experiments
-        self.logs_dir = None
-        self.outputs_dir = None
+        # they'll be accessed without the leading '_', which will dynamically build them if necessary
+        self._logs_dir = None
+        self._outputs_dir = None
 
         # Disable some of the more verbose and unnecessary loggers
         for _logger_name in LOGGERS_TO_DISABLE:
@@ -525,6 +526,18 @@ class MininetSdnExperiment(NetworkExperiment):
         else:
             log.warning("No topology adapter!  Cannot reset it between runs...")
 
+    @property
+    def outputs_dir(self):
+        if self._outputs_dir is None:
+            self.build_outputs_logs_dirs()
+        return self._outputs_dir
+
+    @property
+    def logs_dir(self):
+        if self._logs_dir is None:
+            self.build_outputs_logs_dirs()
+        return self._logs_dir
+
     def build_outputs_logs_dirs(self, output_filename=None):
         """
         Creates, stores in self, and returns the path to two directories:
@@ -570,8 +583,8 @@ class MininetSdnExperiment(NetworkExperiment):
         except OSError:
             pass
 
-        self.logs_dir = logs_dir
-        self.outputs_dir = outputs_dir
+        self._logs_dir = logs_dir
+        self._outputs_dir = outputs_dir
 
         return outputs_dir, logs_dir
 
