@@ -16,15 +16,21 @@ import argparse
 import logging
 log = logging.getLogger(__name__)
 
+import os
+import random
+
+from config import *
 from scifire.config import *
 from mininet_sdn_experiment import MininetSdnExperiment
+from scale_client.core.client import make_scale_config_entry, make_scale_config
 
 class FireExperiment(MininetSdnExperiment):
 
     def __init__(self, num_ffs=DEFAULT_NUM_FFS, num_iots=DEFAULT_NUM_IOTS,
+                 experiment_duration=FIRE_EXPERIMENT_DURATION,
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
-        super(FireExperiment, self).__init__(**kwargs)
+        super(FireExperiment, self).__init__(experiment_duration=experiment_duration, **kwargs)
 
         # Save params
         self.num_ffs = num_ffs
@@ -66,8 +72,11 @@ class FireExperiment(MininetSdnExperiment):
         """
 
         arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION, parents=parents, add_help=add_help)
-        # experimental treatment parameters
 
+        # set our own custom defaults for this experiment
+        arg_parser.set_defaults(experiment_duration=FIRE_EXPERIMENT_DURATION)
+
+        # experimental treatment parameters
         arg_parser.add_argument('--num-ffs', '-nf', dest='num_ffs', type=int, default=DEFAULT_NUM_FFS,
                                 help='''The number of fire fighter 'hosts' to create, which represent a FF equipped with
                                 IoT devices that relay their data through some wireless smart hub (default=%(default)s).''')
@@ -160,17 +169,15 @@ class FireExperiment(MininetSdnExperiment):
 
         super(FireExperiment, self).setup_experiment()
 
-        # TODO: run VerneMQ brokers
-        # self.run_proc(vmq_cmd, self.icp, 'icp broker')
-        # self.run_proc(vmq_cmd, self.bms, 'bms broker')
+        # Start the brokers first so that they're running by the time the clients start publishing
+        self.run_brokers()
+        self.run_scale_clients()
 
         # TODO: choose which devs publish what topics?  which devs are video feeds? where are FFs?
 
     def run_experiment(self):
 
         log.info("*** Starting Experiment...")
-
-        iperf_duration = 15
 
         # TODO: clean up all this hacky iperf stuff; this is all just a place-holder...
         # run iperf for video feeds: we'll use SDN to selectively fork the video feed to black_box and, when requested, ICP
@@ -180,6 +187,10 @@ class FireExperiment(MininetSdnExperiment):
         srv = self.icp
         mn_iperfs = True  # this blocks
         # so run it in background as a proc directly, which sort of lets us parse the results from files but we've had some problems...
+        # set the duration to account for this blocking:
+        iperf_duration = self.experiment_duration
+        if mn_iperfs:
+            iperf_duration /= float(len(video_hosts))
 
         for i, v in enumerate(video_hosts):
             if mn_iperfs:
@@ -198,6 +209,9 @@ class FireExperiment(MininetSdnExperiment):
 
         log.info("*** Experiment complete!")
 
+        log.debug("sleeping a few seconds for procs to finish...")
+        time.sleep(10)
+
         log.info("iperf results:")
         log.info("raw: %s" % iperfs)
         for (cli_name, cli_res), (srv_name, srv_res) in iperfs:
@@ -212,6 +226,62 @@ class FireExperiment(MininetSdnExperiment):
 
         # TODO: add more stuff to the results here!
         return {'iperfs': iperf_res}
+
+    def run_brokers(self):
+
+        # TODO: run VerneMQ broker instead of coap server
+        # self.run_proc(vmq_cmd, self.icp, 'icp broker')
+        # self.run_proc(vmq_cmd, self.bms, 'bms broker')
+
+        broker_cfg = make_scale_config(networks=make_scale_config_entry(name="CoapServer", events_root="/events/",
+                                                                        class_path="coap_server.CoapServer"),
+                                       # this will just count up the # events received with this topic
+                                       applications=make_scale_config_entry(name="EventStats", subscriptions=(IOT_DEV_TOPIC,),
+                                                                            output_file=os.path.join(self.outputs_dir, "event_stats_%s"),
+                                                                            class_path="statistics_application.StatisticsApplication"))
+        # TODO: add in EOC too?  not sure what exactly we'll do with it though...
+        for broker_node in (self.icp, self.bms):
+            hostname = "broker@%s" % broker_node.name
+            cmd = self.make_host_cmd(broker_cfg % hostname, hostname)
+            self.run_proc(cmd, broker_node, hostname)
+
+    def run_scale_clients(self):
+        """
+        Configure host devices with SCALE clients to publish sensor data to the data exchange.
+        :return:
+        """
+
+        iot_dev_publish_interval = 1.0
+
+        # Building IoT devices all publish their periodic event data to the BMS broker.
+        broker_ip = self.bms.IP()
+        for dev in self.iot_devs:
+            # NOTE: make sure we distinguish the coapthon client instances from each other by incrementing CoAP port for multiple topics!
+
+            dev_cfg = make_scale_config(
+                sensors=make_scale_config_entry(name="IoTSensor", event_type=IOT_DEV_TOPIC,
+                                                dynamic_event_data=dict(seq=0),
+                                                class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
+                                                output_events_file=os.path.join(self.outputs_dir,
+                                                                                '%s_%s' % (IOT_DEV_TOPIC, dev.name)),
+                                                # give servers a chance to start; spread out their reports too
+                                                start_delay=random.uniform(5, 10),
+                                                sample_interval=iot_dev_publish_interval)
+                ,  # forward these SensedEvents to the broker best-effort (non-CONfirmable) for CoAP
+                sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
+                                              name="IotDataCoapEventSink", hostname=broker_ip,
+                                              src_port=COAP_CLIENT_BASE_SRC_PORT,
+                                              topics_to_sink=(IOT_DEV_TOPIC,), confirmable_messages=False)
+                # Can optionally enable this to print out each event in its entirety.
+                + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
+            )
+
+            hostname = "scale@%s" % dev.name
+            cmd = self.make_host_cmd(dev_cfg, hostname)
+            self.run_proc(cmd, dev, hostname)
+
+        # Fire fighter nodes publish their data to the ICP broker.
+        # TODO:
 
 FireExperiment.__doc__ = CLASS_DESCRIPTION
 
