@@ -353,7 +353,7 @@ class MininetSdnExperiment(NetworkExperiment):
         n_sdn_switches = 0
         n_sdn_hosts = 0
         ntries = 1
-        while n_sdn_hosts != expected_nhosts or n_sdn_links != expected_nlinks or n_sdn_switches != expected_nswitches:
+        while n_sdn_hosts < expected_nhosts or n_sdn_links < expected_nlinks or n_sdn_switches < expected_nswitches:
             self.setup_topology_manager()
 
             n_sdn_hosts = len(self.topology_adapter.get_hosts())
