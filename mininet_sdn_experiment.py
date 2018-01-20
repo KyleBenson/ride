@@ -634,6 +634,27 @@ class MininetSdnExperiment(NetworkExperiment):
 
         return p
 
+    def make_host_cmd(self, cmd, hostname=None):
+        """
+        This unnecessary helper function is implemented specifically for use with the SCALE client software.
+        It formats the specified command so that it includes various configurations (quit time, debug level, etc.),
+        formats the shell command appropriately, and optionally redirects output to a log file.
+
+        :param cmd:
+        :param hostname: name to use for log file redirection (can be ignored if logging not in use)
+        :return:
+        """
+
+        base_args = "-q %d --log %s" % (EXPERIMENT_DURATION, self.debug_level)
+        cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + cmd)
+
+        if WITH_LOGS:
+            cmd = self.redirect_output_to_log(cmd, hostname)
+        else:
+            assert hostname is not None, "you must specify the hostname for log file output redirection!"
+
+        return cmd
+
     def iperf(self, client, server, port=None, bandwidth=None, duration=None,
               output_results=False, pipe_results=False, use_mininet=False):
         """Runs iperf (UDP) between the specified hosts.
