@@ -110,7 +110,7 @@ class FireExperiment(MininetSdnExperiment):
         super(FireExperiment, self).setup_topology()
 
         # We use special 'coded addresses' to help debugging/understanding what's going on in log files
-        base_subnet = '10.128.%s'  # see note in config.py about why we use this
+        base_subnet = '10.128.%s/9'  # see note in config.py about why we use this... don't forget subnet mask!
         icp_subnet = base_subnet % '1.%d'
         ff_subnet = base_subnet % '10.%d'
         fire_mac = 'ff:00:00:00:%s:%s'
@@ -160,6 +160,13 @@ class FireExperiment(MininetSdnExperiment):
         # TODO: set channel characteristics
         for h in self.ffs + self.iot_devs:
             self.add_link(self.bldg, h, use_tc=False)
+
+        # 5. add NAT so that any SdnTopology apps will be able to contact the SDN controller's REST API
+
+        # NOTE: we use only a single NAT attached to the BMS so that we can also study control plane
+        #    issues caused by channel contention when the ICP contacts the SDN controller.
+        nat_ip = bldg_subnet % 250
+        self.add_nat(self.bms_sw, nat_name='sdn_ctrl', nat_ip=nat_ip)
 
     def setup_experiment(self):
         """
@@ -233,15 +240,21 @@ class FireExperiment(MininetSdnExperiment):
         # self.run_proc(vmq_cmd, self.icp, 'icp broker')
         # self.run_proc(vmq_cmd, self.bms, 'bms broker')
 
-        broker_cfg = make_scale_config(networks=make_scale_config_entry(name="CoapServer", events_root="/events/",
-                                                                        class_path="coap_server.CoapServer"),
-                                       # this will just count up the # events received with this topic
-                                       applications=make_scale_config_entry(name="EventStats", subscriptions=(IOT_DEV_TOPIC,),
+        coap_cfg = make_scale_config_entry(name="CoapServer", events_root="/events/", class_path="coap_server.CoapServer")
+        # this will just count up the # events received with this topic
+        stats_cfg = make_scale_config_entry(name="EventStats", subscriptions=(IOT_DEV_TOPIC,),
                                                                             output_file=os.path.join(self.outputs_dir, "event_stats_%s"),
-                                                                            class_path="statistics_application.StatisticsApplication"))
+                                                                            class_path="statistics_application.StatisticsApplication")
+
+        # This is just for the ICP so that it can interact with the SDN Controller, which in our scenario we assume is near the BMS
+        sdn_cfg = make_scale_config_entry(name="SdnApp", topology_mgr=self._get_topology_manager_config(),
+                                          class_path="topology_manager.scale_sdn_application.ScaleSdnApplication")
+
         # TODO: add in EOC too?  not sure what exactly we'll do with it though...
         for broker_node in (self.icp, self.bms):
             hostname = "broker@%s" % broker_node.name
+            broker_cfg = make_scale_config(networks=coap_cfg,
+                                           applications=stats_cfg + (sdn_cfg if broker_node is self.icp else ''))
             cmd = self.make_host_cmd(broker_cfg % hostname, hostname)
             self.run_proc(cmd, broker_node, hostname)
 
