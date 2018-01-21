@@ -196,7 +196,7 @@ class MininetSdnExperiment(NetworkExperiment):
         :param bandwidth:
         :param latency:
         :param jitter:
-        :param error_rate:
+        :param error_rate: link loss rate expressed as an integer percentage
         :return:
         """
 
@@ -212,7 +212,7 @@ class MininetSdnExperiment(NetworkExperiment):
             jitter = '%fms' % (jitter if jitter is not None else self.jitter)
             loss = error_rate if error_rate is not None else self.error_rate
 
-            log.debug("adding link from %s to %s with channel: latency=%s, jitter=%s, loss=%f, BW=%s" % \
+            log.debug("adding link from %s to %s with channel: latency=%s, jitter=%s, loss=%d, BW=%s" % \
                       (from_link, to_link, delay, jitter, loss, bw))
 
             # For configuration options, see mininet.link.TCIntf.config()
@@ -223,6 +223,40 @@ class MininetSdnExperiment(NetworkExperiment):
             l = self.net.addLink(from_link, to_link)
         self.links.append(l)
         return l
+
+    def update_link_params(self, from_link, to_link, **params):
+        """
+        Update the channel characteristics of an existing link, keeping the original configuration of each parameter
+        when not specified.  Accepts all channel parameters handled in add_link().
+        :param from_link:
+        :param to_link:
+        :param params: the parameters to update with new values (see add_link() for possible options)
+        :return:
+        """
+
+        # need to transform our naming scheme to Mininet's
+        if 'latency' in params:
+            params['delay'] = '%fms' % params.pop('latency')
+        if 'jitter' in params:
+            params['jitter'] = '%fms' % params.pop('jitter')
+        if 'bandwidth' in params:
+            params['bw'] = params.pop('bandwidth')
+        if 'error_rate' in params:
+            params['loss'] = params.pop('error_rate')
+
+        log.debug("updating link parameters from %s to %s: %s" % \
+                  (from_link.name, to_link.name, params))
+
+        # Need to set the actual interfaces' parameters rather than the whole links
+        for from_iface, to_iface in from_link.connectionsTo(to_link):
+            # keep the previous parameters where possible
+            new_params = from_iface.params.copy()
+            new_params.update(params)
+            from_iface.config(**new_params)
+
+            new_params = to_iface.params.copy()
+            new_params.update(params)
+            to_iface.config(**new_params)
 
     def add_nat(self, connection_point, nat_name=None, nat_ip=None):
         """Add a NAT to the specified node in the network.  It will actually be built in 'start_network' since we have

@@ -34,7 +34,8 @@ class NetworkExperiment(object):
         :param output_filename:
         :param choice_rand_seed:
         :param rand_seed:
-        :param error_rate: default error rate for links that don't specify one during construction
+        :param error_rate: default error rate (as a %) for links that don't specify one during construction
+        :type error_rate: int
         :param latency: default latency (in ms) for links that don't specify one during construction
         :param jitter: default jitter (in ms) for links that don't specify one during construction
         :param bandwidth: default bandwidth (in Mbps) for links that don't specify one during construction
@@ -114,8 +115,8 @@ class NetworkExperiment(object):
                             help='''random seed used by other classes via calls to random module (default=%(default)s)''')
 
         # network channel characteristics, which may or may not be used depending on implementation's level of realism
-        arg_parser.add_argument('--error-rate', type=float, default=DEFAULT_ERROR_RATE, dest='error_rate',
-                            help='''default error rate of links that don't specify one (default=%(default)s)''')
+        arg_parser.add_argument('--error-rate', type=int, default=DEFAULT_ERROR_RATE, dest='error_rate',
+                            help='''default error rate (expressed as an integer percentage) of links that don't specify one (default=%(default)s)''')
         arg_parser.add_argument('--latency', type=float, default=DEFAULT_LATENCY,
                             help='''default latency (in ms) of links that don't specify one (default=%(default)s)''')
         arg_parser.add_argument('--jitter', type=float, default=DEFAULT_JITTER,
