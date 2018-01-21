@@ -106,6 +106,10 @@ class MininetSdnExperiment(NetworkExperiment):
         # need to not add help options to use that feature, though
         arg_parser = argparse.ArgumentParser(add_help=add_help, parents=parents, conflict_handler='resolve')
 
+        # Since we'll almost always be running this experiment in a VM, we change the default controller IP so that the
+        # Mininet test nodes can contact the controller from within Mininet:
+        arg_parser.set_defaults(controller_ip=CONTROLLER_IP)
+
         arg_parser.add_argument('--cli', '-cli', dest='show_cli', action='store_true',
                                 help='''displays the Mininet CLI after running the experiment. This is useful for
                                 debugging problems as it prevents the OVS/controller state from being wiped after
