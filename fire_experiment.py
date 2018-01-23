@@ -242,9 +242,9 @@ class FireExperiment(MininetSdnExperiment):
 
         coap_cfg = make_scale_config_entry(name="CoapServer", events_root="/events/", class_path="coap_server.CoapServer")
         # this will just count up the # events received with this topic
-        stats_cfg = make_scale_config_entry(name="EventStats", subscriptions=(IOT_DEV_TOPIC,),
-                                                                            output_file=os.path.join(self.outputs_dir, "event_stats_%s"),
-                                                                            class_path="statistics_application.StatisticsApplication")
+        event_log_cfg = make_scale_config_entry(name="EventsLog", subscriptions=(IOT_DEV_TOPIC,),
+                                                output_file=os.path.join(self.outputs_dir, "events_%s"),
+                                                class_path="event_file_logging_application.EventFileLoggingApplication")
 
         # This is just for the ICP so that it can interact with the SDN Controller, which in our scenario we assume is near the BMS
         sdn_cfg = make_scale_config_entry(name="SdnApp", topology_mgr=self._get_topology_manager_config(),
@@ -254,7 +254,7 @@ class FireExperiment(MininetSdnExperiment):
         for broker_node in (self.icp, self.bms):
             hostname = "broker@%s" % broker_node.name
             broker_cfg = make_scale_config(networks=coap_cfg,
-                                           applications=stats_cfg + (sdn_cfg if broker_node is self.icp else ''))
+                                           applications=event_log_cfg + (sdn_cfg if broker_node is self.icp else ''))
             cmd = self.make_host_cmd(broker_cfg % hostname, hostname)
             self.run_proc(cmd, broker_node, hostname)
 

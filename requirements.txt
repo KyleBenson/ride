@@ -4,12 +4,6 @@ ipaddress
 argparse
 requests
 
-# additional requirements for statistics.py
-# parse
-# pandas
-# numpy
-# parse
-
 # NOTE: you'll also need the requirements from scale_client if you plan to use the Mininet-based experiments that run SCALE client processes!
 
 # we use a symlink to the mininet repo rather than installing it so that we can carefully control the version
