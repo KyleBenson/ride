@@ -652,9 +652,10 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # control plane network.
         # NOTE: because we only set static routes when not using RideD multicast, this shouldn't
         # interfere with other routes.
-        use_multicast = True
-        if self.comparison is not None and self.comparison == 'unicast':
-            use_multicast = False
+        # NOTE: using ntrees=0 to imply unicast let's us easily compare the unicast approach with other #s MDMTs
+        use_unicast = (self.comparison is not None and self.comparison == 'unicast') or self.ntrees == 0
+        use_multicast = not use_unicast
+        if use_unicast:
             for sub in subscribers:
                 try:
                     # HACK: we get the route from the NetworkxTopology in order to have the same
@@ -679,9 +680,7 @@ class MininetSmartCampusExperiment(SmartCampusExperiment):
         # For the oracle comparison config we just extend the quit time so the controller has plenty
         # of time to detect and recover from the failures.
         elif self.comparison is not None and self.comparison == 'oracle':
-            use_multicast = False
-            # TODO: base this quit_time extension on the Coap timeout????
-            # quit_time += 20
+            raise NotImplementedError("no current implementation for 'oracle' comparison: just use calculated result in this run...")
 
         sdn_topology_cfg = self._get_topology_manager_config()
         # XXX: use controller IP specified in config.py if the default localhost was left
