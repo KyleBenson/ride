@@ -190,6 +190,10 @@ class MininetSdnExperiment(NetworkExperiment):
         else:
             return server_host
 
+    def is_server_switch(self, sw):
+        """Returns true if this switch was created using add_server as a switch to help the server multi-home easily."""
+        return sw in self.server_switches.values()
+
     def add_link(self, from_link, to_link, use_tc=True, bandwidth=None, latency=None, jitter=None, error_rate=None):
         """
         Adds a link from the specified node ID (or Mininet node) to the destination and (unless otherwise specified) sets
