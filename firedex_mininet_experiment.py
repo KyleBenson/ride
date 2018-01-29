@@ -11,30 +11,26 @@ using some clever SDN mechanisms.'''
 # @author: Kyle Benson
 # (c) Kyle Benson 2018
 
-import time
-import argparse
 import logging
 log = logging.getLogger(__name__)
 
+import time
 import os
 import random
+import argparse
 
 from config import *
 from scifire.config import *
+from firedex_algorithm_experiment import FiredexAlgorithmExperiment
 from mininet_sdn_experiment import MininetSdnExperiment
 from scale_client.core.client import make_scale_config_entry, make_scale_config
 
-class FireExperiment(MininetSdnExperiment):
+class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment):
 
-    def __init__(self, num_ffs=DEFAULT_NUM_FFS, num_iots=DEFAULT_NUM_IOTS,
-                 experiment_duration=FIRE_EXPERIMENT_DURATION,
+    def __init__(self, experiment_duration=FIRE_EXPERIMENT_DURATION,
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
-        super(FireExperiment, self).__init__(experiment_duration=experiment_duration, **kwargs)
-
-        # Save params
-        self.num_ffs = num_ffs
-        self.num_iots = num_iots
+        super(FiredexMininetExperiment, self).__init__(experiment_duration=experiment_duration, **kwargs)
 
         # Special hosts in our topology
         self.icp = None  # Incident Command Post         --  where we want to collect data for situational awareness
@@ -56,13 +52,11 @@ class FireExperiment(MininetSdnExperiment):
         # ENHANCE: we'll add different specific heterogeneous networks e.g. sat, cell, wimax, wifi
         # ENHANCE: add switches for each of the special hosts?  not needed currently for 2-switch topo....
 
-        # TODO: add other params
-        self.results['params'].update({'num_fire_fighters': num_ffs,
-                                       'num_iot_devices': num_iots,
-                                       })
+        # TODO: add other params to results['params'] ???
 
     @classmethod
-    def get_arg_parser(cls, parents=(MininetSdnExperiment.get_arg_parser(),), add_help=True):
+    def get_arg_parser(cls, parents=(FiredexAlgorithmExperiment.get_arg_parser(add_help=False),
+                                     MininetSdnExperiment.get_arg_parser()), add_help=True):
         """
         Argument parser that can be combined with others when this class is used in a script.
         Need to not add help options to use that feature, though.
@@ -71,43 +65,21 @@ class FireExperiment(MininetSdnExperiment):
         :return argparse.ArgumentParser arg_parser:
         """
 
-        arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION, parents=parents, add_help=add_help)
+        arg_parser = argparse.ArgumentParser(parents=parents, add_help=add_help, conflict_handler='resolve')
 
         # set our own custom defaults for this experiment
         arg_parser.set_defaults(experiment_duration=FIRE_EXPERIMENT_DURATION)
 
-        # experimental treatment parameters
-        arg_parser.add_argument('--num-ffs', '-nf', dest='num_ffs', type=int, default=DEFAULT_NUM_FFS,
-                                help='''The number of fire fighter 'hosts' to create, which represent a FF equipped with
-                                IoT devices that relay their data through some wireless smart hub (default=%(default)s).''')
-        arg_parser.add_argument('--num-iots', '-nd', '-ni', dest='num_iots', type=int, default=DEFAULT_NUM_IOTS,
-                                help='''The number of IoT device hosts to create, which represent various sensors,
-                                actuators, or other IoT devices that reside within the building and publish
-                                fire event-related data to the BMS (default=%(default)s).''')
+        # experimental configuration parameters
+        # TODO: --test option to run some sort of integration test...
 
         # TODO: change description for parent args?  specifically, which links do we apply the default channel stats on?
 
         return arg_parser
 
-    @classmethod
-    def build_from_args(cls, args):
-        """Constructs from command line arguments."""
-
-        args = cls.get_arg_parser().parse_args(args)
-
-        # convert to plain dict
-        args = vars(args)
-
-        return cls(**args)
-
-    def record_result(self, result):
-        # TODO: is this even needed?  might need to add some custom info...
-        # First, add additional parameters used on this run.
-        return super(FireExperiment, self).record_result(result)
-
     def setup_topology(self):
         # sets up controller and builds a bare mininet net
-        super(FireExperiment, self).setup_topology()
+        super(FiredexMininetExperiment, self).setup_topology()
 
         # We use special 'coded addresses' to help debugging/understanding what's going on in log files
         base_subnet = '10.128.%s/9'  # see note in config.py about why we use this... don't forget subnet mask!
@@ -174,7 +146,7 @@ class FireExperiment(MininetSdnExperiment):
         :return:
         """
 
-        super(FireExperiment, self).setup_experiment()
+        super(FiredexMininetExperiment, self).setup_experiment()
 
         # Start the brokers first so that they're running by the time the clients start publishing
         self.run_brokers()
@@ -296,10 +268,10 @@ class FireExperiment(MininetSdnExperiment):
         # Fire fighter nodes publish their data to the ICP broker.
         # TODO:
 
-FireExperiment.__doc__ = CLASS_DESCRIPTION
+FiredexMininetExperiment.__doc__ = CLASS_DESCRIPTION
 
 
 if __name__ == "__main__":
     import sys
-    exp = FireExperiment.build_from_args(sys.argv[1:])
+    exp = FiredexMininetExperiment.build_from_args(sys.argv[1:])
     exp.run_all_experiments()

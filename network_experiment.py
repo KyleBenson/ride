@@ -101,7 +101,7 @@ class NetworkExperiment(object):
         :return argparse.ArgumentParser arg_parser:
         """
 
-        arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION, parents=parents, add_help=add_help)
+        arg_parser = argparse.ArgumentParser(description=CLASS_DESCRIPTION, parents=parents, add_help=add_help, conflict_handler='resolve')
 
         # experimental treatment parameters
         arg_parser.add_argument('--nruns', '-r', type=int, default=1,
