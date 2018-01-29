@@ -166,6 +166,8 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         super(FiredexMininetExperiment, self).setup_experiment()
 
+        self.setup_priority_queues()
+
         # Start the brokers first so that they're running by the time the clients start publishing
         self.run_brokers()
         self.run_scale_clients()
@@ -285,6 +287,28 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         # Fire fighter nodes publish their data to the ICP broker.
         # TODO:
+
+    def setup_priority_queues(self):
+        """
+        Create Linux TC queues with priorities for use with OVS and OpenFlow rules that direct certain packets to them
+         for priority delivery.
+        :return:
+        """
+
+        # NOTE: don't need to set queues on server switches since all network elements will have them.
+        # Plus, those switches don't have the same (any) channel constraints!
+        # We do, however, want to make sure to configure each interface connecting to a host (or its serving switch).
+        priority_switches = [sw for sw in self.switches if not self.is_server_switch(sw)]
+        priority_switch_names = [sw.name for sw in priority_switches]
+        log.debug("Setting up %d priority queues on %d switches: %s" % \
+                  (self.num_priority_levels, len(priority_switch_names), priority_switch_names))
+
+        # TODO: implement this!
+        for sw in priority_switches:
+            for p in range(self.num_priority_levels):
+                # TODO: create a queue for each priority level on each switch (using subprocess?)
+                # (could combine multiple creation commands into one?)
+                pass
 
 FiredexMininetExperiment.__doc__ = CLASS_DESCRIPTION
 
