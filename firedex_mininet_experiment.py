@@ -28,6 +28,7 @@ from scale_client.core.client import make_scale_config_entry, make_scale_config
 class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment):
 
     def __init__(self, experiment_duration=FIRE_EXPERIMENT_DURATION,
+                 with_eoc=False, with_black_box=False,
                  # HACK: kwargs just used for construction via argparse since they'll include kwargs for other classes
                  **kwargs):
         super(FiredexMininetExperiment, self).__init__(experiment_duration=experiment_duration, **kwargs)
@@ -36,7 +37,9 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         self.icp = None  # Incident Command Post         --  where we want to collect data for situational awareness
         self.bms = None  # Building Management System    --  manages IoT devices and SDN
         self.eoc = None  # Emergency Operations Center   --  where regional cloud services run e.g. event processing
+        self.with_eoc = with_eoc
         self.black_box = None     # simple subscriber near BMS that should receive all data for forensics
+        self.with_black_box = with_black_box
         # Because we treat these 3 as servers, they'll get a switch installed for easy multihoming
         self.icp_sw = None
         self.bms_sw = None
@@ -71,6 +74,11 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         arg_parser.set_defaults(experiment_duration=FIRE_EXPERIMENT_DURATION)
 
         # experimental configuration parameters
+        arg_parser.add_argument('--with-eoc', dest='with_eoc', action="store_true",
+                                help='''Build network topology with EOC node.''')
+        arg_parser.add_argument('--with-black-box', dest='with_black_box', action="store_true",
+                                help='''Build network topology with black box (forensics database) node.''')
+
         # TODO: --test option to run some sort of integration test...
 
         # TODO: change description for parent args?  specifically, which links do we apply the default channel stats on?
@@ -102,8 +110,10 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         # 2. create special host nodes
         self.icp, self.icp_sw = self.add_server('icp', ip=icp_subnet % 1, mac=fire_mac % ('cc', '01'))
         self.bms, self.bms_sw = self.add_server('bms', ip=bldg_subnet % 1, mac=bldg_mac % ('cc', '01'))
-        self.eoc, self.eoc_sw = self.add_server('eoc', ip=eoc_subnet % 1, mac=eoc_mac % 1)
-        self.black_box = self.add_host('bb', ip=bldg_subnet % 200, mac=bldg_mac % ('bb', 'bb'))
+        if self.with_eoc:
+            self.eoc, self.eoc_sw = self.add_server('eoc', ip=eoc_subnet % 1, mac=eoc_mac % 1)
+        if self.with_black_box:
+            self.black_box = self.add_host('bb', ip=bldg_subnet % 200, mac=bldg_mac % ('bb', 'bb'))
 
         # 3. create FF and IoT host nodes
         for i in range(self.num_ffs):
@@ -118,12 +128,20 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         # NOTE: we apply default channel characteristics to inet links only
         # TODO: set up some for other links?  internal building topo should have some at least...
-        for peer in (self.bldg, self.eoc_sw, self.icp_sw):
+        inet_connected_nodes = [self.bldg, self.icp_sw]
+        if self.with_eoc:
+            inet_connected_nodes.append(self.eoc_sw)
+
+        for peer in inet_connected_nodes:
             self.add_link(self.inet, peer)
             # QUESTION: should we save these links so that we can e.g. explicitly vary their b/w during the sim?
 
-        # Connect special hosts
-        for bldg_comp in (self.bms_sw, self.black_box):
+        # Connect special hosts in the building
+        bldg_connected_nodes = [self.bms_sw]
+        if self.with_black_box:
+            bldg_connected_nodes.append(self.black_box)
+
+        for bldg_comp in bldg_connected_nodes:
             self.add_link(self.bldg, bldg_comp, use_tc=False)
 
         # Connect IoT and FF hosts
