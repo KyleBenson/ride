@@ -253,4 +253,15 @@ class NetworkExperiment(object):
         """
         pass
 
+    def bandwidth_bytes(self, bw=None):
+        """
+        Convert bandwidth to bytes/second.
+        :param bw: defaults to self.bandwidth
+        :return:
+        """
+
+        if bw is None:
+            bw = self.bandwidth
+        return bw * 1000 / 8.0  # originally Mbps
+
 NetworkExperiment.__doc__ = CLASS_DESCRIPTION
