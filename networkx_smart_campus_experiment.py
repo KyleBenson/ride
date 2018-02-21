@@ -103,11 +103,16 @@ class NetworkxSmartCampusExperiment(SmartCampusExperiment):
             pub_routes = {p[0]: p for p in self.topo.get_multi_source_disjoint_paths(self.publishers, self.edge_server, weight=DISTANCE_METRIC)}
             assert list(sorted(pub_routes.keys())) == list(sorted(self.publishers)), "not all hosts accounted for in disjoint paths: %s" % pub_routes.values()
 
+        # Determine which publishers successfully reached the edge to build the STT in Ride-D and report pub_rate
+        pub_rate = 0
         for pub in self.publishers:
             path = pub_routes[pub]
             rided.set_publisher_route(pub, path)
             if random.random() >= self.error_rate and nx.is_simple_path(failed_topology, path):
                 rided.notify_publication(pub)
+                pub_rate += 1
+        pub_rate /= float(len(self.publishers))
+        result['pub_rate'] = pub_rate
 
         # build and get multicast trees
         trees = rided.build_mdmts()[PUBLICATION_TOPIC]
