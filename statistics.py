@@ -421,7 +421,8 @@ if __name__ == '__main__':
 
     ## Manually set arguments
     # args.debug = 'debug'
-    # args.output_file = 'netx_results/cost_ntrees.csv'
+    # args.output_file = 'final_results/mininet_results/analyzed/routing_policy.csv'
+    # args.output_file = 'final_results/mininet_results/analyzed/TESTING_ROUTE_POLICY.csv'
 
     stats = SmartCampusExperimentStatistics(args)
     stats.parse_all()
@@ -430,25 +431,29 @@ if __name__ == '__main__':
     # assert isinstance(stats.stats, MininetSeismicStatistics)
     # assert isinstance(stats.stats, NetworkxSeismicStatistics)
     df = stats.stats.reachabilities()
-    print 'original stats (%d):\n' % len(df), df
+    # print 'original stats (%d):\n' % len(df), df
     # print stats.stats.stats.info()
 
     original_stats = df
 
+    ####    NTREES / CONSTRUCTION ALGORITHMS COMPARISON    #####
     policies_to_keep = ('oracle', 'unicast', 'max', 'mean')
     # policies_to_keep = ('oracle', 'unicast')
 
-    ## This query is for comparing the different selection-policies; it cuts out the max, mean, min results
+    ####    SELECTION POLICY COMPARISON    ####
+    ## this query cuts out the max, mean, min results
     # policies_to_keep = ('oracle', 'unicast', 'importance-chosen', 'max-overlap-chosen', 'max-reachable-chosen', 'min-missing-chosen')
+    # policies_to_keep = ('oracle', 'unicast', 'importance-chosen')
+    # query = '|'.join(['select_policy == "%s" ' % pol for pol in policies_to_keep])
 
-    ## For the overhead comparison, we should compare unicast and the different const-algs for each nsubscribers value
+    ####    OVERHEAD COMPARISON    ####
+    ## we should compare unicast and the different const-algs for each nsubscribers value
     # policies_to_keep = ('unicast', 'mean')
 
-    ## This is for comparing the different construction algorithms
+    ####    CONSTRUCTION ALGORITHMS comparison   ####
     # const_algs_to_keep = ('diverse-paths', 'red-blue', 'steiner')
     # for pol in policies_to_keep:
     #     for alg in const_algs_to_keep:
-    # query = '|'.join(['select_policy == "%s" ' % pol for pol in policies_to_keep])
             # query = '|'.join(['const_alg == "%s" ' % alg for alg in const_algs_to_keep])
 
 
@@ -460,8 +465,40 @@ if __name__ == '__main__':
     # df = original_stats.query('select_policy == "mean"')
     # print 'filtered stats (%d):\n' % len(df), df.head()
 
+    ####    FINDING GOOD RUNS for the TIME SERIES PLOT    ####
+    ## Try to find the run with the maximal reachability value of the main quake as we go through everything
+    # max_idx = df[df.seq == 1]['reachability'].idxmax()
+    # print "MAX REACH RUN#:", df['run'][max_idx], "with reach:", df['reachability'][max_idx]
+
     final_stats = df
     final_stats = stats.average_over_runs(df)
+
+    ####     TIMELINESS comparison    ####
+    # For received alerts, determine their overall latency (pick to alert) broken up by whether from edge/cloud
+    # df = stats.stats.seismic_events()
+    # del df['choicerandseed']
+    # del df['randseed']
+    # del df['failrandseed']
+    # del df['copies_rcvd']
+    # df = stats.stats.latencies(df).query('latency < %d' % MAX_TOLERATED_ALERT_DELAY)
+    # edge_lats = df[df.alert_src == 'edge']
+    # edge_lats = stats.average_over_runs(edge_lats)
+    # cloud_lats = df[df.alert_src == 'cloud']
+    # cloud_lats = stats.average_over_runs(cloud_lats)
+    # # merge them together with two different latency columns to handle overlapping treatment params
+    # edge_lats.rename(columns=dict(latency='edge_latency'), inplace=True)
+    # cloud_lats.rename(columns=dict(latency='cloud_latency'), inplace=True)
+    # varied_params = [p for p in VARIED_PARAMETERS if p in df] + ['seq']
+    # df = pd.merge(edge_lats, cloud_lats, on=varied_params, suffixes=('', '_default'), how='outer')
+    # # Finally, also merge with reachabilities
+    # final_stats = pd.merge(df, final_stats, on=varied_params, suffixes=('', '_default'), how='outer')
+
+    ####     ROUTING POLICY comparison    ####
+    ## We want to include both collection rate and alerting reachability:
+    # df = stats.stats.collection_rate()
+    # df = stats.average_over_runs(df)
+    # varied_params = [p for p in VARIED_PARAMETERS if p in df] + ['seq']
+    # final_stats = pd.merge(final_stats, df, on=varied_params, suffixes=('', '_default'), how='outer')
 
     print 'final stats:\n', final_stats
 
