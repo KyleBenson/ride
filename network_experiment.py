@@ -19,14 +19,45 @@ log = logging.getLogger(__name__)
 from config import *
 
 
-class NetworkExperiment(object):
+class NetworkChannelState(object):
+    """
+    Basic network channel characteristics used across various communications network classes.
+    """
     __metaclass__ = ABCMeta
 
-    def __init__(self, nruns=1, run_start_num=0, debug='info', output_filename='results.json',
-                 choice_rand_seed=None, rand_seed=None,
-                 # Network channel characteristics
-                 latency=DEFAULT_LATENCY, jitter=DEFAULT_JITTER,
+    def __init__(self, latency=DEFAULT_LATENCY, jitter=DEFAULT_JITTER,
                  error_rate=DEFAULT_ERROR_RATE, bandwidth=DEFAULT_BANDWIDTH, **kwargs):
+        """
+        :param latency: in ms
+        :param jitter:
+        :param error_rate: of packets, as a % e.g. 5
+        :type error_rate: int
+        :param bandwidth: in Mbps
+        :param kwargs:
+        """
+
+        self.error_rate = error_rate
+        self.latency = latency
+        self.jitter = jitter
+        self.bandwidth = bandwidth
+
+    def bandwidth_bytes(self, bw=None):
+        """
+        Convert bandwidth to bytes/second.
+        :param bw: defaults to self.bandwidth
+        :return:
+        """
+
+        if bw is None:
+            bw = self.bandwidth
+        return bw * 1000 / 8.0  # originally Mbps
+
+
+class NetworkExperiment(NetworkChannelState):
+    """Inherits from NetworkChannelState to use its channel characteristics as default values for the network."""
+
+    def __init__(self, nruns=1, run_start_num=0, debug='info', output_filename='results.json',
+                 choice_rand_seed=None, rand_seed=None, **kwargs):
         """
         :param nruns:
         :param run_start_num:
@@ -53,12 +84,6 @@ class NetworkExperiment(object):
 
         self.nruns = nruns
         self.current_run_number = run_start_num
-
-        # default network channel parameters
-        self.error_rate = error_rate
-        self.latency = latency
-        self.jitter = jitter
-        self.bandwidth = bandwidth
 
         # These will all be filled in by calling setup_topology()
         # NOTE: make sure you reset these between runs so that you don't collect several runs worth of e.g. hosts!
@@ -253,15 +278,5 @@ class NetworkExperiment(object):
         """
         pass
 
-    def bandwidth_bytes(self, bw=None):
-        """
-        Convert bandwidth to bytes/second.
-        :param bw: defaults to self.bandwidth
-        :return:
-        """
-
-        if bw is None:
-            bw = self.bandwidth
-        return bw * 1000 / 8.0  # originally Mbps
 
 NetworkExperiment.__doc__ = CLASS_DESCRIPTION
