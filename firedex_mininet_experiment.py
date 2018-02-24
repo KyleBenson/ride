@@ -20,7 +20,7 @@ import random
 import argparse
 
 from config import *
-from scifire.config import *
+from scifire.defaults import *
 from firedex_algorithm_experiment import FiredexAlgorithmExperiment
 from mininet_sdn_experiment import MininetSdnExperiment
 from scale_client.core.client import make_scale_config_entry, make_scale_config
