@@ -32,6 +32,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         super(FiredexAlgorithmExperiment, self).__init__(**kwargs)
 
         # these will get filled in later
+        self.data_sizes = dict()
         self.service_rates = []
         self.pub_rates = []
         self.subscriptions = None
@@ -98,7 +99,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         self.pub_rates = []
         for topics, size_rv, rate_rv in zip(self.topic_classes, data_size_rvs, pub_rate_rvs):
             for t in topics:
-                data_size = size_rv.get_int()
+                self.data_sizes[t] = data_size = size_rv.get_int()
                 # TODO: handle specifying different bandwidth values
                 srv_rate = self.calculate_service_rate(data_size)
                 self.service_rates.append(srv_rate)
@@ -216,6 +217,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         :param bandwidth: defaults to self.bandwidth
         :return:
         """
+        # TODO: consider packet (header) overhead when doing this!
         if bandwidth is None:
             bandwidth = self.bandwidth
         return self.bandwidth_bytes(bandwidth) / float(pkt_size)
