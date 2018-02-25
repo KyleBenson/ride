@@ -144,7 +144,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         # ENHANCE: maybe we should actually have the # subscriptions be a RV so we can vary the subscribers that way?
         subs = []
         for class_idx, (class_topic_rate, rv) in enumerate(zip(self.topic_class_sub_rates, self.topic_class_sub_dists)):
-            rv = RandomVariable.build(rv)
+            rv = self.build_sampling_random_variable(rv, len(self.topics_for_class(class_idx)))
             ntopics = int(class_topic_rate * self.ntopics_per_class[class_idx])
             try:
                 class_subs = rv.sample(self.topics_for_class(class_idx), ntopics)
@@ -167,7 +167,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         ff_ads = []
         iot_ads = []
 
-        ads_rvs = [RandomVariable.build(dist) for dist in self.topic_class_pub_dists]
+        ads_rvs = [self.build_sampling_random_variable(dist, len(self.topics_for_class(tc_idx))) for tc_idx, dist in enumerate(self.topic_class_pub_dists)]
 
         # For each type of publisher e.g. FF or IoT-dev
         for (num_pubs, tc_num_ads, tc_ads_rvs, ads) in ((self.num_ffs, self.topic_class_advertisements_per_ff, ads_rvs, ff_ads),
@@ -226,6 +226,45 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         # elif algorithm == 'static':
         else:
             raise ValueError("unrecognized priority-assignment algorithm %s" % algorithm)
+
+    def build_sampling_random_variable(self, rv_dist_cfg, population_size):
+        """
+        Returns a RandomVariable that is more likely to guarantee it will be able to properly sample from a population of
+        the given size.
+
+        It checks if the distribution has an upper bound; if it's the uniform distribution with no upper bound arg
+        specified it will set them to the default of [low, population_size] where low is the lower bound specified else 0.
+        This allows us to just specify a distribution as uniform when configuring the experiment and let the range be
+        dynamically generated according to e.g. num_topics
+
+        Also checks for proper lower bound e.g. zipf gets an additional argument to shift the range down to range [0, inf)
+
+        :param rv_dist_cfg:
+        :param population_size:
+        :return:
+        """
+
+        # ENHANCE: store the random variable so we can keep it between runs?  would need to identify it e.g. with a string...
+
+        rv = RandomVariable.build(rv_dist_cfg)
+        if rv.is_upper_bounded():
+            if rv.dist == 'uniform':
+                args = list(rv_dist_cfg.get('args', [0]))
+                if len(args) == 1:
+                    low = args[0]
+                    args.append(population_size - low)
+                    rv_dist_cfg['args'] = args
+                    rv = RandomVariable.build(rv_dist_cfg)
+
+        if rv.dist == 'zipf':
+            args = rv_dist_cfg.get('args')
+            # XXX: shift if with the loc parameter
+            if 'loc' not in rv_dist_cfg and (not args or len(args) <= 1):
+                args = rv_dist_cfg.copy()
+                args['loc'] = -1
+                rv = RandomVariable.build(args)
+
+        return rv
 
     ####  Boiler-plate helper functions for running experiments
 
