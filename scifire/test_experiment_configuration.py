@@ -53,6 +53,58 @@ class TestExperimentConfiguration(unittest.TestCase):
 
         # TODO: play with class weights and sub rates to check edge cases!
 
+    def test_advertisements(self):
+        ntopics = 10
+        class1_weight = 0.5
+        class2_weight = 0.5
+
+        # define various parameter combinations we'll use to test for edge cases
+        ff_all_num_ads = ((0,0), (1,1), (5,0), (1,5))
+        iot_all_num_ads = ((0,0), (0,0), (2,4), (0, 2))
+
+        # verify different dists work
+        dists_to_test = (({'dist': 'uniform', 'args': [0, int(ntopics*class1_weight)]},
+                          {'dist': 'uniform', 'args': [0, int(ntopics*class2_weight)]}),
+                         # test that requesting ads with distribution whose upper bound is outside topic range
+                         #   (e.g. unbounded) gives us the right ads in each class
+                         ({'dist': 'uniform', 'args': [0, 2 * ntopics]},
+                          {'dist': 'uniform', 'args': [0, 2 * ntopics]}),
+                         ({'dist': 'zipf', 'args': [2, -1]},
+                          {'dist': 'exp', 'args': [2]}),
+                         )
+
+        for (ff_num_ads, iot_num_ads) in zip(ff_all_num_ads, iot_all_num_ads):
+            for dists in dists_to_test:
+                exp = FiredexAlgorithmExperiment(num_topics=ntopics, topic_class_weights=(class1_weight, class2_weight),
+                                                 topic_class_advertisements_per_ff=ff_num_ads,
+                                                 topic_class_advertisements_per_iot=iot_num_ads,
+                                                 topic_class_pub_dists=dists)
+                try:
+                    all_pub_ads = exp.generate_advertisements()
+                except ValueError as e:
+                    self.assertFalse(True, "ERROR generating pubs (#ffpubs=%s, #iotpubs=%s) with dist (%s)... error: %s" % (ff_num_ads, iot_num_ads, dists, e))
+
+                ff_ads, iot_ads = all_pub_ads
+                # print all_pub_ads
+
+                # verify we have the expected #ads i.e. each publisher accounted for
+                self.assertEqual(len(ff_ads), exp.num_ffs)
+                self.assertEqual(len(iot_ads), exp.num_iots)
+
+                class0 = list(exp.topics_for_class(0))
+                class1 = list(exp.topics_for_class(1))
+
+                for pub_class_ads, exp_num_pub_class_ads in zip(all_pub_ads, (ff_num_ads, iot_num_ads)):
+                    for this_pub_ads in pub_class_ads:
+                        # verify right #ads for this publisher
+                        self.assertEqual(len(this_pub_ads), sum(exp_num_pub_class_ads))
+                        c0_ads = [a for a in this_pub_ads if a in class0]
+                        c1_ads = [a for a in this_pub_ads if a in class1]
+
+                        # verify the ads are for the right topics
+                        self.assertEqual(len(c0_ads), exp_num_pub_class_ads[0])
+                        self.assertEqual(len(c1_ads), exp_num_pub_class_ads[1])
+
 
 if __name__ == '__main__':
     unittest.main()

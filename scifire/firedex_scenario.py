@@ -24,6 +24,8 @@ class FiredexScenario(NetworkChannelState):
                  topic_class_weights=DEFAULT_TOPIC_CLASS_WEIGHTS, topic_class_data_sizes=DEFAULT_TOPIC_CLASS_DATA_SIZES,
                  topic_class_pub_rates=DEFAULT_TOPIC_CLASS_PUB_RATES,
                  topic_class_pub_dists=DEFAULT_TOPIC_CLASS_PUB_DISTS,
+                 topic_class_advertisements_per_ff=DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_FF,
+                 topic_class_advertisements_per_iot=DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_IOT,
                  reliable_publication=None,
                  # subscriptions
                  topic_class_sub_dists=DEFAULT_TOPIC_CLASS_SUB_DISTS,
@@ -43,6 +45,8 @@ class FiredexScenario(NetworkChannelState):
         :param topic_class_data_sizes:
         :param topic_class_pub_rates:
         :param topic_class_pub_dists:
+        :param topic_class_advertisements_per_ff:
+        :param topic_class_advertisements_per_iot:
         :param reliable_publication:
         :param topic_class_sub_dists:
         :param topic_class_sub_rates:
@@ -70,6 +74,8 @@ class FiredexScenario(NetworkChannelState):
         self.topic_class_data_sizes = topic_class_data_sizes
         self.topic_class_pub_rates = topic_class_pub_rates
         self.topic_class_pub_dists = topic_class_pub_dists
+        self.topic_class_advertisements_per_ff = topic_class_advertisements_per_ff
+        self.topic_class_advertisements_per_iot = topic_class_advertisements_per_iot
 
         # TODO: implement this eventually
         self.reliable_publication = reliable_publication
@@ -111,6 +117,8 @@ class FiredexScenario(NetworkChannelState):
                 'tc_pub_rates': self.topic_class_pub_rates,
                 'tc_pub_dists': self.topic_class_pub_rates,
                 'retx_pubs': self.reliable_publication,
+                'ff_ads': self.topic_class_advertisements_per_ff,
+                'iot_ads': self.topic_class_advertisements_per_iot,
                 # subscriptions
                 'tc_sub_rates': self.topic_class_sub_rates,
                 'tc_sub_dists': self.topic_class_sub_dists,

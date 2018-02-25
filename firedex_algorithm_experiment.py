@@ -35,6 +35,9 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         self.service_rates = []
         self.pub_rates = []
         self.subscriptions = None
+        self.advertisements = None
+
+        # FUTURE: mobility models for FFs / devs?
 
         # update params with any static ones, otherwise the ones generated later need to be updated as we output the file
         # TODO: any static params to update here?
@@ -50,6 +53,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         super(FiredexAlgorithmExperiment, self).setup_experiment()
 
         self.generate_subscriptions()
+        self.generate_advertisements()
 
     def run_experiment(self):
         """Run the algorithm on our current scenario and feed the configuration to a queuing network simulator
@@ -150,6 +154,43 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
 
         self.subscriptions = subs
         return subs
+
+    def generate_advertisements(self):
+        """
+        Generates the topics each publisher will publish to for this scenario configuration.
+        :return: (ff_ads, iot_ads) where ads is a list of lists mapping publisher to its topics advertised
+        """
+
+        # ENHANCE: try to skew ads so that FFs tend to publish to the same topics that IoT devs do not e.g. FF health monitoring
+        # ENHANCE: use lists nested inside dicts instead of two lists of lists?
+
+        ff_ads = []
+        iot_ads = []
+
+        ads_rvs = [RandomVariable.build(dist) for dist in self.topic_class_pub_dists]
+
+        # For each type of publisher e.g. FF or IoT-dev
+        for (num_pubs, tc_num_ads, tc_ads_rvs, ads) in ((self.num_ffs, self.topic_class_advertisements_per_ff, ads_rvs, ff_ads),
+                                                        (self.num_iots, self.topic_class_advertisements_per_iot, ads_rvs, iot_ads)):
+            # generate ads for each publisher
+            for p in range(num_pubs):
+                ads_for_pub = []
+                # based on each topic class distribution/population
+                for tc in range(self.ntopic_classes):
+                    rv = ads_rvs[tc]
+                    # TODO: pull this num from a RV dist rather than assuming it's a constant
+                    num_ads = tc_num_ads[tc]
+                    try:
+                        ads_for_pub.extend(rv.sample(self.topics_for_class(tc), num_ads))
+                    except ValueError as e:
+                        log.error("failed to generate advertisements for class %d due to error: %s" % (tc, e))
+                ads.append(ads_for_pub)
+
+        log.debug("FF advertisements: %s" % ff_ads)
+        log.debug("IoT advertisements: %s" % iot_ads)
+
+        self.advertisements = (ff_ads, iot_ads)
+        return ff_ads, iot_ads
 
     def calculate_service_rate(self, pkt_size, bandwidth=None):
         """
