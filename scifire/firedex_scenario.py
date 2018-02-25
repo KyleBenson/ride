@@ -16,6 +16,12 @@ class FiredexScenario(NetworkChannelState):
     Inherits NetworkChannelState to bring in parameters for bandwidth, latency, etc.
     """
 
+    # Used for control flows to treat these parameters differently.
+    RANDOM_VARIABLE_DISTRIBUTION_PARAMETERS = ('topic_class_data_sizes', 'topic_class_pub_rates', 'topic_class_pub_dists',
+                                               'topic_class_sub_dists')
+    # TODO: add algorithm to this so we can include a seed for non-deterministic algorithms
+    # TODO: how to keep RVs going run-to-run?  maybe just not worry and always do one_run_per_proc... or see ENHANCE in exp.build_rv()
+
     def __init__(self, num_ffs=DEFAULT_NUM_FFS, num_iots=DEFAULT_NUM_IOTS,
                  num_net_flows=DEFAULT_NUM_NET_FLOWS, num_priority_levels=DEFAULT_NUM_PRIORITIES,
                  num_topics=DEFAULT_NUM_TOPICS,
