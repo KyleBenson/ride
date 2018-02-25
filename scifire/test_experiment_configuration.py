@@ -159,6 +159,72 @@ class TestExperimentConfiguration(unittest.TestCase):
                         self.assertEqual(len(c0_ads), exp_num_pub_class_ads[0])
                         self.assertEqual(len(c1_ads), exp_num_pub_class_ads[1])
 
+    def test_simulator_input_file(self):
+        """
+        Ensures the JSON file containing parameters that drive the queuing simulator is correct.
+        Main check to do here is verify the arrival rates are set according to the #publishers on that topic.
+        :return:
+        """
+
+        ntopics = 10
+        class1_weight = 0.5
+        class2_weight = 0.5
+
+        #  TEST 1) rates all 0 when no publisher advertisements
+        (ff_num_ads, iot_num_ads) = [[0,0]]*2
+
+        exp = FiredexAlgorithmExperiment(num_topics=ntopics, topic_class_weights=(class1_weight, class2_weight),
+                                         topic_class_advertisements_per_ff=ff_num_ads,
+                                         topic_class_advertisements_per_iot=iot_num_ads)
+
+        try:
+            exp.setup_experiment()
+        except ValueError as e:
+            self.assertFalse(True, "ERROR generating pubs (#ffpubs=%s, #iotpubs=%s)... error: %s" % (ff_num_ads, iot_num_ads, e))
+
+        lambdas = exp.get_simulator_input_dict()['lambdas']
+
+        for total_rate, topic_rate in zip(lambdas, exp.pub_rates):
+            self.assertEqual(total_rate, 0)
+
+        #  TEST 2) rates all multiplied by npubs when all publishers advertise all topics
+        (ff_num_ads, iot_num_ads) = [[5, 5]]*2
+
+        exp = FiredexAlgorithmExperiment(num_topics=ntopics, topic_class_weights=(class1_weight, class2_weight),
+                                         topic_class_advertisements_per_ff=ff_num_ads,
+                                         topic_class_advertisements_per_iot=iot_num_ads)
+
+        try:
+            exp.setup_experiment()
+        except ValueError as e:
+            self.assertFalse(True, "ERROR generating pubs (#ffpubs=%s, #iotpubs=%s)... error: %s" % (ff_num_ads, iot_num_ads, e))
+
+        lambdas = exp.get_simulator_input_dict()['lambdas']
+
+        for total_rate, topic_rate in zip(lambdas, exp.pub_rates):
+            self.assertAlmostEqual(total_rate, topic_rate * exp.npublishers)  # some round-off error!
+
+        #  TEST 3) as an in between test, have only one topic class advertised
+        (ff_num_ads, iot_num_ads) = [[5, 0], [0, 5]]
+
+        exp = FiredexAlgorithmExperiment(num_topics=ntopics, topic_class_weights=(class1_weight, class2_weight),
+                                         topic_class_advertisements_per_ff=ff_num_ads,
+                                         topic_class_advertisements_per_iot=iot_num_ads)
+
+        try:
+            exp.setup_experiment()
+        except ValueError as e:
+            self.assertFalse(True, "ERROR generating pubs (#ffpubs=%s, #iotpubs=%s)... error: %s" % (
+            ff_num_ads, iot_num_ads, e))
+
+        lambdas = exp.get_simulator_input_dict()['lambdas']
+
+        for total_rate, topic_rate in zip(lambdas[:exp.ntopics_per_class[0]], exp.pub_rates[:exp.ntopics_per_class[0]]):
+            self.assertAlmostEqual(total_rate, topic_rate * exp.num_ffs)  # some round-off error!
+
+        for total_rate, topic_rate in zip(lambdas[exp.ntopics_per_class[0]:], exp.pub_rates[exp.ntopics_per_class[0]:]):
+            self.assertAlmostEqual(total_rate, topic_rate * exp.num_iots)  # some round-off error!
+
 
 if __name__ == '__main__':
     unittest.main()

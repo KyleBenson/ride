@@ -162,6 +162,10 @@ class FiredexScenario(NetworkChannelState):
         prev_topics = sum(self.ntopics_per_class[:class_idx])
         return xrange(prev_topics, prev_topics + self.ntopics_per_class[class_idx])
 
+    @property
+    def npublishers(self):
+        return self.num_ffs + self.num_iots
+
     @classmethod
     def get_arg_parser(cls, parents=(), add_help=False):
         """
@@ -197,7 +201,6 @@ class FiredexScenario(NetworkChannelState):
         # TODO: topic-generation models: who is interested? what's their utility? data rate needed? periodic vs. async?
         # TODO: utility function?
         # TODO: event-generation models (data requests, network changes, and sensed events) and random seeds?
-        # TODO: how to bring in network-related parameters?  Maybe make a NetworkScenario base class?
         # TODO: some notion of time?
 
         return arg_parser

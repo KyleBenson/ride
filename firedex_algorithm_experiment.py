@@ -59,15 +59,12 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         """Run the algorithm on our current scenario and feed the configuration to a queuing network simulator
         to determine its performance under these 'ideal' network settings."""
 
-        # Setup a compact data model of our formulation that's used to configure external queue simulator experiment.
-        cfg = self.get_simulator_input_dict()
-
         # Since we're running the queuing simulator for a static configuration, we just assign the topic priorities statically
         # TODO: replace with run_algorithm()?
         prios = self.get_priorities()
 
-        cfg['priorities'] = prios
-        cfg['subscriptions'] = self.subscriptions
+        # Setup a compact data model of our formulation that's used to configure external queue simulator experiment.
+        cfg = self.get_simulator_input_dict(prios)
 
         # Since we're running an external queuing simulator, make a temporary file for passing experiment configuration
         cfg_file, cfg_filename = tempfile.mkstemp('firedex_sim_cfg', text=True)
@@ -112,18 +109,38 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexScenario):
         assert len(self.service_rates) == self.num_topics
         assert len(self.pub_rates) == self.num_topics
 
-    def get_simulator_input_dict(self):
+    def get_simulator_input_dict(self, priorities=None):
         """
+        Generates a dict that represents the system configuration parameters used for running a queuing network-based
+        simulation experiment.
+
+        NOTE: lambdas are the total (over all publishers) arrival rates at the broker of each topic
+
         :return: a dict of configuration parameters e.g.:
           {
             "lambdas": [topic1_pub_rate, topic2_pub_rate, ...],
             "mus": [topic1_service_rate, topic2_service_rate, ...],
             "error_rate": 0.1,
             "subscriptions": [0, 2, 3, 5],  #currently only for a single subscriber!
+            "priorities": [0, 0, 1, 2, 3],
           }
         """
 
-        return dict(mus=self.service_rates, lambdas=self.pub_rates, error_rate=self.error_rate)
+        # Since the simulator just takes the arrival rates and doesn't actually model publishers, we need to scale the
+        # arrival rates based on the number of publishers on each of those topics i.e. lambda[i] = pub_rate[i]*npubs_on_i
+
+        # NOTE: these must all be floats as the Java queuing simulator's JSON parser has issues casting properly
+        lambdas = {top: 0.0 for top in self.topics}
+        for pub_class_ads in self.advertisements:
+            for pub_ads in pub_class_ads:
+                for topic in pub_ads:
+                    lambdas[topic] += self.pub_rates[topic]
+        lambdas = lambdas.items()
+        lambdas.sort()
+        lambdas = [v for (k,v) in lambdas]
+
+        return dict(mus=self.service_rates, lambdas=lambdas, subscriptions=self.subscriptions,
+                    priorities=priorities, error_rate=self.error_rate)
 
     def generate_subscriptions(self):
         """
