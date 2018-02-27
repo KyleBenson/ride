@@ -6,6 +6,7 @@
 import argparse
 import json
 import os
+import subprocess
 # For working with the temp configuration file
 import tempfile
 
@@ -72,17 +73,25 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         cfg_file, cfg_filename = tempfile.mkstemp('firedex_sim_cfg', text=True)
         with os.fdopen(cfg_file, 'w') as f:
             f.write(json.dumps(cfg))
+        log.debug("temp config filename for simulator: %s" % cfg_filename)
 
-        # TODO: send config to simulator and run it
-        with open(cfg_filename) as f:
-            print "EXPERIMENT RUNNING CONFIG:", f.read()
+        # Generate an output filename for the simulator based on the output filename we're using
+        results_dir, sim_out_fname = os.path.split(self.output_filename)
+        sim_out_fname = "sim_%s.csv" % os.path.splitext(sim_out_fname)[0]
+        sim_out_fname = os.path.join(results_dir, sim_out_fname)
+
+        sim_jar_file = os.path.join('scifire', 'pubsub-prio.jar')
+        if not os.path.exists(sim_jar_file):
+            log.error("cannot find the simulation JAR file! Make sure you download/compile it and put it at %s" % sim_jar_file)
+        cmd = "java -cp %s pubsubpriorities.PubsubV4Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
+        ret_code = subprocess.call(cmd, shell=True)
 
         # Delete the temp file since the configuration is saved in the results anyway
         os.remove(cfg_filename)
 
         #TODO: read results from simulator and feed them into utility functions
 
-        return dict(results="NOT YET IMPLEMENTED!", config=cfg)
+        return dict(results=dict(return_code=ret_code, output_file=sim_out_fname), config=cfg)
 
     def get_simulator_input_dict(self, priorities=None):
         """
@@ -120,7 +129,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
             priorities = [p for t,p in priorities]
 
         return dict(mus=self.service_rates, lambdas=lambdas, subscriptions=self.subscriptions,
-                    priorities=priorities, error_rate=self.error_rate)
+                    priorities=priorities, error_rate=float(self.error_rate))
 
     ####  Boiler-plate helper functions for running experiments
 
