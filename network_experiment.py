@@ -372,14 +372,12 @@ class NetworkExperiment(NetworkChannelState):
 
     @property
     def outputs_dir(self):
-        if self._outputs_dir is None:
-            self.build_outputs_logs_dirs()
+        self.build_outputs_logs_dirs()
         return self._outputs_dir
 
     @property
     def logs_dir(self):
-        if self._logs_dir is None:
-            self.build_outputs_logs_dirs()
+        self.build_outputs_logs_dirs()
         return self._logs_dir
 
 
