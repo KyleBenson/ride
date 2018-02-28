@@ -11,10 +11,12 @@ DEFAULT_TOPIC_CLASS_WEIGHTS = (0.7, 0.3)  # sensor data, async events
 #       all topics; shifts zipf left to include 0 (if you want to not include 0 as the default would do, do e.g. 'args': [2, 0]
 #   uniform generates values in range [args0, args0+args1]
 #   zipf's second arg shifts the distribution, so make sure you do e.g. args=[2, -1] to e.g. allow selecting topic0!
-DEFAULT_TOPIC_CLASS_DATA_SIZES = ({'dist': 'expon', 'args': [100], 'lbound': 1, 'ubound': 10000},
+DEFAULT_TOPIC_CLASS_DATA_SIZES = ({'dist': 'expon', 'args': [20], 'lbound': 1, 'ubound': 10000},
                                   {'dist': 'expon', 'args': [1000], 'lbound': 1, 'ubound': 10000})
-DEFAULT_TOPIC_CLASS_PUB_RATES = ({'dist': 'norm', 'args': [1], 'lbound': 0.01, 'ubound': 100},
-                                 {'dist': 'expon', 'args': [50], 'lbound': 1, 'ubound': 1000})
+# Event Publication rates in 'events/second'
+#   this config varies sensor data between updates every 100ms to every 5 mins, async events much less frequent (500ms to 30mins)
+DEFAULT_TOPIC_CLASS_PUB_RATES = ({'dist': 'norm', 'args': [1], 'lbound': 1.0/300, 'ubound': 10},
+                                 {'dist': 'expon', 'args': [0.2], 'lbound': 1.0/(60*30), 'ubound': 2})
 DEFAULT_TOPIC_CLASS_PUB_DISTS = ({'dist': 'uniform'}, {'dist': 'uniform'})
 # TODO: make these into distributions?
 # TODO: could easily add a third class only for FF data!
@@ -23,6 +25,7 @@ DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_IOT = (2, 0)
 
 DEFAULT_TOPIC_CLASS_SUB_DISTS = ({'dist': 'uniform'}, {'dist': 'uniform'})
 # average portion of topics in that class that a subscriber should request
+# NOTE: make sure these are high enough that we'll actually generate subscriptions!  We round the actual #subs down...
 DEFAULT_TOPIC_CLASS_SUB_RATES = (0.2, 0.5)
 # the IC (FF #0) subscribes to this times many more topics than regular FFs
 # ENHANCE: other skews for the IC?  e.g. all FF-published event topics, more data telemetry than events, etc.?
