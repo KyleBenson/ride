@@ -67,7 +67,25 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         prios = self.algorithm.get_topic_priorities(self)
 
         # Setup a compact data model of our formulation that's used to configure external queue simulator experiment.
-        cfg = self.get_simulator_input_dict(prios)
+        # TODO: refactor this to move ro condition to the analytical model
+        # XXX: need to check ro to ensure queue stability as otherwise simulator can't run!
+        ros_okay = False
+        retries_left = 1000
+        while not ros_okay and retries_left > 0:
+            cfg = self.get_simulator_input_dict(prios)
+            ros = [lam/mu for lam, mu in zip(cfg['lambdas'], cfg['mus'])]
+            # log.info("ROs: %s\nRO total: %f" % (ros, sum(ros)))
+            ros_okay = sum(ros) < 1.0
+            if not ros_okay:
+                self.generate_configuration()
+                retries_left -= 1
+                if retries_left % 100 == 99:
+                    log.info("RO condition not met: regenerating configuration...")
+            else:
+                break
+        else:
+            log.error("failed to generate configuration that satisfies RO condtition after 1000 retries... check params!")
+            return dict(error="bad ros", ros=ros)
 
         # Since we're running an external queuing simulator, make a temporary file for passing experiment configuration
         cfg_file, cfg_filename = tempfile.mkstemp('firedex_sim_cfg', text=True)
