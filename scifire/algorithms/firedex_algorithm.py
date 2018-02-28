@@ -12,7 +12,11 @@ class FiredexAlgorithm(object):
     """
 
     def __init__(self, **kwargs):
-        super(FiredexAlgorithm, self).__init__(**kwargs)
+        # XXX: multiple inheritance
+        try:
+            super(FiredexAlgorithm, self).__init__(**kwargs)
+        except TypeError:
+            super(FiredexAlgorithm, self).__init__()
 
         # these are filled in by _run_algorithm()
         self._topic_flow_map = dict()
