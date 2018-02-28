@@ -94,14 +94,16 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         log.debug("temp config filename for simulator: %s" % cfg_filename)
 
         # Generate an output filename for the simulator based on the output filename we're using
-        results_dir, sim_out_fname = os.path.split(self.output_filename)
-        sim_out_fname = "sim_%s.csv" % os.path.splitext(sim_out_fname)[0]
-        sim_out_fname = os.path.join(results_dir, sim_out_fname)
+        sim_out_fname = os.path.join(self.outputs_dir, "sim_output.csv")
 
         sim_jar_file = os.path.join('scifire', 'pubsub-prio.jar')
         if not os.path.exists(sim_jar_file):
             log.error("cannot find the simulation JAR file! Make sure you download/compile it and put it at %s" % sim_jar_file)
         cmd = "java -cp %s pubsubpriorities.PubsubV4Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
+
+        # redirect to log files so if we run multiple sims in parallel via run.py they don't overlap; also can view it later now
+        cmd = self.redirect_output_to_log(cmd, "sim_stdout.log")
+
         ret_code = subprocess.call(cmd, shell=True)
 
         # Delete the temp file since the configuration is saved in the results anyway
@@ -109,7 +111,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         #TODO: read results from simulator and feed them into utility functions
 
-        return dict(results=dict(return_code=ret_code, output_file=sim_out_fname), config=cfg)
+        return dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname)
 
     def get_simulator_input_dict(self, priorities=None):
         """
