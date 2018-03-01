@@ -71,11 +71,11 @@ EXPERIMENTAL_TREATMENTS = {
     'num_priority_levels': nprios,
     'error_rate': errs,
     'bandwidth': bandwidths,
-    'algorithm': algs,
+    # 'algorithm': algs,
     ## NOTE: the rest of these parameter explorations do not have the parameter included in the default output_filename
-    'topic_dists': [{'num_topics': t, 'num_ffs': f, 'num_iots': f*2, 'topic_class_sub_dists': sub_dist,
-                     'output_filename': 'results_%dt_%df_sub-%s.json' % (t, f, sub_dist[0]['dist'])}\
-                    for t in ntopics for f in nffs for sub_dist in sub_dists]
+    # 'topic_dists': [{'num_topics': t, 'num_ffs': f, 'num_iots': f*2, 'topic_class_sub_dists': sub_dist,
+    #                  'output_filename': 'results_%dt_%df_sub-%s.json' % (t, f, sub_dist[0]['dist'])}\
+    #                 for t in ntopics for f in nffs for sub_dist in sub_dists]
     # TODO: subscriptions/utilities, advertisements(publications), pub rates/sizes, topic classes?
 }
 
