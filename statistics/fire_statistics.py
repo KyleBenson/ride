@@ -2,12 +2,92 @@
 
 from network_experiment_statistics import NetworkExperimentStatistics
 from scale_client.stats.parsed_sensed_events import ParsedSensedEvents
+import pandas as pd
+
+import logging
+log = logging.getLogger(__name__)
 
 
 class FireStatistics(NetworkExperimentStatistics):
     """Output parser and statistics analyzer for the SciFire structure fire scenario."""
 
-    # TODO: varied_params, choose_parser?
+    @property
+    def varied_params(self):
+        vp = super(FireStatistics, self).varied_params
+
+        more_vp = {
+            ### keep these after we average across runs
+            "algorithm",
+            ## these are data points!  explicitly added from e.g. params
+            "topic",
+            "prio",
+            ## these should stay as ints, not get averaged into floats!
+            "nprios", "nffs", "niots", "nflows", "ntopics",
+        }
+        vp.update(more_vp)
+        return vp
+
+    # XXX: instead of two different classes, just explicitly checking exp_type
+    def is_mininet(self, **params):
+        return params.get('exp_type', 'sim') == 'mininet'
+
+    def choose_parser(self, filename, **params):
+
+        if filename.endswith('.csv'):
+            def CsvParser(results_str, **params):
+                df = pd.read_csv(filename, names=('delay', 'rcv_rate'))
+
+                # to track subscriptions to topics, create a bit vector and add that as a column
+                subs = params.pop('subscriptions')
+                subs_vec = [0] * params['ntopics']
+                for sub in subs:
+                    subs_vec[sub] = 1
+                df['subd'] = subs_vec
+
+                # store all the parameters as columns
+                for k, v in params.items():
+                    try:
+                        df[k] = v
+                    # Skip anything that's not a constant or the same length as #topics
+                    except ValueError as e:
+                        pass
+                    # XXX: basic attempt to bring in columns that include things like topic classes, distributions, etc.
+                        try:
+                            df[k] = str(v)
+                        except BaseException as e2:
+                            log.warning('failed to add col %s: %s\nError1: %s\nError2: %s' % (k, v, e, e2))
+
+                # Need to scale rcv_rate by the lambdas since the value in the .csv is just a proportion in [0,1]
+                df['rcv_lams'] = df.rcv_rate * df.lams
+
+                # XXX: need to set the index to be topic ID so each new parser we bring in will match up the topics
+                df = df.reset_index().rename(columns=dict(index='topic'))
+
+                return df
+
+            return CsvParser
+
+        else:
+            raise ValueError("unrecognized output file type (expected .csv) for filename: %s" % filename)
+
+    def extract_run_params(self, run_results, filename, **exp_params):
+        exp_params = super(FireStatistics, self).extract_run_params(run_results, filename, **exp_params)
+
+        if run_results['return_code'] != 0:
+            log.warning("skipping run %d from results file %s with non-0 return code..." % (exp_params['run'], filename))
+
+        exp_params['prio'] = run_results['sim_config']['priorities']
+        exp_params['subscriptions'] = run_results['sim_config']['subscriptions']
+
+        # get actual per-run lambda values (based on # publishers on each topic) rather than per-topic ones
+        exp_params['lams'] = run_results['sim_config']['lambdas']
+        exp_params['mus'] = run_results['sim_config']['mus']
+
+        # incorporate our analytical model
+        exp_params['exp_delay'] = run_results['exp_srv_delay']
+        exp_params['exp_rcv'] = run_results['exp_delivery']
+
+        return exp_params
 
     def collate_outputs_results(self, *results):
         """
@@ -17,30 +97,98 @@ class FireStatistics(NetworkExperimentStatistics):
         :return:
         """
 
-        # XXX: for now, let's just keep the broker results so we can extract latencies
-        results = [r for r in results if 'time_rcvd' in r]
         results = super(FireStatistics, self).collate_outputs_results(*results)
 
-        # rename some columns
-        results.rename_columns(value='seq')
-
-        self.calc_latencies(results)
+        # TODO: used for mininet version when we start it up again
+        # XXX: for now, let's just keep the broker results so we can extract latencies
+        # results = [r for r in results if 'time_rcvd' in r]
+        # results = super(FireStatistics, self).collate_outputs_results(*results)
+        #
+        # # rename some columns
+        # results.rename_columns(value='seq')
+        #
+        # self.calc_latencies(results)
         return results
 
+    @property
+    def param_col_map(self):
+        m = dict(num_fire_fighters='nffs', num_iot_devices='niots', num_priority_levels='nprios',
+                 num_net_flows='nflows', num_topics='ntops', topic_class_weights='tc_weights',
+                 topic_class_data_sizes='tc_sizes', topic_class_pub_rates='tc_pub_rates', topic_class_pub_dists='tc_pub_dists',
+                 topic_class_advertisements_per_ff='tc_ff_ads', topic_class_advertisements_per_iot='tc_iot_ads',
+                 topic_class_sub_dists='tc_sub_dists', topic_class_sub_rates='tc_sub_rates',
+                 ic_sub_rate_factor='ic_sub_rate', topic_class_sub_start_times='tc_sub_start',
+                 topic_class_sub_durations='tc_sub_time', reliable_publication='tc_pub_retx'
+                 )
+        m.update(super(FireStatistics, self).param_col_map)
+        return m
+
     def extract_parameters(self, exp_params):
+        """
+        Splits each of the topic class parameters into nclasses different params (i.e. columns).
+        :param exp_params:
+        :type exp_params: dict
+        :return: dict of extracted params
+        """
+
         exp_params = super(FireStatistics, self).extract_parameters(exp_params)
 
-        # Shorten some of our scenario-specific params
-        exp_params['nffs'] = exp_params.pop("num_fire_fighters")
-        exp_params['niots'] = exp_params.pop("num_iot_devices")
+        for k,v in exp_params.items():
+            # TODO: splits into nclasses different columns as opposed to just dropping
+            # ENHANCE: could also convert them to strings, find differences, and just keep those so as to get rid of e.g. {'dist': ...
+            if k.startswith('tc_'):
+                del exp_params[k]
+            # TODO: probably bring at least ads back in? if we vary it...
+            elif 'subs' in k or 'ads' in k:
+                del exp_params[k]
 
         return exp_params
+
+    # We should also average over topics
+    def plot(self, x, y, groupby=None, average_over=('run', 'topic'), stats=None, **kwargs):
+        super(FireStatistics, self).plot(x, y, groupby=groupby, average_over=average_over, stats=stats, **kwargs)
+
 
 if __name__ == '__main__':
     stats = FireStatistics.main()
 
     # now you can do something with the stats to e.g. get your own custom experiment results
     final_stats = stats.stats
+
+    # drop topics with no subscription OR advertisement (i.e. pub rate is 0)
+    final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
+
+    # TODO: calculate_utilities()
+
+    ####   SIMULATION RESULTS
+
+    ## Show that bandwidth affects delay
+    # stats.plot(x='bw', y='delay', groupby='prio', stats=final_stats)
+
+    ## Show that lower priority topics have increased delay
+    # stats.plot(x='prio', y='delay', groupby='nprios')
+
+    ## Show that error rate results in lower delivery rate
+    # stats.plot(x='loss', y=['rcv_lams', 'rcv_rate'], stats=final_stats, average_over=('run', 'topic', 'prio'))
+    # this one shows the curve perfectly as expected:
+    # stats.plot(x='loss', y='rcv_rate', stats=final_stats, average_over=('run', 'topic', 'prio'))
+    ## this one sometimes looks wonky due to randomness of lambdas
+    # stats.plot(x='loss', y='rcv_lams', stats=final_stats, average_over=('run', 'topic', 'prio'))
+
+
+    ####    ANALYTICAL MODEL  vs.   SIM RESULTS
+
+    ## error rate affects delivery
+    stats.plot(x='loss', y=['rcv_lams', 'exp_rcv'], stats=final_stats, average_over=('run', 'topic', 'prio'))
+
+    ## Show that bandwidth affects delay
+    # stats.plot(x='bw', y=['delay', 'exp_delay'], average_over=('run', 'topic', 'prio'), stats=final_stats)
+
+    ## Show that lower priority topics have increased delay
+    # stats.plot(x='prio', y=['delay', 'exp_delay'], groupby='nprios', stats=final_stats)
+
+    ###   Explicitly save results to file
+    # stats.config.output_file = "out.csv"
 
     if stats.config.output_file:
         stats.output_stats(stats=final_stats)
