@@ -24,7 +24,7 @@ from scifire.algorithms import ALL_ALGORITHMS
 # when True, this flag causes run.py to only print out the commands rather than run them each
 # testing = True
 testing = False
-debug_level = 'debug'  # for the actual experiment
+debug_level = 'info'  # for the actual experiment
 # debug_level = 'warn'
 verbose = True
 print_cmd = True
@@ -51,6 +51,7 @@ nprios = [1, 3, 6, 9]  # 1 means no priorities!
 errs = [0, 0.001, 0.01, 0.1]
 nffs = [3, 6, 12, 18]
 sub_dists = (({'dist': 'uniform'}, {'dist': 'uniform'}), ({'dist': 'zipf', 'args': [2]}, {'dist': 'zipf', 'args': [2]}))
+bandwidths = [10, 100, 1000]  # in Mbps
 algs = ALL_ALGORITHMS
 # NOTE: if a parameter is a dict (e.g. single RV dist. or alg.), you need to wrap it in a dict keyed by its parameter
 # name so that the runner doesn't treat it as a collection of parameters but a single parameter!
@@ -64,14 +65,18 @@ algs = ALL_ALGORITHMS
 EXPERIMENTAL_TREATMENTS = {
     ## this is a good setup for testing that most things are working okay
     # 'num_topics': ntopics,
+    ## this is for explicitly forcing just a single run to quickly test the simulator itself
+    # 'testing': [{'bandwidth': 100, 'nruns': 1}],
+    ## Actual varied parameter explorations:
     'num_priority_levels': nprios,
     'error_rate': errs,
+    'bandwidth': bandwidths,
     'algorithm': algs,
     ## NOTE: the rest of these parameter explorations do not have the parameter included in the default output_filename
     'topic_dists': [{'num_topics': t, 'num_ffs': f, 'num_iots': f*2, 'topic_class_sub_dists': sub_dist,
                      'output_filename': 'results_%dt_%df_sub-%s.json' % (t, f, sub_dist[0]['dist'])}\
                     for t in ntopics for f in nffs for sub_dist in sub_dists]
-    # TODO: BW, subscriptions/utilities, advertisements(publications), pub rates/sizes, topic classes?
+    # TODO: subscriptions/utilities, advertisements(publications), pub rates/sizes, topic classes?
 }
 
 # these aren't passed to the experiment class
