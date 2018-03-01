@@ -1,13 +1,19 @@
-import logging
 import os
-
-log = logging.getLogger(__name__)
-
 import pandas as pd
 import parse
 import json
 
 from scale_client.stats.statistics import ScaleStatistics
+
+import logging
+log = logging.getLogger(__name__)
+
+try:
+    import matplotlib.pyplot as plt
+except ImportError as e:
+    log.error("failed to import pyplot: don't call plotting functions! Error: %s" % e)
+    plt = None
+
 
 class NetworkExperimentStatistics(ScaleStatistics):
     """Parse the results.json-style output files from a NetworkExperiment, possibly by parsing the output files specified
@@ -15,12 +21,29 @@ class NetworkExperimentStatistics(ScaleStatistics):
     of various statistics e.g. message delivery rate, latency, etc."""
 
     ### Helper funcs you'll likely want to override
+
     @property
     def varied_params(self):
         """Returns a set of the parameter names (post-extract_parameters()) that may be varied in different
         experimental treatments.  This is used predominately for average_over_runs() to know which columns we should
         group by and not drop after averaging over the 'run' column."""
-        return {'error_rate', 'bw', 'delay', 'jitter', 'exp_type'}
+        # TODO: figure out how to do this based on the NetworkExperiment / NetworkChannelState objects???
+        return {'loss', 'bw', 'lat', 'jitter', 'exp_type'}
+
+    @property
+    def param_col_map(self):
+        """
+        Returns a dict mapping full parameter names to shorter column names that make viewing the DataFrame extracted
+        from the results easier.  Mostly this is just used by extract_parameters()
+        :return:
+        """
+
+        # WARNING: latency/delay may end up being used as a column if you calculate e.g. event-delivery delay
+        # Similarly, loss could be used for something like propagation_loss in the future...
+        return dict(error_rate='loss', experiment_type='exp_type', bandwidth='bw', latency='lat')
+
+    # TODO: probably also want to do a drop_param() (not property as can do some easy pattern matching)
+    # so we can cut out columns that don't go into DataFrames well.
 
     def collate_outputs_results(self, *results):
         """Combines the parsed results from an outputs_dir into a single DataFrame.  By default just uses _collate_results()"""
@@ -41,6 +64,10 @@ class NetworkExperimentStatistics(ScaleStatistics):
 
         return treatment
 
+    # NOTE: you'll probably also need to override the choose_parser() function
+
+    ### Helper functions that should be well-suited to most NetworkExperiments
+
     def extract_parameters(self, exp_params):
         """
         Extracts the relevant parameters from the specified ones, possibly changing some of their names to a shorter or
@@ -50,22 +77,24 @@ class NetworkExperimentStatistics(ScaleStatistics):
         :return: dict of extracted params
         """
 
-        exp_params['exp_type'] = exp_params.pop("experiment_type", None)
-        exp_params['bw'] = exp_params.pop("bandwidth")
-        # convert this one since we might calculate event-delivery latency, which would conflict as a column
-        exp_params['delay'] = exp_params.pop("latency")
+        # XXX: this function should only be run once per extracted exp_params dict as it directly modifies it and will
+        # generate warnings if you run it again.
+        exp_params = exp_params.copy()
+
+        for k, v in self.param_col_map.items():
+            if v not in exp_params:
+                exp_params[v] = exp_params.pop(k, None)
+            ## Actually, this should be fine as we already store some of the params in a shortened form
+            # else:
+            #     log.warning("shorter column name %s already appears in exp_params! skipping it..." % v)
 
         # XXX: clear any null params e.g. unspecified random seeds (do this last in case anything above set None values)
-        for k,v in exp_params.items():
+        for k, v in exp_params.items():
             if v is None:
                 log.debug("deleting null parameter: %s" % k)
                 del exp_params[k]
 
         return exp_params
-
-    # NOTE: you'll probably also need to override the choose_parser() function
-
-    ### Helper functions that should be well-suited to most NetworkExperiments
 
     def extract_stats_from_results(self, results, filename, **exp_params):
         """
@@ -85,16 +114,30 @@ class NetworkExperimentStatistics(ScaleStatistics):
 
         # The outputs_dir is specified relative to the results file we're currently processing
         this_path = os.path.dirname(filename)
-        dirs_to_parse = [os.path.join(this_path, run['outputs_dir']) for run in results]
+        dirs_to_parse = [(os.path.join(this_path, run['outputs_dir']), run) for run in results]
 
         # parse each dir and combine all the parsed results into a single data frame
         stats = []
-        for d in dirs_to_parse:
-            o = self.parse_outputs_dir(d, treatment=treatment, **exp_params)
+        for d, r in dirs_to_parse:
+            this_run_params = self.extract_run_params(r, filename, **exp_params)
+            o = self.parse_outputs_dir(d, treatment=treatment, **this_run_params)
             stats.append(o)
         stats = self.merge_all(*stats)
 
         return stats
+
+    def extract_run_params(self, run_results, filename, **exp_params):
+        """
+        Extracts any relevant per-run parameters and includes them in the returned modified version of the specified
+        experiment parameters.  Base implementation just saves the run number ('run').
+
+        :param run_results:
+        :param filename:
+        :param exp_params:
+        :return:
+        """
+        exp_params['run'] = run_results['run']
+        return exp_params
 
     def parse_results(self, results, filename, **params):
         """
@@ -134,8 +177,8 @@ class NetworkExperimentStatistics(ScaleStatistics):
         res = []
         for fname in os.listdir(out_dir):
             # need to determine how to parse this file before we can do it
-            parser = self.choose_parser(fname, treatment=treatment, **params)
             fname = os.path.join(out_dir, fname)
+            parser = self.choose_parser(fname, treatment=treatment, **params)
 
             data = self.read_file(fname)
 
@@ -147,16 +190,59 @@ class NetworkExperimentStatistics(ScaleStatistics):
         res = self.collate_outputs_results(*res)
         return res
 
-    def average_over_runs(self, df):
+    def average_over_runs(self, df, column_to_drop='run'):
         """
         Averages the given DataFrame's values over all the runs for each unique treatment grouping.
+
+        NOTE: you can also use this function (or its alias) to average over and drop a different column.
+
         :type df: pd.DataFrame
+        :param column_to_drop: averages all other non-treatment columns over this one and drops it (default='run')
+        :rtype: pd.DataFrame
         """
         # XXX: need to ensure we have all these parameters available
         cols = set(df.columns.tolist())
-        group_params = list(cols.intersection(self.varied_params))
+        group_params = cols.intersection(self.varied_params)
+        group_params.discard(column_to_drop)
+        group_params = list(group_params)
 
-        return df.groupby(group_params).mean().reset_index().drop('run', axis=1)
+        return df.groupby(group_params).mean().reset_index().drop(column_to_drop, axis=1)
+    average_over_column = average_over_runs
+
+    def plot(self, x, y, groupby=None, average_over=('run',), stats=None, **kwargs):
+        """
+        Plots the given column names of the specified stats DataFrame (self.stats by default)
+        :param x:
+        :param y: specify a list of column names to plot multiple curves
+        :param groupby: group DF by this column and plot each group as a subplot
+        :param average_over: average over all these parameters and drop them first
+        :type average_over: iterable
+        :param stats:
+        :param kwargs: passed to DataFrame.plot()
+        :return:
+        """
+
+        if not plt:
+            log.error("pyplot wasn't imported!  skipping over plot...")
+
+        if stats is None:
+            stats = self.stats
+
+        for col in average_over:
+            stats = self.average_over_column(stats, column_to_drop=col)
+
+        log.info("Plotting stats:\n%s" % stats)
+
+        if groupby:
+            fig, ax = plt.subplots()
+            for g, df in stats.groupby(groupby):
+                ax = df.plot(x=x, y=y, label="%s=%s" % (groupby, g), ax=ax, **kwargs)
+        else:
+            stats.plot(x=x, y=y, **kwargs)
+
+        plt.xlabel(x)
+        plt.ylabel(y)
+        plt.show()
 
     def __iadd__(self, other):
         self.stats = pd.concat((self.stats, other.stats), ignore_index=True)
