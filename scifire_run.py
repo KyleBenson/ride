@@ -1,5 +1,6 @@
-#!/usr/bin/python -O
-# -O flag turns off assertions
+#!/usr/bin/env python
+# need above to support virtualenv and simple command './run.py'
+# to turn off assertions, enable optimized python by instead explicitly calling 'python -OO run.py'
 
 """
 This script runs a whole batch of experiments in multiple processes
