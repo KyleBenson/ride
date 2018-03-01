@@ -73,12 +73,18 @@ class FiredexConfiguration(FiredexScenario):
             rv = self.build_sampling_random_variable(rv, len(self.topics_for_class(class_idx)))
             ntopics = int(class_topic_rate * self.ntopics_per_class[class_idx])
             try:
-                class_subs = rv.sample(self.topics_for_class(class_idx), ntopics)
+                # XXX: even if config looks okay, IC might request too many topics for a class
+                tops_to_choose = min(self.ntopics_per_class[class_idx], ntopics)
+                class_subs = rv.sample(self.topics_for_class(class_idx), tops_to_choose)
                 subs.extend(class_subs)
             except ValueError as e:
                 log.error("failed to generate topics for class %d due to error: %s" % (class_idx, e))
 
         self.subscriptions = subs
+        if not self.subscriptions:
+            log.error("failed to generate any subscriptions!  Check your topic_class_sub_<rates|dists> !!")
+        else:
+            log.debug("topic subscriptions: %s" % self.subscriptions)
         return subs
 
     def generate_advertisements(self):
