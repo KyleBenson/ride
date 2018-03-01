@@ -62,20 +62,13 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         """Run the algorithm on our current scenario and feed the configuration to a queuing network simulator
         to determine its performance under these 'ideal' network settings."""
 
-        # Since we're running the queuing simulator for a static configuration, we just assign the topic priorities statically
-        # NOTE: since the exp class IS a config class, just pass self and the alg can ignore exp-specific parts
-        prios = self.algorithm.get_topic_priorities(self)
-
         # Setup a compact data model of our formulation that's used to configure external queue simulator experiment.
         # TODO: refactor this to move ro condition to the analytical model
         # XXX: need to check ro to ensure queue stability as otherwise simulator can't run!
         ros_okay = False
         retries_left = 1000
         while not ros_okay and retries_left > 0:
-            cfg = self.get_simulator_input_dict(prios)
-            ros = [lam/mu for lam, mu in zip(cfg['lambdas'], cfg['mus'])]
-            # log.info("ROs: %s\nRO total: %f" % (ros, sum(ros)))
-            ros_okay = sum(ros) < 1.0
+            ros_okay = self.algorithm.ros_okay(self)
             if not ros_okay:
                 self.generate_configuration()
                 retries_left -= 1
@@ -85,7 +78,13 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
                 break
         else:
             log.error("failed to generate configuration that satisfies RO condtition after 1000 retries... check params!")
-            return dict(error="bad ros", ros=ros)
+            return dict(error="bad ros", ros=self.algorithm.get_ros(self))
+
+        # Now that we have a good configuration, we can proceed with experiments:
+        # Since we're running the queuing simulator for a static configuration, we just assign the topic priorities statically
+        # NOTE: since the exp class IS a config class, just pass self and the alg can ignore exp-specific parts
+        prios = self.algorithm.get_topic_priorities(self)
+        cfg = self.get_simulator_input_dict(prios)
 
         # Since we're running an external queuing simulator, make a temporary file for passing experiment configuration
         cfg_file, cfg_filename = tempfile.mkstemp('firedex_sim_cfg', text=True)
@@ -109,9 +108,17 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         # Delete the temp file since the configuration is saved in the results anyway
         os.remove(cfg_filename)
 
+        # Calculate the expected performance using the analytical model in order to determine its accuracy
+        expected_service_delays = self.algorithm.service_delays(self)
+        expected_total_delays = self.algorithm.total_delays(self)
+        expected_delivery_rates = self.algorithm.delivery_rates(self)
+
         #TODO: read results from simulator and feed them into utility functions
 
-        return dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname)
+        result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,
+                      exp_srv_delay=expected_service_delays, exp_total_delay= expected_total_delays,
+                      exp_delivery=expected_delivery_rates)
+        return result
 
     def get_simulator_input_dict(self, priorities=None):
         """
@@ -120,6 +127,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         NOTE: lambdas are the total (over all publishers) arrival rates at the broker of each topic
 
+        :param priorities: priority mapping taken from algorithm.get_topic_priorities() (default=None)
         :return: a dict of configuration parameters e.g.:
           {
             "lambdas": [topic1_pub_rate, topic2_pub_rate, ...],
@@ -132,16 +140,8 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         # Since the simulator just takes the arrival rates and doesn't actually model publishers, we need to scale the
         # arrival rates based on the number of publishers on each of those topics i.e. lambda[i] = pub_rate[i]*npubs_on_i
-
         # NOTE: these must all be floats as the Java queuing simulator's JSON parser has issues casting properly
-        lambdas = {top: 0.0 for top in self.topics}
-        for pub_class_ads in self.advertisements:
-            for pub_ads in pub_class_ads:
-                for topic in pub_ads:
-                    lambdas[topic] += self.pub_rates[topic]
-        lambdas = lambdas.items()
-        lambdas.sort()
-        lambdas = [v for (k,v) in lambdas]
+        lambdas = self.algorithm.broker_arrival_rates(self)
 
         # priorities expected just as a list enumerating the priority class of each topic in order
         if priorities is not None:
