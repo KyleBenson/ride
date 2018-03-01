@@ -9,6 +9,9 @@ class FiredexAlgorithm(object):
     Abstract base class for assigning topic priorities (i.e. topic-> net flow -> prio mappings) according to the current
     (estimated or theoretical) system configuration/state. Derived classes will share the same analytical model that
     uses our queuing network model, but will calculate the mappings differently.
+
+    Note that these mappings are stored in this class as state and will only be updated for a given configuration if
+    explicitly requested!
     """
 
     def __init__(self, **kwargs):
@@ -17,6 +20,9 @@ class FiredexAlgorithm(object):
             super(FiredexAlgorithm, self).__init__(**kwargs)
         except TypeError:
             super(FiredexAlgorithm, self).__init__()
+
+        # NOTE: we maintain a set of mappings and other state for each configuration being managed (i.e. broker and its
+        # network ) AND for each subscriber connected with that broker.
 
         # these are filled in by _run_algorithm()
         self._topic_flow_map = dict()
@@ -215,31 +221,48 @@ class FiredexAlgorithm(object):
 
     ### Priority setting functions
 
-    def set_topic_net_flow(self, topic, net_flow, subscriber=None):
+    # TODO: consolidate_subscriber_flows=True as a param to the setters should ignore the specified subscriber and
+    # set the flows/priorities for specified topics the same across all subscribers!  This might be used in a real
+    # implementation in order to limit the number of OpenFlow flow rules used for prioritization
+
+    def set_topic_net_flow(self, topic, net_flow, configuration, subscriber=None):
         """
         Set the network flow to be used for the given topic when forwarded to the specified subscriber.  Not specifying
-        subscriber sets this flow for ALL subscribers.
+        subscriber sets this flow for ALL subscribers in the given configuration.
         :param topic:
         :param net_flow:
+        :param configuration:
+        :type configuration: FiredexConfiguration
         :param subscriber: defaults to all subscribers
         :return:
         """
 
-        # TODO: handle multiple (Specific) subscribers!
-        if subscriber is not None:
-            log.error("set_topic_net_flow for a specific subscriber not yet supported!")
+        if subscriber is None:
+            subscribers = configuration.subscribers
+        else:
+            subscribers = [subscriber]
 
-        self._topic_flow_map[topic] = net_flow
+        for sub in subscribers:
+            self._topic_flow_map.setdefault(configuration, dict()).setdefault(sub, dict())[topic] = net_flow
 
-    def set_net_flow_priority(self, net_flow, priority, subscriber=None):
+    def set_net_flow_priority(self, net_flow, priority, configuration, subscriber=None):
         """
         Set the priority class for the given network flow.
         :param net_flow:
         :param priority:
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :param subscriber: defaults to all subscribers
         :return:
         """
 
-        self._flow_prio_map[net_flow] = priority
+        if subscriber is None:
+            subscribers = configuration.subscribers
+        else:
+            subscribers = [subscriber]
+
+        for sub in subscribers:
+            self._flow_prio_map.setdefault(configuration, dict()).setdefault(sub, dict())[net_flow] = priority
 
     def get_topic_priorities(self, configuration, subscriber=None):
         """
@@ -249,15 +272,18 @@ class FiredexAlgorithm(object):
 
         :param configuration:
         :type configuration: FiredexConfiguration
+        :param subscriber: which subscriber priorities being requested (default=arbitrarily pick one, which assumes
+            the values were set across all subscribers)
         :return: mapping of topic IDs to priority classes
         :rtype: dict
         """
 
-        if self._update_needed(configuration):
-            self._run_algorithm(configuration)
+        if self._update_needed(configuration, subscriber):
+            self._run_algorithm(configuration, subscriber)
 
-        topic_flow_map = self.get_topic_net_flows(configuration)
-        flow_prio_map = self.get_net_flow_priorities(configuration)
+        topic_flow_map = self.get_topic_net_flows(configuration, subscriber)
+        flow_prio_map = self.get_net_flow_priorities(configuration, subscriber)
+
         topic_prio_map = {t: flow_prio_map[f] for t, f in topic_flow_map.items()}
         return topic_prio_map
 
@@ -266,47 +292,99 @@ class FiredexAlgorithm(object):
         Runs the algorithm to assign topics to network flows based on current configuration state.
         :param configuration:
         :type configuration: FiredexConfiguration
+        :param subscriber: which subscriber net flows being requested (default=arbitrarily pick one, which assumes
+            the values were set across all subscribers)
         :return: mapping of topic IDs to network flow IDs
         :rtype: dict
         """
 
-        if self._update_needed(configuration):
-            self._run_algorithm(configuration)
-        return self._topic_flow_map
+        if self._update_needed(configuration, subscriber):
+            self._run_algorithm(configuration, subscriber)
+        if subscriber is None:
+            # arbitrary subscriber from underlying mapping
+            return next(self._topic_flow_map[configuration].itervalues())
+        else:
+            return self._topic_flow_map[configuration][subscriber]
 
     def get_net_flow_priorities(self, configuration, subscriber=None):
         """
         Runs the algorithm to assign network flows to priority levels based on current configuration state.
         :param configuration:
         :type configuration: FiredexConfiguration
+        :param subscriber: which subscriber priorities being requested (default=arbitrarily pick one, which assumes
+            the values were set across all subscribers)
         :return: mapping of network flow IDs to priority classes
         :rtype: dict
         """
 
-        if self._update_needed(configuration):
-            self._run_algorithm(configuration)
-        return self._flow_prio_map
+        if self._update_needed(configuration, subscriber):
+            self._run_algorithm(configuration, subscriber)
+        if subscriber is None:
+            # arbitrary subscriber from underlying mapping
+            return next(self._flow_prio_map[configuration].itervalues())
+        else:
+            return self._flow_prio_map[configuration][subscriber]
+
+    def force_update(self, configuration=None, subscribers=None):
+        """
+        Forces the algorithm to update the management (e.g. priorities) for certain configurations/subscribers.
+        :param configuration: which configuration should be updated (default=all configs, which ignores subscribers arg)
+        :type configuration: FiredexConfiguration
+        :param subscribers: which subscribers for that configuration should be updated (default=all subscribers)
+        """
+
+        # to blow away all configurations, just reset everything
+        if configuration is None:
+            self._topic_flow_map = dict()
+            self._flow_prio_map = dict()
+
+        # for a specific configuration, just delete it IF IT EXISTS
+        elif subscribers is None:
+            self._topic_flow_map.pop(configuration, None)
+            self._flow_prio_map.pop(configuration, None)
+
+        # otherwise, carefully pop off each subscriber for the configuration (again, IF IT EXISTS)
+        else:
+            for subscriber in subscribers:
+                self._topic_flow_map.get(configuration, dict()).pop(subscriber, None)
+                self._flow_prio_map.get(configuration, dict()).pop(subscriber, None)
 
     ### Override these as necessary in derived algorithm classes
 
-    def _run_algorithm(self, configuration):
+    def _run_algorithm(self, configuration, subscribers=None):
         """
         Runs the algorithm to assign network flows to priority levels based on current configuration state.
         :param configuration:
         :type configuration: FiredexConfiguration
+        :param subscribers: which subscribers should have their priority levels assigned (default=None=all subscribers)
         """
+
+        # NOTE: do this in derived class implementations to ensure you set the priorities for all subscribers!
+        if subscribers is None:
+            subscribers = configuration.subscribers
 
         raise NotImplementedError
 
-    def _update_needed(self, configuration):
+    def _update_needed(self, configuration, subscriber=None):
         """
         Determines if an update is needed for the given configuration.  If the algorithm hasn't been run yet, this
-        should return True.  This default base class implementation ALWAYS returns True so base classes should
-        override it especially for actual system implementations.
+        should return True.  This default base class implementation returns True if this config/sub has not been
+        seen yet.  Hence, the calling class should precede this call with one to force_update(configuration) if the
+        configuration has changed or enough time has passed! Base classes should probably override this method
+        especially for actual system implementations to consider e.g. overhead of updating priorities.
 
         :param configuration:
         :type configuration: FiredexConfiguration
+        :param subscriber: which subscriber may need updates (default=all subscribers)
         :return: True if the caller should do _run_algorithm(...) before proceeding
         :rtype: bool
         """
-        return True
+
+        # when we're checking all subscribers, need to make sure they're ALL present!
+        if subscriber is None:
+            subs = configuration.subscribers
+        else:
+            subs = [subscriber]
+
+        update = configuration not in self._topic_flow_map or any(s not in self._topic_flow_map[configuration] for s in subs)
+        return update

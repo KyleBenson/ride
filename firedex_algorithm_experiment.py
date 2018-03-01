@@ -83,6 +83,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         # Now that we have a good configuration, we can proceed with experiments:
         # Since we're running the queuing simulator for a static configuration, we just assign the topic priorities statically
         # NOTE: since the exp class IS a config class, just pass self and the alg can ignore exp-specific parts
+        self.algorithm.force_update()  # for multiple runs
         prios = self.algorithm.get_topic_priorities(self)
         cfg = self.get_simulator_input_dict(prios)
 
