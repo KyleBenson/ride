@@ -172,6 +172,21 @@ class FiredexScenario(NetworkChannelState):
     def npublishers(self):
         return self.num_ffs + self.num_iots
 
+    @property
+    def publishers(self):
+        # ENHANCE: explicitly label IC?
+        ffs = ["ff%d" % i for i in range(self.num_ffs)]
+        iots = ["iot%d" % i for i in range(self.num_iots)]
+        return ffs + iots
+
+    @property
+    def nsubscribers(self):
+        return self.npublishers
+
+    @property
+    def subscribers(self):
+        return self.publishers
+
     @classmethod
     def get_arg_parser(cls, parents=(), add_help=False):
         """
