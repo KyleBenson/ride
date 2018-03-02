@@ -50,7 +50,7 @@ class NetworkChannelState(object):
 
         if bw is None:
             bw = self.bandwidth
-        return bw * 1000 / 8.0  # originally Mbps
+        return bw * 1000000 / 8.0  # originally Mbps
 
 
 class NetworkExperiment(NetworkChannelState):
