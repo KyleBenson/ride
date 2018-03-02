@@ -168,6 +168,14 @@ class FiredexScenario(NetworkChannelState):
         prev_topics = sum(self.ntopics_per_class[:class_idx])
         return xrange(prev_topics, prev_topics + self.ntopics_per_class[class_idx])
 
+    # TODO: handle string topics if we ever get there!
+    def class_for_topic(self, topic):
+        """Returns the topic class ID/index of the specified topic."""
+        for tclass, ctopics in enumerate(self.topic_classes):
+            if topic in ctopics:
+                return tclass
+        raise ValueError("topic %s not found in any topic classes!" % topic)
+
     @property
     def npublishers(self):
         return self.num_ffs + self.num_iots

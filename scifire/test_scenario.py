@@ -57,11 +57,15 @@ class TestTopics(unittest.TestCase):
         self.assertEqual(c0_topics, list(scen.topics_for_class(0)))
         for t_exp, t_act in zip(range(2), c0_topics):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
+            tclass = scen.class_for_topic(t_act)
+            self.assertEqual(0, tclass, "topic %s claims to be of class %d but should be class 0!" % (t_act, tclass))
 
         c1_topics = list(list(scen.topic_classes)[1])
         self.assertEqual(c1_topics, list(scen.topics_for_class(1)))
         for t_exp, t_act in zip(range(2, ntopics), c1_topics):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
+            tclass = scen.class_for_topic(t_act)
+            self.assertEqual(1, tclass, "topic %s claims to be of class %d but should be class 1!" % (t_act, tclass))
 
         self.assertEqual(scen.ntopics_per_class[0], 2)
         self.assertEqual(scen.ntopics_per_class[1], 8)
@@ -77,10 +81,15 @@ class TestTopics(unittest.TestCase):
         self.assertEqual(c0_topics, list(scen.topics_for_class(0)))
         for t_exp, t_act in zip(range(3), list(scen.topic_classes)[0]):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
+            tclass = scen.class_for_topic(t_act)
+            self.assertEqual(0, tclass, "topic %s claims to be of class %d but should be class 0!" % (t_act, tclass))
+
         c1_topics = list(list(scen.topic_classes)[1])
         self.assertEqual(c1_topics, list(scen.topics_for_class(1)))
         for t_exp, t_act in zip(range(3, ntopics), list(scen.topic_classes)[1]):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
+            tclass = scen.class_for_topic(t_act)
+            self.assertEqual(1, tclass, "topic %s claims to be of class %d but should be class 1!" % (t_act, tclass))
 
     # TODO:
     # def test_topic_string_generation(self):
