@@ -15,7 +15,7 @@ class FiredexConfiguration(FiredexScenario):
 
         # these will get filled in later
         self.pub_rates = []
-        self.data_sizes = dict()
+        self._data_sizes = dict()
         self.service_rates = []
         self.advertisements = None
         self.subscriptions = None
@@ -37,7 +37,7 @@ class FiredexConfiguration(FiredexScenario):
         self.pub_rates = []
         for topics, size_rv, rate_rv in zip(self.topic_classes, data_size_rvs, pub_rate_rvs):
             for t in topics:
-                self.data_sizes[t] = data_size = size_rv.get_int()
+                self._data_sizes[t] = data_size = size_rv.get_int()
                 # TODO: handle specifying different bandwidth values
                 srv_rate = self.calculate_service_rate(data_size)
                 self.service_rates.append(srv_rate)
@@ -195,3 +195,7 @@ class FiredexConfiguration(FiredexScenario):
         if self._network_flows is None:
             return range(self.num_net_flows)
         return list(self._network_flows)
+
+    @property
+    def data_sizes(self):
+        return self._data_sizes.values()
