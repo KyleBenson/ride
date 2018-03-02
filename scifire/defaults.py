@@ -33,7 +33,11 @@ DEFAULT_IC_SUB_RATE_FACTOR = 10
 DEFAULT_TOPIC_CLASS_SUB_DURATIONS = (float('inf'), float('inf'))
 DEFAULT_TOPIC_CLASS_SUB_START_TIMES = (0, 0)
 
-# TODO: make a list of different topics and probably assign them different priorities/utilities?
+# We only really consider service rates for SDN switch outbound queue (i.e. due to bandwidth constraint).
+# ENHANCE: consider actual service rates for the other queues
+DEFAULT_MU = 64000.0
+
+# todo: make a list of different topics and probably assign them different priorities/utilities?
 IOT_DEV_TOPIC = 'sensor_data'
 
 DEFAULT_VIDEO_RATE_MBPS = 1.0

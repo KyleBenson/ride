@@ -1,4 +1,6 @@
 from ..firedex_configuration import FiredexConfiguration
+from collections import namedtuple
+from ..defaults import *
 
 import logging
 log = logging.getLogger(__name__)
@@ -35,6 +37,28 @@ class FiredexAlgorithm(object):
     #  3) SDN switch input queue for prioritization and dropping/bandwidth assignment by network flow
     #  4) SDN switch output queue (multi-class) for determining transmission rates of different topics according to the bandwidth
 
+    ## Define the model as namedtuples to help ease working with it and extending it in the future
+    # broker_out == switch_in generally, but we might add e.g. network drop rates.
+    # broker/switch_thru refers to the arrival rate at the second queue of the corresponding layer
+    Lambdas = namedtuple('Lambdas', ['broker_in', 'broker_thru', 'broker_out', 'switch_in', 'switch_thru', 'switch_out', 'sub_in'])
+    # No 'thru's in the Mus since it's only defined on each queue's "server"
+    Mus = namedtuple('Mus', ['broker_in', 'broker_out', 'switch_in', 'switch_out'])
+
+    def service_rates(self, configuration, subscriber=None):
+        """
+        Returns the expected service rates (MUs) at each queue for all topics given the configuration and
+        optionally-specified subscriber.
+        :param configuration:
+        :param subscriber:
+        :return:
+        :rtype: FiredexAlgorithm.Mus
+        """
+
+        mus_switch_out = [configuration.calculate_service_rate(pkt_size) for pkt_size in configuration.data_sizes]
+
+        return FiredexAlgorithm.Mus([DEFAULT_MU] * configuration.num_topics, [DEFAULT_MU] * configuration.num_topics,
+                                    [DEFAULT_MU] * configuration.num_topics, mus_switch_out)
+
     def total_delays(self, configuration, subscriber=None):
         """
         Calculates the end-to-end delay of each topic on its route from the publisher(s) to the optionally-specified
@@ -65,25 +89,22 @@ class FiredexAlgorithm(object):
         :rtype: list[float]
         """
 
-        # We only really consider service rates for SDN switch outbound queue (i.e. due to bandwidth constraint).
-        # ENHANCE: consider actual service rates for the other queues
-        default_mu = 64000.0
-
-        lambdas = self.delivery_rates(configuration, subscriber=subscriber, return_all_queues=True)
+        lambdas = self.arrival_rates(configuration, subscriber=subscriber)
+        mus = self.service_rates(configuration, subscriber=subscriber)
 
         # First the broker delays:
         # Each are MM1 queues
-        lam_b_in = lambdas[0]
-        mu_b_in = default_mu
+        lam_b_in = lambdas.broker_in
+        mu_b_in = mus.broker_in[0]  # independent of topic!
         delta_b_in = [((1.0/mu_b_in)/(1-lam/mu_b_in)) for lam in lam_b_in]
 
-        lam_b_out = lambdas[1]
-        mu_b_out = default_mu
-        delta_b_out = [((1.0/mu_b_out)/(1-lam/mu_b_out)) for lam in lam_b_out]
+        lam_b_thru = lambdas.broker_thru
+        mu_b_out = mus.broker_out[0]  # independent of topic!
+        delta_b_out = [((1.0/mu_b_out)/(1-lam/mu_b_out)) for lam in lam_b_thru]
 
         # Then the SDN switch delays:
-        lam_s_in = lambdas[2]
-        mu_s_in = default_mu
+        lam_s_in = lambdas.switch_in
+        mu_s_in = mus.switch_in[0]  # independent of topic!
 
         # First, the priority queue needs to consider each priority class according to the network flow/priority mappings.
         # So we get the total rates for each of these classes first.
@@ -95,30 +116,30 @@ class FiredexAlgorithm(object):
         delta_s_in = [(lam/((mu_s_in - sum(lam_prios[:topic_prios[top]])) * denom_all_prios)) for lam, top in lam_topics]
 
         # Now the multi-class queue where we consider a different mu per-topic
-        lam_s_thru = lambdas[3]
-        mu_s_thru = configuration.service_rates
-        denom = (1.0 - sum(lam/mu for lam, mu in zip(lam_s_thru, mu_s_thru)))
-        delta_s_out = [(1.0/mu)/denom for mu in mu_s_thru]
+        lam_s_thru = lambdas.switch_thru
+        mu_s_out = mus.switch_out
+        denom = (1.0 - sum(lam/mu for lam, mu in zip(lam_s_thru, mu_s_out)))
+        delta_s_out = [(1.0/mu)/denom for mu in mu_s_out]
 
         final_delays = [delta_b_in, delta_b_out, delta_s_in, delta_s_out]
         final_delays = zip(*final_delays)
         final_delays = [sum(terms) for terms in final_delays]
 
         # Only topics for which the subscriber will actually receive events should have expected service delays!
+        # A subscriber receives events for a topic if they're subscribed to it AND it actually makes its way to the subscriber
         subs = set(configuration.subscriptions)
-        final_lambdas = lambdas[5]
+        final_lambdas = lambdas.sub_in
         final_delays = [d if (t in subs and l > 0.0) else 0.0 for t, d, l in zip(configuration.topics, final_delays, final_lambdas)]
 
         return final_delays
 
-    def delivery_rates(self, configuration, subscriber=None, return_all_queues=False):
+    def arrival_rates(self, configuration, subscriber=None):
         """
-        Returns the expected delivery rates of all topics for the optionally-specified subscriber.
+        Returns the expected arrival rates at each queue of all topics for the optionally-specified subscriber.
         :param configuration:
         :param subscriber:
-        :param return_all_queues: if set to True, returns a 6-tuple:
-            (broker_in, broker_out, switch_in, switch_thru (i.e. arrival at multi-class queue), switch_out, subscriber_in)
         :return:
+        :rtype: FiredexAlgorithm.Lambdas[list[float]]
         """
 
         # ENHANCE: consider publisher queues?
@@ -131,7 +152,8 @@ class FiredexAlgorithm(object):
         # NOTE: to do this, we'll have to potentially consider other subscribers anyway as a queue shared by two subs
         # still has arrival rates for topics to which one of those subscribers is not interested.
         subs = set(configuration.subscriptions)
-        lambdas_b_out = [l if t in subs else 0.0 for t, l in zip(configuration.topics, lambdas_b_in)]
+        lambdas_b_thru = [l if t in subs else 0.0 for t, l in zip(configuration.topics, lambdas_b_in)]
+        lambdas_b_out = lambdas_b_thru
         # ENHANCE: per-flow lambdas?
 
         # Next, the SDN switch queues:
@@ -145,12 +167,18 @@ class FiredexAlgorithm(object):
         # Lastly, the arrival rate at the subscriber consider packet errors
         lambdas_delivery = [(1 - configuration.error_rate) * l for l in lambdas_s_out]
 
-        if return_all_queues:
-            return lambdas_b_in, lambdas_b_out, lambdas_s_in, lambdas_s_thru, lambdas_s_out, lambdas_delivery
-        else:
-            return lambdas_delivery
-    # alias this since queuing models typically refer to them as arrivals
-    arrival_rates = delivery_rates
+        return FiredexAlgorithm.Lambdas(lambdas_b_in, lambdas_b_thru, lambdas_b_out,
+                                        lambdas_s_in, lambdas_s_thru, lambdas_s_out, lambdas_delivery)
+
+    def delivery_rates(self, configuration, subscriber=None):
+        """
+        Returns the expected delivery rates of all topics for the optionally-specified subscriber.
+        :param configuration:
+        :param subscriber:
+        :return:
+        :rtype: list[float]
+        """
+        return self.arrival_rates(configuration, subscriber=subscriber).sub_in
 
     def broker_arrival_rates(self, configuration):
         """
@@ -174,30 +202,6 @@ class FiredexAlgorithm(object):
         lambdas = [v for (k,v) in lambdas]
         return lambdas
 
-    def broker_departure_rates(self, configuration, arrival_rates, subscriber=None):
-        """
-        Calculates the departure rate of each topic from the broker to the specified subscirber by taking into account
-        which topics it subscribes to.  Note that no subscriptions on a topic means a 0 departure rate.
-
-        :param configuration:
-        :type configuration: FiredexConfiguration
-        :param arrival_rates: departure rates of topics from the broker
-        :param subscriber:  currently ignored!!
-        :return:
-        :rtype: list[float]
-        """
-
-        # Start at 0 (no pubs) and fill in for each publishers' topics
-        lambdas = {top: 0.0 for top in configuration.topics}
-        for pub_class_ads in configuration.advertisements:
-            for pub_ads in pub_class_ads:
-                for topic in pub_ads:
-                    lambdas[topic] += configuration.pub_rates[topic]
-        lambdas = lambdas.items()
-        lambdas.sort()
-        lambdas = [v for (k,v) in lambdas]
-        return lambdas
-
     def ros_okay(self, configuration):
         """
         Verifies if the "ro" condition is satisfied: whether the queues will have bounded sizes and not saturate over time.
@@ -205,18 +209,25 @@ class FiredexAlgorithm(object):
         :return: True if condition satisfied, False otherwise
         """
         ros = self.get_ros(configuration)
-        ros_okay = sum(ros) < 1.0
+        ros_okay = all(sum(qros) < 1.0 for qros in ros)
         return ros_okay
 
     def get_ros(self, configuration):
         """
         Verifies if the "ro" condition is satisfied: whether the queues will have bounded sizes and not saturate over time.
         :param configuration:
-        :return:
+        :return: list of the queues being considered with each entry being the ro values for each topic at that queue
         """
 
-        ros = [lam / mu for lam, mu in zip(self.broker_arrival_rates(configuration), configuration.service_rates)]
-        # log.info("ROs: %s\nRO total: %f" % (ros, sum(ros)))
+        lambdas = self.arrival_rates(configuration)
+        mus = self.service_rates(configuration)
+
+        # mash them up correctly
+        all_queues_lam_mus = [(lambdas.broker_in, mus.broker_in), (lambdas.broker_thru, mus.broker_out),
+                              (lambdas.switch_in, mus.switch_in), (lambdas.switch_thru, mus.switch_out)]
+
+        ros = [[lam / mu for lam, mu in zip(topics_lams, topics_mus)] for topics_lams, topics_mus in all_queues_lam_mus]
+        # log.info("ROs: %s" % ros)
         return ros
 
     ### Priority setting functions
