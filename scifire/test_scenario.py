@@ -53,10 +53,18 @@ class TestTopics(unittest.TestCase):
         for t_exp, t_act in zip(range(ntopics), scen.topics):
             self.assertEqual(t_exp, t_act, "all topics not a list of [0..ntopics-1] !!")
 
-        for t_exp, t_act in zip(range(2), list(scen.topic_classes)[0]):
+        c0_topics = list(list(scen.topic_classes)[0])
+        self.assertEqual(c0_topics, list(scen.topics_for_class(0)))
+        for t_exp, t_act in zip(range(2), c0_topics):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
-        for t_exp, t_act in zip(range(2, ntopics), list(scen.topic_classes)[1]):
+
+        c1_topics = list(list(scen.topic_classes)[1])
+        self.assertEqual(c1_topics, list(scen.topics_for_class(1)))
+        for t_exp, t_act in zip(range(2, ntopics), c1_topics):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
+
+        self.assertEqual(scen.ntopics_per_class[0], 2)
+        self.assertEqual(scen.ntopics_per_class[1], 8)
 
         # edge case with uneven #s
         ntopics = 11
@@ -65,8 +73,12 @@ class TestTopics(unittest.TestCase):
         for t_exp, t_act in zip(range(ntopics), scen.topics):
             self.assertEqual(t_exp, t_act, "all topics not a list of [0..ntopics-1] !!")
 
+        c0_topics = list(list(scen.topic_classes)[0])
+        self.assertEqual(c0_topics, list(scen.topics_for_class(0)))
         for t_exp, t_act in zip(range(3), list(scen.topic_classes)[0]):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
+        c1_topics = list(list(scen.topic_classes)[1])
+        self.assertEqual(c1_topics, list(scen.topics_for_class(1)))
         for t_exp, t_act in zip(range(3, ntopics), list(scen.topic_classes)[1]):
             self.assertEqual(t_exp, t_act, "topic class %s not containing expected topic ID range %s" % (t_act, t_exp))
 
