@@ -69,7 +69,7 @@ EXPERIMENTAL_TREATMENTS = {
     ## this is for explicitly forcing just a single run to quickly test the simulator itself
     # 'testing': [{'bandwidth': 100, 'nruns': 1}],
     ## Actual varied parameter explorations:
-    'num_priority_levels': nprios,
+    'nprios': [{'num_priority_levels': p, 'num_net_flows': p} for p in nprios],  # currently assume nprios==nflows always!
     'error_rate': errs,
     'bandwidth': bandwidths,
     # 'algorithm': algs,

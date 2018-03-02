@@ -34,8 +34,9 @@ class RandomFiredexAlgorithm(FiredexAlgorithm):
 
         prios = configuration.prio_classes
         if len(flows) != len(prios):
-            raise NotImplementedError("no support yet for randomly assigning net flow -> priorities!  We're just"
-                                      "assuming that #flows == #prio classes!")
+            raise NotImplementedError("We currently assume that #flows == #prio classes always!  No support yet for"
+                                      "randomly assigning mappings otherwise... Requested %d flows and %d priorities" %\
+                                      (configuration.num_net_flows, configuration.num_priority_levels))
 
         for f, p in zip(flows, prios):
             for sub in subscribers:
