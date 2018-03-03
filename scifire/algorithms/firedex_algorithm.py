@@ -112,8 +112,9 @@ class FiredexAlgorithm(object):
         lam_topics = zip(lam_s_in, configuration.topics)
         lam_prios = [sum(lam if topic_prios[top] == p else 0.0 for lam, top in lam_topics) for p in configuration.prio_classes]
 
-        denom_all_prios = (mu_s_in - sum(lam_prios))
-        delta_s_in = [(lam/((mu_s_in - sum(lam_prios[:topic_prios[top]])) * denom_all_prios)) for lam, top in lam_topics]
+        delta_s_in = [(lam / ((mu_s_in - sum(lam_prios[:topic_prios[top]])) *
+                              (mu_s_in - sum(lam_prios[: max(topic_prios[top] - 1, 0)])))  # prio=0 --> -1 index --> bad!
+                       + 1.0/mu_s_in) for lam, top in lam_topics]
 
         # Now the multi-class queue where we consider a different mu per-topic
         lam_s_thru = lambdas.switch_thru
