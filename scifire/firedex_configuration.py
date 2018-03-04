@@ -230,3 +230,9 @@ class FiredexConfiguration(FiredexScenario):
     @property
     def data_sizes(self):
         return self._data_sizes.values()
+
+class QueueStabilityError(ValueError):
+    """
+    Generated when the check for ro values fails: this experimental run should be recorded as a wash.
+    """
+    pass

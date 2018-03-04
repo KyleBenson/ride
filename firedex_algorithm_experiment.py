@@ -12,7 +12,7 @@ import tempfile
 
 from network_experiment import NetworkExperiment
 from scifire.algorithms.firedex_algorithm import FiredexAlgorithm  # just for type hinting
-from scifire.firedex_configuration import FiredexConfiguration
+from scifire.firedex_configuration import FiredexConfiguration, QueueStabilityError
 from scifire.firedex_scenario import FiredexScenario
 from scifire.algorithms import build_algorithm
 from scifire.defaults import *
@@ -28,10 +28,11 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
     add another inheritance layer since a current configuration includes network elements too.
     """
 
-    def __init__(self, algorithm=DEFAULT_ALGORITHM, regen_bad_ros=False, **kwargs):
+    def __init__(self, algorithm=DEFAULT_ALGORITHM, regen_bad_ros=False, testing=False, **kwargs):
         """
         :param algorithm: configuration for the priority-assignment algorithm
         :param regen_bad_ros: regenerate the configuration if the ro condition is not met (default=False)
+        :param testing: when explicitly set to True, don't run external simulator; used for just viewing random configs
         :param kwargs: passed to super constructor
         """
         super(FiredexAlgorithmExperiment, self).__init__(**kwargs)
@@ -75,7 +76,8 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         ros_okay = False
         retries_left = 1000
         while not ros_okay and retries_left > 0 and self.regen_bad_ros:
-            ros_okay = self.algorithm.ros_okay(self)
+            # ro_tolerance may be used to violate this check slightly, but the queue simulator will not run if it's violated!
+            ros_okay = self.algorithm.ros_okay(self, tolerance=0.0)
             if not ros_okay:
                 self.generate_configuration()
                 retries_left -= 1
@@ -84,20 +86,32 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         if retries_left == 0 and self.regen_bad_ros:
             log.error("failed to generate configuration that satisfies RO condtition after 1000 retries... check params!")
-            return dict(error="bad ros", ros=self.algorithm.get_ros(self))
+            return dict(error="bad ros from configuration", ros=self.algorithm.get_ros(self))
 
         # Now that we have a good configuration, we can proceed with experiments:
         # Since we're running the queuing simulator for a static configuration, we just assign the topic priorities statically
         # NOTE: since the exp class IS a config class, just pass self and the alg can ignore exp-specific parts
-        self.algorithm.force_update()  # for multiple runs
-        prios = self.algorithm.get_topic_priorities(self)
-        cfg = self.get_simulator_input_dict(prios)
+        try:
+            self.algorithm.force_update()  # for multiple runs
+            prios = self.algorithm.get_topic_priorities(self)
+            cfg = self.get_simulator_input_dict(prios)
+
+        except QueueStabilityError as e:
+            ret = dict(error="bad ros from algorithm")
+            log.error("Algorithm failed ro condition check: %s" % e)
+            try:
+                ret['ros'] = self.algorithm.get_ros(self)
+                # try to save the assigned drop rates for inspection
+                ret['drop_rates'] = self.algorithm.get_drop_rates(self)
+            except QueueStabilityError:
+                pass
+            return ret
 
         # Since we're running an external queuing simulator, make a temporary file for passing experiment configuration
         cfg_file, cfg_filename = tempfile.mkstemp('firedex_sim_cfg', text=True)
         with os.fdopen(cfg_file, 'w') as f:
             f.write(json.dumps(cfg))
-        log.debug("temp config filename for simulator: %s" % cfg_filename)
+        log.info("temp input config filename for external simulator: %s" % cfg_filename)
 
         # Generate an output filename for the simulator based on the output filename we're using
         sim_out_fname = os.path.join(self.outputs_dir, "sim_output.csv")
@@ -110,7 +124,12 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         # redirect to log files so if we run multiple sims in parallel via run.py they don't overlap; also can view it later now
         cmd = self.redirect_output_to_log(cmd, "sim_stdout.log")
 
-        ret_code = subprocess.call(cmd, shell=True)
+        log.debug("Sim config: %s" % str(cfg))
+        if self.testing:
+            ret_code = 2
+        else:
+            log.info("starting external queuing simulator...")
+            ret_code = subprocess.call(cmd, shell=True)
 
         # Delete the temp file since the configuration is saved in the results anyway
         os.remove(cfg_filename)
@@ -125,6 +144,11 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,
                       exp_srv_delay=expected_service_delays, exp_total_delay= expected_total_delays,
                       exp_delivery=expected_delivery_rates)
+
+        # save some extra parameters if an error occurs
+        if ret_code:
+            result['ro_sums'] = [sum(ros) for ros in self.algorithm.get_ros(self)]
+
         return result
 
     def get_simulator_input_dict(self, priorities=None):
@@ -212,7 +236,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
     def output_results(self):
         # add additional parameters we generated after constructor for this exp. configuration
-        extra_params = dict(lams=self.pub_rates, mus=self.service_rates, subs=self.subscriptions)
+        extra_params = dict(lams=self.pub_rates, mus=self.service_rates)
         for k,v in extra_params.items():
             self.record_parameter(k, v)
 

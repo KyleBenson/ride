@@ -3,6 +3,7 @@ DEFAULT_NUM_IOTS = 6
 DEFAULT_NUM_PRIORITIES = 3
 DEFAULT_NUM_NET_FLOWS = DEFAULT_NUM_PRIORITIES
 DEFAULT_ALGORITHM = 'random'  # can add 'seed' by putting this in a dict-style config e.g. {'algorithm': 'random', 'seed': 5}
+DEFAULT_RO_TOLERANCE = 0.0
 
 DEFAULT_NUM_TOPICS = 5
 DEFAULT_TOPIC_CLASS_WEIGHTS = (0.7, 0.3)  # sensor data, async events

@@ -1,4 +1,4 @@
-from ..firedex_configuration import FiredexConfiguration
+from ..firedex_configuration import FiredexConfiguration, QueueStabilityError
 from collections import namedtuple
 from ..defaults import *
 
@@ -16,10 +16,13 @@ class FiredexAlgorithm(object):
     explicitly requested!
     """
 
-    def __init__(self, drop_policy='expon', **kwargs):
+    def __init__(self, drop_policy='expon', ro_tolerance=DEFAULT_RO_TOLERANCE, **kwargs):
         """
         :param drop_policy: the default preemptive drop rate policy to apply after running the algorithm, which may be
             ignored by algorithms that implement more sophisticated policies
+        :param ro_tolerance: configures how much ro values should be <1 e.g. verifies sum(ros) < 1.0 - ro_tolerance
+            A positive value ensures even greater queue stability; a negative value violates this condition and
+            allow queues to grow without bound (although this will result in completely wrong analytical results) (default=0)
         :param kwargs: passed to super constructor for possible multiple inheritance
         """
 
@@ -36,6 +39,7 @@ class FiredexAlgorithm(object):
         self._topic_flow_map = dict()
         self._flow_prio_map = dict()
 
+        self.ro_tolerance = ro_tolerance
         self.drop_policy = drop_policy
         # maps flows to drop rates in range [0,1] for a particular configuration; filled in when algorithm runs
         self._drop_rates = dict()
@@ -53,6 +57,7 @@ class FiredexAlgorithm(object):
     Lambdas = namedtuple('Lambdas', ['broker_in', 'broker_thru', 'broker_out', 'switch_in', 'switch_thru', 'switch_out', 'sub_in'])
     # No 'thru's in the Mus since it's only defined on each queue's "server"
     Mus = namedtuple('Mus', ['broker_in', 'broker_out', 'switch_in', 'switch_out'])
+    Ros = namedtuple('Ros', ['broker_in', 'broker_out', 'switch_in', 'switch_out'])
 
     def service_rates(self, configuration, subscriber=None):
         """
@@ -214,14 +219,18 @@ class FiredexAlgorithm(object):
         lambdas = [v for (k,v) in lambdas]
         return lambdas
 
-    def ros_okay(self, configuration):
+    def ros_okay(self, configuration, tolerance=None):
         """
         Verifies if the "ro" condition is satisfied: whether the queues will have bounded sizes and not saturate over time.
         :param configuration:
+        :param tolerance: configures this check such that for all queues, sum(ros) < (1.0 - tolerance) (default=self.ro_tolerance)
         :return: True if condition satisfied, False otherwise
         """
+        if tolerance is None:
+            tolerance = self.ro_tolerance
+
         ros = self.get_ros(configuration)
-        ros_okay = all(sum(qros) < 1.0 for qros in ros)
+        ros_okay = all(sum(qros) < (1.0 - tolerance) for qros in ros)
         return ros_okay
 
     def get_ros(self, configuration):
@@ -494,7 +503,7 @@ class FiredexAlgorithm(object):
             policy = self.drop_policy
 
         # This basic policy sets drop rates for each net flow according to its assigned priority level where the
-        # drop rate = 1- x^(-prio), where x starts at 1.0 and increases until the ro conditions are met
+        # drop rate = 1- x^(-prio-1), where x starts at 1.0 and increases slightly until the ro conditions are met
         if policy == 'expon':
             exp_base = 1.0
             ros_met = False
@@ -502,7 +511,7 @@ class FiredexAlgorithm(object):
             while not ros_met and iterations_left > 0:
                 for sub in subscribers:
                     for net_flow, prio in self.get_net_flow_priorities(configuration, sub).items():
-                        drop_rate = 1.0 - exp_base**(-prio)
+                        drop_rate = 1.0 - exp_base**(-prio-1)
                         self.set_net_flow_drop_rate(net_flow, drop_rate, configuration, sub)
 
                 ros_met = self.ros_okay(configuration)
@@ -510,6 +519,7 @@ class FiredexAlgorithm(object):
                 iterations_left -= 1
 
             if iterations_left == 0:
-                raise ValueError("max iterations for drop rate policy 'expon' reached!  check model constraints!")
+                raise QueueStabilityError("Max iterations for drop rate policy 'expon' reached!  Check model constraints! "
+                                 "Drop rates ended up being: %s" % self.get_drop_rates(configuration))
         else:
-            raise ValueError("unrecognized preemptive drop rate policy %s" % policy)
+            raise QueueStabilityError("unrecognized preemptive drop rate policy %s" % policy)
