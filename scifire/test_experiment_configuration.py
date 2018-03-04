@@ -95,7 +95,7 @@ class TestExperimentConfiguration(unittest.TestCase):
                 class1 = list(exp.topics_for_class(1))
 
                 for pub_class_ads, exp_num_pub_class_ads in zip(all_pub_ads, (ff_num_ads, iot_num_ads)):
-                    for this_pub_ads in pub_class_ads:
+                    for this_pub_ads in pub_class_ads.values():
                         # verify right #ads for this publisher
                         self.assertEqual(len(this_pub_ads), sum(exp_num_pub_class_ads))
                         c0_ads = [a for a in this_pub_ads if a in class0]
@@ -147,7 +147,7 @@ class TestExperimentConfiguration(unittest.TestCase):
                 class1 = list(exp.topics_for_class(1))
 
                 for pub_class_ads, exp_num_pub_class_ads in zip(all_pub_ads, (ff_num_ads, iot_num_ads)):
-                    for this_pub_ads in pub_class_ads:
+                    for this_pub_ads in pub_class_ads.values():
                         # verify right #ads for this publisher
                         self.assertEqual(len(this_pub_ads), sum(exp_num_pub_class_ads))
                         c0_ads = [a for a in this_pub_ads if a in class0]

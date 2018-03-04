@@ -195,7 +195,7 @@ class FiredexAlgorithm(object):
         # Start at 0 (no pubs) and fill in for each publishers' topics
         lambdas = {top: 0.0 for top in configuration.topics}
         for pub_class_ads in configuration.advertisements:
-            for pub_ads in pub_class_ads:
+            for pub_ads in pub_class_ads.values():
                 for topic in pub_ads:
                     lambdas[topic] += configuration.pub_rates[topic]
         lambdas = lambdas.items()

@@ -10,14 +10,17 @@ class FiredexConfiguration(FiredexScenario):
     network channel state, etc. at a particular point in time.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, draw_subscriptions_from_advertisements=True, **kwargs):
         super(FiredexConfiguration, self).__init__(**kwargs)
+
+        # avoid subscribing to non-advertised topics
+        self.draw_subscriptions_from_advertisements = draw_subscriptions_from_advertisements
 
         # these will get filled in later
         self.pub_rates = []
         self._data_sizes = dict()
         self.service_rates = []
-        self.advertisements = None
+        self._advertisements = None
         self.subscriptions = None
         self._network_flows = None
 
@@ -48,8 +51,9 @@ class FiredexConfiguration(FiredexScenario):
         assert len(self.service_rates) == self.num_topics
         assert len(self.pub_rates) == self.num_topics
 
-        self.generate_subscriptions()
+        # Need to generate advertisements first in case we base subscriptions on them
         self.generate_advertisements()
+        self.generate_subscriptions()
 
     def generate_subscriptions(self):
         """
@@ -68,14 +72,23 @@ class FiredexConfiguration(FiredexScenario):
         # until we have a number of unique subscriptions >= #requested for that class
         # TODO: need to bring in topic start time and duration distributions too... maybe make subscriptions a class???
         # ENHANCE: maybe we should actually have the # subscriptions be a RV so we can vary the subscribers that way?
+
         subs = []
         for class_idx, (class_topic_rate, rv) in enumerate(zip(self.topic_class_sub_rates, self.topic_class_sub_dists)):
-            rv = self.build_sampling_random_variable(rv, len(self.topics_for_class(class_idx)))
-            ntopics = int(class_topic_rate * self.ntopics_per_class[class_idx])
+            # to reduce variance in the simulator due to subscriptions for non-advertised topics, we draw
+            # subscriptions only from those that are advertised unless otherwise explicitly requested.
+            if self.draw_subscriptions_from_advertisements:
+                topic_choices = [ad for ad in self.advertised_topics if self.class_for_topic(ad) == class_idx]
+            else:
+                topic_choices = self.topics_for_class(class_idx)
+
+            ntopics = int(class_topic_rate * len(topic_choices))
+            # XXX: even if config looks okay, IC might request too many topics for a class
+            ntopics = min(len(topic_choices), ntopics)
+
+            rv = self.build_sampling_random_variable(rv, len(topic_choices))
             try:
-                # XXX: even if config looks okay, IC might request too many topics for a class
-                tops_to_choose = min(self.ntopics_per_class[class_idx], ntopics)
-                class_subs = rv.sample(self.topics_for_class(class_idx), tops_to_choose)
+                class_subs = rv.sample(topic_choices, ntopics)
                 subs.extend(class_subs)
             except ValueError as e:
                 log.error("failed to generate topics for class %d due to error: %s" % (class_idx, e))
@@ -90,14 +103,14 @@ class FiredexConfiguration(FiredexScenario):
     def generate_advertisements(self):
         """
         Generates the topics each publisher will publish to for this scenario configuration.
-        :return: (ff_ads, iot_ads) where ads is a list of lists mapping publisher to its topics advertised
+        :return: self.advertisements
         """
 
         # ENHANCE: try to skew ads so that FFs tend to publish to the same topics that IoT devs do not e.g. FF health monitoring
         # ENHANCE: use lists nested inside dicts instead of two lists of lists?
 
-        ff_ads = []
-        iot_ads = []
+        ff_ads = dict()
+        iot_ads = dict()
 
         ads_rvs = [self.build_sampling_random_variable(dist, len(self.topics_for_class(tc_idx))) for tc_idx, dist in enumerate(self.topic_class_pub_dists)]
 
@@ -112,17 +125,35 @@ class FiredexConfiguration(FiredexScenario):
                     rv = ads_rvs[tc]
                     # TODO: pull this num from a RV dist rather than assuming it's a constant
                     num_ads = tc_num_ads[tc]
+                    possible_ads = list(self.topics_for_class(tc))
+                    # XXX: ensure we don't request too many samples from population
+                    num_ads = min(num_ads, len(possible_ads))
                     try:
-                        ads_for_pub.extend(rv.sample(self.topics_for_class(tc), num_ads))
+                        ads_for_pub.extend(rv.sample(possible_ads, num_ads))
                     except ValueError as e:
                         log.error("failed to generate advertisements for class %d due to error: %s" % (tc, e))
-                ads.append(ads_for_pub)
+                ads[p] = ads_for_pub
 
         log.debug("FF advertisements: %s" % ff_ads)
         log.debug("IoT advertisements: %s" % iot_ads)
 
-        self.advertisements = (ff_ads, iot_ads)
-        return ff_ads, iot_ads
+        self._advertisements = (ff_ads, iot_ads)
+        return self.advertisements
+
+    @property
+    def advertisements(self):
+        """
+        :return: (ff_ads, iot_ads) where e.g. ff_ads is a dict of lists mapping FF publisher to its topics advertised (published)
+        :rtype: tuple[dict[list[str|int]]]
+        """
+        return self._advertisements
+
+    @property
+    def advertised_topics(self):
+        """
+        :returns: a set of all topics advertised by ANY publisher
+        """
+        return set(ad for pub_class in self.advertisements for ads in pub_class.itervalues() for ad in ads)
 
     def calculate_service_rate(self, pkt_size, bandwidth=None):
         """
