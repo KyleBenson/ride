@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 from network_experiment import NetworkExperiment
+from scifire.algorithms.firedex_algorithm import FiredexAlgorithm  # just for type hinting
 from scifire.firedex_configuration import FiredexConfiguration
 from scifire.firedex_scenario import FiredexScenario
 from scifire.algorithms import build_algorithm
@@ -27,12 +28,19 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
     add another inheritance layer since a current configuration includes network elements too.
     """
 
-    def __init__(self, algorithm=DEFAULT_ALGORITHM, **kwargs):
+    def __init__(self, algorithm=DEFAULT_ALGORITHM, regen_bad_ros=False, **kwargs):
+        """
+        :param algorithm: configuration for the priority-assignment algorithm
+        :param regen_bad_ros: regenerate the configuration if the ro condition is not met (default=False)
+        :param kwargs: passed to super constructor
+        """
         super(FiredexAlgorithmExperiment, self).__init__(**kwargs)
 
         if not isinstance(algorithm, dict):
             algorithm = dict(algorithm=algorithm)
-        self.algorithm = build_algorithm(**algorithm)
+        self.algorithm = build_algorithm(**algorithm)  # type: FiredexAlgorithm
+
+        self.regen_bad_ros = regen_bad_ros
 
         # FUTURE: mobility models for FFs / devs?
 
@@ -63,20 +71,18 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         to determine its performance under these 'ideal' network settings."""
 
         # Setup a compact data model of our formulation that's used to configure external queue simulator experiment.
-        # TODO: refactor this to move ro condition to the analytical model
         # XXX: need to check ro to ensure queue stability as otherwise simulator can't run!
         ros_okay = False
         retries_left = 1000
-        while not ros_okay and retries_left > 0:
+        while not ros_okay and retries_left > 0 and self.regen_bad_ros:
             ros_okay = self.algorithm.ros_okay(self)
             if not ros_okay:
                 self.generate_configuration()
                 retries_left -= 1
                 if retries_left % 100 == 99:
                     log.info("RO condition not met: regenerating configuration...")
-            else:
-                break
-        else:
+
+        if retries_left == 0 and self.regen_bad_ros:
             log.error("failed to generate configuration that satisfies RO condtition after 1000 retries... check params!")
             return dict(error="bad ros", ros=self.algorithm.get_ros(self))
 
@@ -99,7 +105,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         sim_jar_file = os.path.join('scifire', 'pubsub-prio.jar')
         if not os.path.exists(sim_jar_file):
             log.error("cannot find the simulation JAR file! Make sure you download/compile it and put it at %s" % sim_jar_file)
-        cmd = "java -cp %s pubsubpriorities.PubsubV4Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
+        cmd = "java -cp %s pubsubpriorities.PubsubV5Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
 
         # redirect to log files so if we run multiple sims in parallel via run.py they don't overlap; also can view it later now
         cmd = self.redirect_output_to_log(cmd, "sim_stdout.log")
@@ -136,6 +142,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
             "error_rate": 0.1,
             "subscriptions": [0, 2, 3, 5],  #currently only for a single subscriber!
             "priorities": [0, 0, 1, 2, 3],
+            "prio_probs": [1.0, 0.9, 0.8, 0.7],  # rate of events let through for each priority class
           }
         """
 
@@ -149,8 +156,24 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
             priorities = list(sorted(priorities.items()))
             priorities = [p for t,p in priorities]
 
+        # need to reverse lookup the network flow from the priority classes to tell the simulator drop rates for each
+        # priority, but this could be an issue:
+        if self.num_priority_levels < self.num_net_flows:
+            log.warning("The queuing simulator only takes priorities, but drop rates are defined per network flow and"
+                        "we have more flows than priority classes!  This might cause problems...")
+
+        # XXX: instead, let's just assume we can just do the following:
+        prio_probs = dict()
+        nf_prios = self.algorithm.get_net_flow_priorities(self)
+        for flow in self.net_flows:
+            drop_rate = self.algorithm.get_drop_rates(self)[flow]
+            prio_probs[nf_prios[flow]] = 1.0 - drop_rate
+
+        # turn it into a list ordered by priority class
+        prio_probs = [prob for prio, prob in sorted(prio_probs.items())]
+
         return dict(mus=self.service_rates, lambdas=lambdas, subscriptions=self.subscriptions,
-                    priorities=priorities, error_rate=float(self.error_rate))
+                    priorities=priorities, error_rate=float(self.error_rate), prio_probs=prio_probs)
 
     ####  Boiler-plate helper functions for running experiments
 

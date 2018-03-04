@@ -35,7 +35,7 @@ class FireStatistics(NetworkExperimentStatistics):
 
         if filename.endswith('.csv'):
             def CsvParser(results_str, **params):
-                df = pd.read_csv(filename, names=('delay', 'rcv_rate'))
+                df = pd.read_csv(filename, names=('delay', 'rcv_rate', 'sim_exp_delay'))
 
                 # to track subscriptions to topics, create a bit vector and add that as a column
                 subs = params.pop('subscriptions')

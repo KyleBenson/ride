@@ -16,7 +16,13 @@ class FiredexAlgorithm(object):
     explicitly requested!
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, drop_policy='expon', **kwargs):
+        """
+        :param drop_policy: the default preemptive drop rate policy to apply after running the algorithm, which may be
+            ignored by algorithms that implement more sophisticated policies
+        :param kwargs: passed to super constructor for possible multiple inheritance
+        """
+
         # XXX: multiple inheritance
         try:
             super(FiredexAlgorithm, self).__init__(**kwargs)
@@ -29,6 +35,10 @@ class FiredexAlgorithm(object):
         # these are filled in by _run_algorithm()
         self._topic_flow_map = dict()
         self._flow_prio_map = dict()
+
+        self.drop_policy = drop_policy
+        # maps flows to drop rates in range [0,1] for a particular configuration; filled in when algorithm runs
+        self._drop_rates = dict()
 
     ### Analytical model for queueing network
     ## NOTE: this model considers 4 queues:
@@ -158,9 +168,10 @@ class FiredexAlgorithm(object):
         # ENHANCE: per-flow lambdas?
 
         # Next, the SDN switch queues:
-        # ENHANCE: consider drop rate en route to switch
-        # TODO: consider our pre-emptive drop rate?
-        lambdas_s_in = lambdas_b_out
+        # consider drop rate en route to switch
+        net_flows = self.get_topic_net_flows(configuration, subscriber)
+        lambdas_s_in = [l * (1.0 - self.get_drop_rates(configuration, subscriber)[net_flows[topic]])\
+                        for l, topic in zip(lambdas_b_out, configuration.topics)]
         # ENHANCE: consider finite buffer size in prioq?
         lambdas_s_thru = lambdas_s_in
         lambdas_s_out = lambdas_s_thru
@@ -276,6 +287,51 @@ class FiredexAlgorithm(object):
         for sub in subscribers:
             self._flow_prio_map.setdefault(configuration, dict()).setdefault(sub, dict())[net_flow] = priority
 
+    def set_net_flow_drop_rate(self, net_flow, drop_rate, configuration, subscriber=None):
+        """
+        Set the preemptive drop rate for the given network flow.
+        :param net_flow:
+        :param drop_rate: should be in range [0,1]
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :param subscriber: defaults to all subscribers
+        :return:
+        """
+
+        if not 0.0 <= drop_rate <= 1.0:
+            raise ValueError("requested drop_rate (%f) not in expected range of [0,1]")
+
+        if subscriber is None:
+            subscribers = configuration.subscribers
+        else:
+            subscribers = [subscriber]
+
+        for sub in subscribers:
+            self._drop_rates.setdefault(configuration, dict()).setdefault(sub, dict())[net_flow] = drop_rate
+
+    def get_drop_rates(self, configuration, subscriber=None):
+        """
+        Returns the drop rates for the requested subscriber's network flows.
+
+        NOTE: this assumes the algorithm has already been run!
+
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :param subscriber: which subscriber's drop rates are being requested (default=arbitrarily pick one, which assumes
+            the values were set across all subscribers)
+        :return: mapping of network flows to drop rates
+        :rtype: dict
+        """
+
+        try:
+            if subscriber is None:
+                # arbitrary subscriber from underlying mapping
+                return next(self._drop_rates[configuration].itervalues())
+            else:
+                return self._drop_rates[configuration][subscriber].copy()
+        except IndexError as e:
+            raise ValueError("request for bad configuration or subscriber caused error: %s" % e)
+
     def get_topic_priorities(self, configuration, subscriber=None):
         """
         Runs the actual algorithm to determine what the priority levels should be according to the current real-time
@@ -291,7 +347,7 @@ class FiredexAlgorithm(object):
         """
 
         if self._update_needed(configuration, subscriber):
-            self._run_algorithm(configuration, subscriber)
+            self.__run_algorithm(configuration, subscriber)
 
         topic_flow_map = self.get_topic_net_flows(configuration, subscriber)
         flow_prio_map = self.get_net_flow_priorities(configuration, subscriber)
@@ -311,7 +367,7 @@ class FiredexAlgorithm(object):
         """
 
         if self._update_needed(configuration, subscriber):
-            self._run_algorithm(configuration, subscriber)
+            self.__run_algorithm(configuration, subscriber)
         if subscriber is None:
             # arbitrary subscriber from underlying mapping
             return next(self._topic_flow_map[configuration].itervalues())
@@ -330,7 +386,7 @@ class FiredexAlgorithm(object):
         """
 
         if self._update_needed(configuration, subscriber):
-            self._run_algorithm(configuration, subscriber)
+            self.__run_algorithm(configuration, subscriber)
         if subscriber is None:
             # arbitrary subscriber from underlying mapping
             return next(self._flow_prio_map[configuration].itervalues())
@@ -360,6 +416,20 @@ class FiredexAlgorithm(object):
             for subscriber in subscribers:
                 self._topic_flow_map.get(configuration, dict()).pop(subscriber, None)
                 self._flow_prio_map.get(configuration, dict()).pop(subscriber, None)
+
+    def __run_algorithm(self, configuration, subscribers=None):
+        """
+        DO NOT override this method unless you implement your own preemptive drop rate policy!
+        Runs the algorithm to assign network flows to priority levels based on current configuration state.  Also runs
+        the preemptive drop rate policy afterwards to ensure ro conditions will be met i.e. queues should be stable.
+
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :param subscribers: which subscribers should have their priority levels assigned (default=None=all subscribers)
+        """
+
+        self._run_algorithm(configuration, subscribers)
+        self._apply_drop_rate_policy(configuration, subscribers)
 
     ### Override these as necessary in derived algorithm classes
 
@@ -400,3 +470,46 @@ class FiredexAlgorithm(object):
 
         update = configuration not in self._topic_flow_map or any(s not in self._topic_flow_map[configuration] for s in subs)
         return update
+
+    def _apply_drop_rate_policy(self, configuration, subscribers=None, policy=None):
+        """
+        Applies the specified drop rate policy (or default if unspecified) to ensure the ro conditions of the queue
+        model will be met, which should result in the queues being stable (not growing without bound).
+
+        NOTE: this default implementation assumes the priorities have already been set and so, depending on the policy
+              requested, it basically keeps raising the drop probability for all network flows until the ro conditions
+              are met.
+
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :param subscribers: which subscribers should have their drop rates assigned (default=None=all subscribers)
+        :raises ValueError: if an iterative policy hits its max # attempts to meet ros or an unknown policy is requested
+        :return:
+        """
+
+        if subscribers is None:
+            subscribers = configuration.subscribers
+
+        if policy is None:
+            policy = self.drop_policy
+
+        # This basic policy sets drop rates for each net flow according to its assigned priority level where the
+        # drop rate = 1- x^(-prio), where x starts at 1.0 and increases until the ro conditions are met
+        if policy == 'expon':
+            exp_base = 1.0
+            ros_met = False
+            iterations_left = 1000
+            while not ros_met and iterations_left > 0:
+                for sub in subscribers:
+                    for net_flow, prio in self.get_net_flow_priorities(configuration, sub).items():
+                        drop_rate = 1.0 - exp_base**(-prio)
+                        self.set_net_flow_drop_rate(net_flow, drop_rate, configuration, sub)
+
+                ros_met = self.ros_okay(configuration)
+                exp_base += 0.1
+                iterations_left -= 1
+
+            if iterations_left == 0:
+                raise ValueError("max iterations for drop rate policy 'expon' reached!  check model constraints!")
+        else:
+            raise ValueError("unrecognized preemptive drop rate policy %s" % policy)
