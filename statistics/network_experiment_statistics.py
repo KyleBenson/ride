@@ -228,6 +228,13 @@ class NetworkExperimentStatistics(ScaleStatistics):
         if stats is None:
             stats = self.stats
 
+        # ensure we don't average over a column being plotted on an axis!
+        average_over = set(average_over)
+        average_over.discard(x)
+        if not isinstance(y, basestring):
+            for _y in y:
+                average_over.discard(_y)
+
         for col in average_over:
             stats = self.average_over_column(stats, column_to_drop=col)
 
@@ -236,7 +243,11 @@ class NetworkExperimentStatistics(ScaleStatistics):
         if groupby:
             fig, ax = plt.subplots()
             for g, df in stats.groupby(groupby):
-                ax = df.plot(x=x, y=y, label="%s=%s" % (groupby, g), ax=ax, **kwargs)
+                if not isinstance(y, basestring):
+                    label = ["%s(%s=%s)" % (_y, groupby, g) for _y in y]
+                else:
+                    label = "%s=%s" % (groupby, g)
+                ax = df.plot(x=x, y=y, label=label, ax=ax, **kwargs)
         else:
             stats.plot(x=x, y=y, **kwargs)
 
