@@ -42,6 +42,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         self.algorithm = build_algorithm(**algorithm)  # type: FiredexAlgorithm
 
         self.regen_bad_ros = regen_bad_ros
+        self.testing = testing
 
         # FUTURE: mobility models for FFs / devs?
 
