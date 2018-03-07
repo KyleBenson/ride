@@ -18,9 +18,11 @@ class FireStatistics(NetworkExperimentStatistics):
         more_vp = {
             ### keep these after we average across runs
             "algorithm",
+            "treatment", # in case we group param treatments and assign a specific filename, it's easier to groupby this
             ## these are data points!  explicitly added from e.g. params
             "topic",
             "prio",
+            "prio_prob"
             ## these should stay as ints, not get averaged into floats!
             "nprios", "nffs", "niots", "nflows", "ntopics",
         }
@@ -82,6 +84,11 @@ class FireStatistics(NetworkExperimentStatistics):
         # get actual per-run lambda values (based on # publishers on each topic) rather than per-topic ones
         exp_params['lams'] = run_results['sim_config']['lambdas']
         exp_params['mus'] = run_results['sim_config']['mus']
+
+        # extract drop_rate policy configuration: need to assign them to each row based on that topic's priority
+        prio_probs = run_results['sim_config']['prio_probs']
+        prios = exp_params['prio']
+        exp_params['prio_prob'] = [prio_probs[p] for p in prios]
 
         # incorporate our analytical model
         exp_params['exp_delay'] = run_results['exp_srv_delay']
@@ -158,6 +165,8 @@ if __name__ == '__main__':
     # drop topics with no subscription OR advertisement (i.e. pub rate is 0)
     final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
 
+    # print "STATS:\n", final_stats
+
     # TODO: calculate_utilities()
 
     ####   SIMULATION RESULTS
@@ -179,13 +188,24 @@ if __name__ == '__main__':
     ####    ANALYTICAL MODEL  vs.   SIM RESULTS
 
     ## error rate affects delivery
-    stats.plot(x='loss', y=['rcv_lams', 'exp_rcv'], stats=final_stats, average_over=('run', 'topic', 'prio'))
+    # stats.plot(x='loss', y=['lams', 'rcv_lams', 'exp_rcv'], stats=final_stats, average_over=('run', 'topic', 'prio'))
 
     ## Show that bandwidth affects delay
     # stats.plot(x='bw', y=['delay', 'exp_delay'], average_over=('run', 'topic', 'prio'), stats=final_stats)
 
     ## Show that lower priority topics have increased delay
-    # stats.plot(x='prio', y=['delay', 'exp_delay'], groupby='nprios', stats=final_stats)
+    # stats.plot(x='prio', y=['delay', 'exp_delay'], groupby='treatment', stats=final_stats)
+    # stats.plot(x='prio', y='delay', groupby='nprios', stats=final_stats)
+
+    # Plot actual delay difference
+    # final_stats = final_stats[final_stats.run == 75]
+    final_stats['delay_diff'] = final_stats.delay - final_stats.exp_delay
+    stats.plot(x='prio', y='delay_diff', groupby='treatment', stats=final_stats)
+    # stats.plot(x='topic', y='delay_diff', groupby='treatment', average_over=('run', 'prio'), stats=final_stats)
+    # stats.plot(x='topic', y='delay_diff', groupby='nprios', average_over=('run', 'prio'), stats=final_stats)
+    # stats.plot(x='prio', y='delay_diff', groupby='nprios', stats=final_stats)
+    # stats.plot(x='topic', y=['delay', 'exp_delay'], average_over=('run', 'prio'), groupby='nprios', stats=final_stats)
+    # stats.plot(x='prio', y=['lams', 'delay_diff'], groupby='nprios', stats=final_stats)
 
     ###   Explicitly save results to file
     # stats.config.output_file = "out.csv"
