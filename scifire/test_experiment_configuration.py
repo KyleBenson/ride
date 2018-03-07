@@ -6,8 +6,10 @@ from firedex_algorithm_experiment import FiredexAlgorithmExperiment
 class TestExperimentConfiguration(unittest.TestCase):
     def test_subscriptions(self):
         # only one topic for each class
-        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.2, 0.2))
-        subs = exp.generate_subscriptions()
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.2, 0.2),
+                                         draw_subscriptions_from_advertisements=False)
+        exp.generate_configuration()
+        subs = exp.subscriptions
 
         # ensure we have the right amount for each class
         class0 = list(exp.topics_for_class(0))
@@ -18,8 +20,10 @@ class TestExperimentConfiguration(unittest.TestCase):
         # half topics for each class
         exp = FiredexAlgorithmExperiment(num_topics=20, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.5, 0.5),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 10]},
-                                                                {"dist": "uniform", "args": [0, 10]}))
-        subs = exp.generate_subscriptions()
+                                                                {"dist": "uniform", "args": [0, 10]}),
+                                         draw_subscriptions_from_advertisements=False)
+        exp.generate_configuration()
+        subs = exp.subscriptions
 
         # ensure we have the right amount for each class
         class0 = list(exp.topics_for_class(0))
@@ -30,8 +34,10 @@ class TestExperimentConfiguration(unittest.TestCase):
         # all topics for each class
         exp = FiredexAlgorithmExperiment(num_topics=20, topic_class_weights=(0.25, 0.75), topic_class_sub_rates=(1.0, 1.0),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 5]},
-                                                                {"dist": "uniform", "args": [0, 15]}))
-        subs = exp.generate_subscriptions()
+                                                                {"dist": "uniform", "args": [0, 15]}),
+                                         draw_subscriptions_from_advertisements=False)
+        exp.generate_configuration()
+        subs = exp.subscriptions
 
         # ensure we have the right amount for each class
         class0 = list(exp.topics_for_class(0))
@@ -42,8 +48,10 @@ class TestExperimentConfiguration(unittest.TestCase):
         # try Zipf distribution, which many pub-sub papers say is well-representative
         exp = FiredexAlgorithmExperiment(num_topics=20, topic_class_weights=(0.25, 0.75), topic_class_sub_rates=(0.5, 0.2),
                                          topic_class_sub_dists=({"dist": "zipf", "args": [2, -1]},
-                                                                {"dist": "zipf", "args": [2, -1]}))
-        subs = exp.generate_subscriptions()
+                                                                {"dist": "zipf", "args": [2, -1]}),
+                                         draw_subscriptions_from_advertisements=False)
+        exp.generate_configuration()
+        subs = exp.subscriptions
 
         # ensure we have the right amount for each class
         class0 = list(exp.topics_for_class(0))
