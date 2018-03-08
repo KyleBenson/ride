@@ -40,11 +40,16 @@ class FireStatistics(NetworkExperimentStatistics):
                 df = pd.read_csv(filename, names=('delay', 'rcv_rate', 'sim_exp_delay'))
 
                 # to track subscriptions to topics, create a bit vector and add that as a column
+                # similar for utilities, need to create a vector for all topics from a subscriptions-only vector
                 subs = params.pop('subscriptions')
                 subs_vec = [0] * params['ntopics']
-                for sub in subs:
+                utils = params.pop('utils')
+                utils_vec = [0] * params['ntopics']
+                for sub, util in zip(subs, utils):
                     subs_vec[sub] = 1
+                    utils_vec[sub] = util
                 df['subd'] = subs_vec
+                df['utils'] = utils_vec
 
                 # store all the parameters as columns
                 for k, v in params.items():
@@ -93,6 +98,9 @@ class FireStatistics(NetworkExperimentStatistics):
         # incorporate our analytical model
         exp_params['exp_delay'] = run_results['exp_srv_delay']
         exp_params['exp_rcv'] = run_results['exp_delivery']
+
+        # for calculating/plotting utility, record utility functions (also assigned per-row based on topic for subscriptions)
+        exp_params['utils'] = run_results['utility_weights']
 
         return exp_params
 

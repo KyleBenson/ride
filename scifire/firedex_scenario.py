@@ -18,7 +18,7 @@ class FiredexScenario(NetworkChannelState):
 
     # Used for control flows to treat these parameters differently.
     RANDOM_VARIABLE_DISTRIBUTION_PARAMETERS = ('topic_class_data_sizes', 'topic_class_pub_rates', 'topic_class_pub_dists',
-                                               'topic_class_sub_dists')
+                                               'topic_class_sub_dists', 'topic_class_utility_weights')
     # TODO: add algorithm to this so we can include a seed for non-deterministic algorithms
     # TODO: how to keep RVs going run-to-run?  maybe just not worry and always do one_run_per_proc... or see ENHANCE in exp.build_rv()
 
@@ -38,7 +38,8 @@ class FiredexScenario(NetworkChannelState):
                  topic_class_sub_rates=DEFAULT_TOPIC_CLASS_SUB_RATES, ic_sub_rate_factor=DEFAULT_IC_SUB_RATE_FACTOR,
                  topic_class_sub_start_times=DEFAULT_TOPIC_CLASS_SUB_START_TIMES,
                  topic_class_sub_durations=DEFAULT_TOPIC_CLASS_SUB_DURATIONS,
-                 # TODO: utilities?
+                 # utilities
+                 topic_class_utility_weights=DEFAULT_TOPIC_CLASS_UTILITY_WEIGHTS,
                  # XXX: for multiple inheritance
                  **kwargs):
         """
@@ -59,6 +60,7 @@ class FiredexScenario(NetworkChannelState):
         :param ic_sub_rate_factor:
         :param topic_class_sub_start_times:
         :param topic_class_sub_durations:
+        :param topic_class_utility_weights:
         :param kwargs:
         """
 
@@ -97,6 +99,8 @@ class FiredexScenario(NetworkChannelState):
         self.topic_class_sub_start_times = topic_class_sub_start_times
         self.topic_class_sub_durations = topic_class_sub_durations
 
+        self.topic_class_utility_weights = topic_class_utility_weights
+
         # Validate input params:
         # First, verify consistent # topic classes and record a value to make sure we don't have mis-matched lens later
         ntopic_classes = [len(self.topic_class_weights), len(self.topic_class_data_sizes), len(topic_class_pub_rates),
@@ -131,17 +135,22 @@ class FiredexScenario(NetworkChannelState):
                 'ic_subs': self.ic_sub_rate_factor,
                 'tc_sub_start': self.topic_class_sub_start_times,
                 'tc_sub_dur': self.topic_class_sub_durations,
+                'tc_utils': self.topic_class_utility_weights,
                 }
 
     @property
     def topics(self):
         """All topics across all classes"""
-        for c in self.topic_classes:
+        for c in self.topics_per_class:
             for t in c:
                 yield t
 
     @property
     def topic_classes(self):
+        return range(self.ntopic_classes)
+
+    @property
+    def topics_per_class(self):
         """Iterable of topic classes, where each class is an iterable of topics"""
 
         for i, l in enumerate(self.ntopics_per_class):
@@ -171,7 +180,7 @@ class FiredexScenario(NetworkChannelState):
     # TODO: handle string topics if we ever get there!
     def class_for_topic(self, topic):
         """Returns the topic class ID/index of the specified topic."""
-        for tclass, ctopics in enumerate(self.topic_classes):
+        for tclass, ctopics in enumerate(self.topics_per_class):
             if topic in ctopics:
                 return tclass
         raise ValueError("topic %s not found in any topic classes!" % topic)

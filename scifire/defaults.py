@@ -5,7 +5,7 @@ DEFAULT_NUM_NET_FLOWS = DEFAULT_NUM_PRIORITIES
 DEFAULT_ALGORITHM = 'random'  # can add 'seed' by putting this in a dict-style config e.g. {'algorithm': 'random', 'seed': 5}
 DEFAULT_RO_TOLERANCE = 0.0
 
-DEFAULT_NUM_TOPICS = 5
+DEFAULT_NUM_TOPICS = 10
 DEFAULT_TOPIC_CLASS_WEIGHTS = (0.7, 0.3)  # sensor data, async events
 # NOTES on DISTributions:
 #   The experiment sets default 'args' for uniform and zipf: sets an upper range limit for the former to include
@@ -33,6 +33,9 @@ DEFAULT_TOPIC_CLASS_SUB_RATES = (0.2, 0.5)
 DEFAULT_IC_SUB_RATE_FACTOR = 10
 DEFAULT_TOPIC_CLASS_SUB_DURATIONS = (float('inf'), float('inf'))
 DEFAULT_TOPIC_CLASS_SUB_START_TIMES = (0, 0)
+
+DEFAULT_TOPIC_CLASS_UTILITY_WEIGHTS = ({'dist': 'expon', 'args': [0.5], 'lbound': 0.01, 'ubound': 2.0},
+                                       {'dist': 'expon', 'args': [1.0], 'lbound': 0.1, 'ubound': 4.0})
 
 # We only really consider service rates for SDN switch outbound queue (i.e. due to bandwidth constraint).
 # ENHANCE: consider actual service rates for the other queues

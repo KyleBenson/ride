@@ -144,7 +144,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,
                       exp_srv_delay=expected_service_delays, exp_total_delay= expected_total_delays,
-                      exp_delivery=expected_delivery_rates)
+                      exp_delivery=expected_delivery_rates, utility_weights=self._utility_weights)
 
         # save some extra parameters if an error occurs
         if ret_code:

@@ -234,6 +234,31 @@ class TestExperimentConfiguration(unittest.TestCase):
         for total_rate, topic_rate in zip(lambdas[exp.ntopics_per_class[0]:], exp.pub_rates[exp.ntopics_per_class[0]:]):
             self.assertAlmostEqual(total_rate, topic_rate * exp.num_iots)  # some round-off error!
 
+    def test_utility_function_weights(self):
+        # constant weights
+        class_util_weights = (2, 4)
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.8, 0.8),
+                                         draw_subscriptions_from_advertisements=False,
+                                         topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+
+        weights = exp._utility_weights
+        subs = exp.subscriptions
+        c0_weights = [w for w, sub in zip(weights, subs) if exp.class_for_topic(sub) == 0]
+        c1_weights = [w for w, sub in zip(weights, subs) if exp.class_for_topic(sub) == 1]
+        self.assertEqual(len(c0_weights), 4) # "not enough weights for expected # subscriptions!"
+        self.assertEqual(len(c1_weights), 4) # "not enough weights for expected # subscriptions!")
+        self.assertTrue(all(class_util_weights[0] == w for w in c0_weights))
+        self.assertTrue(all(class_util_weights[1] == w for w in c1_weights))
+
+        # ENHANCE: verify it works for some actual distributions... seems to!
+
+        # exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.8, 0.8),
+        #                                  draw_subscriptions_from_advertisements=False)
+        # exp.generate_configuration()
+        #
+        # print "WEIGHTS:", exp._utility_weights
+
 
 if __name__ == '__main__':
     unittest.main()

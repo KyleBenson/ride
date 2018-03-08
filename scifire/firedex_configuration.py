@@ -23,6 +23,7 @@ class FiredexConfiguration(FiredexScenario):
         self._advertisements = None
         self.subscriptions = None
         self._network_flows = None
+        self._utility_weights = None
 
     def generate_configuration(self):
         """
@@ -38,7 +39,7 @@ class FiredexConfiguration(FiredexScenario):
         # TODO: make these dicts instead of lists?
         self.service_rates = []
         self.pub_rates = []
-        for topics, size_rv, rate_rv in zip(self.topic_classes, data_size_rvs, pub_rate_rvs):
+        for topics, size_rv, rate_rv in zip(self.topics_per_class, data_size_rvs, pub_rate_rvs):
             for t in topics:
                 self._data_sizes[t] = data_size = size_rv.get_int()
                 # TODO: handle specifying different bandwidth values
@@ -54,6 +55,8 @@ class FiredexConfiguration(FiredexScenario):
         # Need to generate advertisements first in case we base subscriptions on them
         self.generate_advertisements()
         self.generate_subscriptions()
+
+        self.generate_utility_weights()
 
     def generate_subscriptions(self):
         """
@@ -139,6 +142,29 @@ class FiredexConfiguration(FiredexScenario):
 
         self._advertisements = (ff_ads, iot_ads)
         return self.advertisements
+
+    def generate_utility_weights(self):
+        """
+        For each subscription (each subscriber and each topic they subscribe to), generates a random weight from the
+        topic class distribution to represent variance in the utility functions (i.e. value of receiving publications
+        on that topic relative to other topics).
+        :return:
+        """
+
+        # TODO: actually handle multiple subscribers!!
+
+        all_subs = self.subscriptions
+        tc_subs = [[s for s in all_subs if self.class_for_topic(s) == tc] for tc in self.topic_classes]
+        tc_uw_rvs = [self.build_sampling_random_variable(rv_cfg, subs) for rv_cfg, subs in zip(self.topic_class_utility_weights, tc_subs)]
+
+        util_weights = []
+        for subs, rv in zip(tc_subs, tc_uw_rvs):
+            for s in subs:
+                util_weights.append(rv.get())
+
+        self._utility_weights = util_weights
+
+    ####   HELPER FUNCTIONS:
 
     @property
     def advertisements(self):
