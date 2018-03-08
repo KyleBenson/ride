@@ -25,6 +25,7 @@ from firedex_algorithm_experiment import FiredexAlgorithmExperiment
 from mininet_sdn_experiment import MininetSdnExperiment
 from scale_client.core.client import make_scale_config_entry, make_scale_config
 
+
 class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment):
 
     def __init__(self, experiment_duration=FIRE_EXPERIMENT_DURATION,
@@ -52,6 +53,8 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         # TODO: expand this into a tree network!  ideally, with some switches having wi-fi nodes
         self.bldg = None    # building's internal network
         self.inet = None    # represents Internet connection that allows ICP, BMS, EOC, and hosts to all communicate
+        self.dummy_sw = None    # Adding a dummy switch between inet and bdlg so that we can add priority queues
+        self.prio_queue_links = None    # List of links that require priority queues
         # ENHANCE: we'll add different specific heterogeneous networks e.g. sat, cell, wimax, wifi
         # ENHANCE: add switches for each of the special hosts?  not needed currently for 2-switch topo....
 
@@ -105,6 +108,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         # 1. create all our special switches for the network itself
         self.bldg = self.add_switch('bldg', dpid=':'.join(['bb']*8))
         self.inet = self.add_switch('inet', dpid='11:ee:77:00:00:00:00:00')
+        self.dummy_sw = self.add_switch('dummy_sw', dpid=':'.join(['dd']*8))
         # TODO: icp_switch?
 
         # 2. create special host nodes
@@ -128,7 +132,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         # NOTE: we apply default channel characteristics to inet links only
         # TODO: set up some for other links?  internal building topo should have some at least...
-        inet_connected_nodes = [self.bldg, self.icp_sw]
+        inet_connected_nodes = [self.dummy_sw, self.icp_sw]
         if self.with_eoc:
             inet_connected_nodes.append(self.eoc_sw)
 
@@ -137,12 +141,16 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
             # QUESTION: should we save these links so that we can e.g. explicitly vary their b/w during the sim?
 
         # Connect special hosts in the building
-        bldg_connected_nodes = [self.bms_sw]
+        bldg_connected_nodes = [self.bms_sw, self.dummy_sw]
         if self.with_black_box:
             bldg_connected_nodes.append(self.black_box)
 
         for bldg_comp in bldg_connected_nodes:
             self.add_link(self.bldg, bldg_comp, use_tc=False)
+
+        # Get all the links to add priority queues
+        links = self.get_links_between(self.dummy_sw, self.bldg) # Returns a list of links between the given two nodes
+        self.prio_queue_links = links
 
         # Connect IoT and FF hosts
         # For now, we'll just add all FFs and IoT devs directly to the bldg
@@ -166,7 +174,11 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         super(FiredexMininetExperiment, self).setup_experiment()
 
-        self.setup_priority_queues()
+        # Setup priority queues on the links
+        if self.prio_queue_links:
+            self.setup_priority_queues_links(links=self.prio_queue_links,
+                                             prio_levels=self.num_priority_levels,
+                                             bandwidth=bandwidth_mbps_to_bps(self.bandwidth))
 
         # Start the brokers first so that they're running by the time the clients start publishing
         self.run_brokers()
@@ -287,28 +299,6 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         # Fire fighter nodes publish their data to the ICP broker.
         # TODO:
-
-    def setup_priority_queues(self):
-        """
-        Create Linux TC queues with priorities for use with OVS and OpenFlow rules that direct certain packets to them
-         for priority delivery.
-        :return:
-        """
-
-        # NOTE: don't need to set queues on server switches since all network elements will have them.
-        # Plus, those switches don't have the same (any) channel constraints!
-        # We do, however, want to make sure to configure each interface connecting to a host (or its serving switch).
-        priority_switches = [sw for sw in self.switches if not self.is_server_switch(sw)]
-        priority_switch_names = [sw.name for sw in priority_switches]
-        log.debug("Setting up %d priority queues on %d switches: %s" % \
-                  (self.num_priority_levels, len(priority_switch_names), priority_switch_names))
-
-        # TODO: implement this!
-        for sw in priority_switches:
-            for p in range(self.num_priority_levels):
-                # TODO: create a queue for each priority level on each switch (using subprocess?)
-                # (could combine multiple creation commands into one?)
-                pass
 
 FiredexMininetExperiment.__doc__ = CLASS_DESCRIPTION
 

@@ -11,3 +11,8 @@ DEFAULT_VIDEO_RATE_MBPS = 1.0
 DEFAULT_VIDEO_PORT = 5000
 
 FIRE_EXPERIMENT_DURATION = 15
+
+
+# TODO: Move this to global config file once the environment variables have been moved elsewhere
+def bandwidth_mbps_to_bps(bw):
+    return bw * 1000000
