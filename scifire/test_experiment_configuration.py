@@ -183,7 +183,8 @@ class TestExperimentConfiguration(unittest.TestCase):
 
         exp = FiredexAlgorithmExperiment(num_topics=ntopics, topic_class_weights=(class1_weight, class2_weight),
                                          topic_class_advertisements_per_ff=ff_num_ads,
-                                         topic_class_advertisements_per_iot=iot_num_ads)
+                                         topic_class_advertisements_per_iot=iot_num_ads,
+                                         draw_subscriptions_from_advertisements=False)
 
         try:
             exp.setup_experiment()

@@ -186,6 +186,10 @@ class FiredexConfiguration(FiredexScenario):
 
         # ENHANCE: store the random variable so we can keep it between runs?  would need to identify it e.g. with a string...
 
+        # make a copy so we don't change the configuration dict!
+        if isinstance(rv_dist_cfg, dict):
+            rv_dist_cfg = rv_dist_cfg.copy()
+
         rv = RandomVariable.build(rv_dist_cfg)
         if rv.is_upper_bounded():
             if rv.dist == 'uniform':
