@@ -20,7 +20,7 @@ from mininet.cli import CLI
 import topology_manager.sdn_topology
 from network_experiment import NetworkExperiment
 from config import *
-from scifire.config import DEFAULT_NUM_PRIORITIES
+from scifire.config import DEFAULT_NUM_PRIORITIES, bandwidth_mbps_to_bps
 # TODO: move DEFAULT_NUM_PRIORITIES to general config
 # In fact, move the mininet topology configs(NETWORKING CONFIG such as DEFAULT_BANDWIDTH ..) to different config
 # And move environment variables(such as DEFAULT_USER and OVS_PREFIX_DIR ..) to a different config
@@ -273,6 +273,12 @@ class MininetSdnExperiment(NetworkExperiment):
             to_iface.config(**new_params)
 
     def get_links_between(self, node1, node2):
+        """
+        Returns the list of links between two nodes
+        :param node1:
+        :param node2:
+        :return:
+        """
         return [link for link in self.links
                 if (node1, node2) in (
                     (link.intf1.node, link.intf2.node),
@@ -282,6 +288,16 @@ class MininetSdnExperiment(NetworkExperiment):
         """
         Create Linux TC queues with priorities for use with OVS and OpenFlow rules that direct certain packets to them
         for priority delivery.
+
+        Queue with priority 0 will be named 0
+        Queue with priority 1 will be named 1
+        .
+        .
+        Queue with priority 7 will be name 7
+
+        There can be maximum of 8 priority levels
+        WARNING: Any unmarked flow will classified as priority 0 and sent to queue 0
+
         :param intfs: interface / list of interfaces to set priority queues for
         :param prio_levels: number of queues, defaults to DEFAULT_NUM_PRIORITIES
         :param bandwidth: Max link bandwidth in bps, defaults to DEFAULT_BANDWIDTH
@@ -298,34 +314,38 @@ class MininetSdnExperiment(NetworkExperiment):
         if prio_levels is None:
             prio_levels = DEFAULT_NUM_PRIORITIES
 
-        bw = bandwidth if bandwidth is not None else self.bandwidth
+        bw = bandwidth if bandwidth is not None else bandwidth_mbps_to_bps(self.bandwidth)
 
         intf_names = [intf.name for intf in intfs]
         log.debug("Setting up %d priority queues on %d interfaces: %s" %
                   (prio_levels, len(intfs), intf_names))
 
         command = 'sudo ovs-vsctl '
+        # Adding all the interfaces
         for intf in intf_names:
             command += ' -- set port ' + intf + ' qos=@newqos -- '
+        # Setting queue type and max bandwidth
         command += '--id=@newqos create QoS type=linux-htb other-config:max-rate=' + \
                    str(bw) + \
                    ' queues='
-
+        # Setting the number of queues to create
         for p in range(1, prio_levels+1):
             qname = str(p)  # This will be the name of the queue used in flow rules
             qid = '@' + qname + 'q'
             command += qname + '=' + qid + ','
         command = command[:-1]
         command += ' -- '
-
+        # Creating queues and setting their priorities
         for p in range(1, prio_levels+1):
             qid = '@' + str(p) + 'q'
             command += ' --id=' + qid + ' create queue other-config:priority=' + \
                        str(p) + \
                        ' --'
         command = command[:-2]
+        log.debug('Executing OVS command to setup queues: %s' %
+                  command)
 
-        # TODO: Call subprocess popen to set the command
+        # Calling subprocess Popen to set the command
         p = subprocess.Popen(command, shell=True)
         try:
             p.wait(timeout=5)
@@ -336,8 +356,9 @@ class MininetSdnExperiment(NetworkExperiment):
         if p.poll() != 0:
             log.error('Could not create priority queues on %s interfaces: ' %
                       intf_names)
-
-        print(command)
+        else:
+            log.debug("Successfully set up %d priority queues on %d interfaces: %s" %
+                      (prio_levels, len(intfs), intf_names))
 
     def setup_priority_queues_links(self, links, prio_levels=None, bandwidth=None):
         """
@@ -349,7 +370,7 @@ class MininetSdnExperiment(NetworkExperiment):
         """
         intfs = []
         if not isinstance(links, list):
-            intfs.append([links.intf1, links.intf2])
+            intfs.extend([links.intf1, links.intf2])
         else:
             intfs.extend(sum([[link.intf1, link.intf2] for link in links], []))
         self.setup_priority_queues(intfs, prio_levels, bandwidth)
