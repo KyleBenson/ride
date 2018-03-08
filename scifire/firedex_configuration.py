@@ -21,7 +21,7 @@ class FiredexConfiguration(FiredexScenario):
         self._data_sizes = dict()
         self.service_rates = []
         self._advertisements = None
-        self.subscriptions = None
+        self.subscriptions = None  # type: list[int]
         self._network_flows = None
         self._utility_weights = None
 
