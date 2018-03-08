@@ -219,6 +219,8 @@ class FiredexAlgorithm(object):
         lambdas.sort()
         lambdas = [v for (k,v) in lambdas]
         return lambdas
+    # ENHANCE: consider publisher-to-subscriber error rates in above function
+    publication_rates = broker_arrival_rates
 
     def ros_okay(self, configuration, tolerance=None):
         """
