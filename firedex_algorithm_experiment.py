@@ -139,12 +139,12 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         expected_service_delays = self.algorithm.service_delays(self)
         expected_total_delays = self.algorithm.total_delays(self)
         expected_delivery_rates = self.algorithm.delivery_rates(self)
-
-        #TODO: read results from simulator and feed them into utility functions
+        expected_utilities = self.algorithm.estimate_utilities(self)
 
         result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,
                       exp_srv_delay=expected_service_delays, exp_total_delay= expected_total_delays,
-                      exp_delivery=expected_delivery_rates, utility_weights=self._utility_weights)
+                      exp_delivery=expected_delivery_rates, utility_weights=self._utility_weights,
+                      exp_utilities=expected_utilities)
 
         # save some extra parameters if an error occurs
         if ret_code:

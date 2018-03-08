@@ -1,5 +1,6 @@
 from ..firedex_configuration import FiredexConfiguration, QueueStabilityError
 from collections import namedtuple
+from ..utilities import calculate_utility
 from ..defaults import *
 
 import logging
@@ -84,7 +85,7 @@ class FiredexAlgorithm(object):
         :param subscriber: the subscriber we calculate delays for
         :return: list of lists of service delays where each outer index corresponds to the
                 topic sharing that index in config.topics
-        :rtype: list[list[float]]
+        :rtype: list[float]
         """
 
         # TODO: consider pub-to-broker (averaged over pubs?) and broker-to-switch latency too?  maybe re-tx delay?
@@ -253,6 +254,29 @@ class FiredexAlgorithm(object):
         ros = [[lam / mu for lam, mu in zip(topics_lams, topics_mus)] for topics_lams, topics_mus in all_queues_lam_mus]
         # log.info("ROs: %s" % ros)
         return ros
+
+    ### Utility functions
+
+    def estimate_utilities(self, configuration):
+        """
+        Estimate the expected utility for all subscriptions given the configuration.
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :return: the estimated utilities, which matches the return structure of configuration.subscriptions
+        """
+
+        subs = configuration.subscriptions
+        util_weights = configuration._utility_weights
+
+        # need to convert these lists of size ntopics to size nsubs
+        delays = self.total_delays(configuration)  # per subscriber?
+        delays = [delays[s] for s in subs]
+        lambdas = self.delivery_rates(configuration)  # per subscriber?
+        lambdas = [lambdas[s] for s in subs]
+        max_lambdas = self.publication_rates(configuration)
+        max_lambdas = [max_lambdas[s] for s in subs]
+
+        return [calculate_utility(dr, mdr, d, w) for dr, mdr, d, w in zip(lambdas, max_lambdas, delays, util_weights)]
 
     ### Priority setting functions
 

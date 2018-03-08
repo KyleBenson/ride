@@ -3,6 +3,7 @@
 from network_experiment_statistics import NetworkExperimentStatistics
 from scale_client.stats.parsed_sensed_events import ParsedSensedEvents
 import pandas as pd
+from scifire.utilities import calculate_utility
 
 import logging
 log = logging.getLogger(__name__)
@@ -45,11 +46,15 @@ class FireStatistics(NetworkExperimentStatistics):
                 subs_vec = [0] * params['ntopics']
                 utils = params.pop('utils')
                 utils_vec = [0] * params['ntopics']
-                for sub, util in zip(subs, utils):
+                exp_utils = params.pop('exp_utils')
+                exp_utils_vec = [0] * params['ntopics']
+                for sub, util, exp_util in zip(subs, utils, exp_utils):
                     subs_vec[sub] = 1
                     utils_vec[sub] = util
+                    exp_utils_vec[sub] = exp_util
                 df['subd'] = subs_vec
                 df['utils'] = utils_vec
+                df['exp_utils'] = exp_utils_vec
 
                 # store all the parameters as columns
                 for k, v in params.items():
@@ -69,6 +74,9 @@ class FireStatistics(NetworkExperimentStatistics):
 
                 # XXX: need to set the index to be topic ID so each new parser we bring in will match up the topics
                 df = df.reset_index().rename(columns=dict(index='topic'))
+
+                # now to actually calculate the utilities from the util weights we got above:
+                df['utils'] = calculate_utility(df.rcv_lams, df.lams, df.delay, df.utils)
 
                 return df
 
@@ -101,6 +109,7 @@ class FireStatistics(NetworkExperimentStatistics):
 
         # for calculating/plotting utility, record utility functions (also assigned per-row based on topic for subscriptions)
         exp_params['utils'] = run_results['utility_weights']
+        exp_params['exp_utils'] = run_results['exp_utilities']
 
         return exp_params
 
@@ -172,6 +181,9 @@ if __name__ == '__main__':
 
     # drop topics with no subscription OR advertisement (i.e. pub rate is 0)
     final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
+
+    # doing this for now to view columns easier...
+    del final_stats['treatment']
 
     # print "STATS:\n", final_stats
 
