@@ -261,6 +261,24 @@ class FiredexConfiguration(FiredexScenario):
     def data_sizes(self):
         return self._data_sizes.values()
 
+    def get_utility_weight(self, topic, subscriber=None):
+        """
+        Returns the utility weight of the specified topic and subscriber.  If the subscriber has not subscribed to this
+        topic, returns 0.
+
+        :param topic:
+        :param subscriber: which subscriber to find the utilities of (default=pick any arbitrarily)
+        :return:
+        """
+
+        # TODO: make this into a helper function?
+        util_weights_per_topic = {k: v for k, v in zip(self.subscriptions, self._utility_weights)}
+        try:
+            return util_weights_per_topic[topic]
+        except KeyError:
+            return 0  # must not be subscribed to
+
+
 class QueueStabilityError(ValueError):
     """
     Generated when the check for ro values fails: this experimental run should be recorded as a wash.

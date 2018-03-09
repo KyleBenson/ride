@@ -251,6 +251,11 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertTrue(all(class_util_weights[0] == w for w in c0_weights))
         self.assertTrue(all(class_util_weights[1] == w for w in c1_weights))
 
+        for t in range(0, 5):
+            self.assertIn(exp.get_utility_weight(t), [0, 2])
+        for t in range(5, 10):
+            self.assertIn(exp.get_utility_weight(t), [0, 4])
+
         # ENHANCE: verify it works for some actual distributions... seems to!
 
         # exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.8, 0.8),
