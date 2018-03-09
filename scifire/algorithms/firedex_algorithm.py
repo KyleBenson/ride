@@ -276,7 +276,19 @@ class FiredexAlgorithm(object):
         max_lambdas = self.publication_rates(configuration)
         max_lambdas = [max_lambdas[s] for s in subs]
 
-        return [calculate_utility(dr, mdr, d, w) for dr, mdr, d, w in zip(lambdas, max_lambdas, delays, util_weights)]
+        return [self.calculate_utility(dr, mdr, d, w) for dr, mdr, d, w in zip(lambdas, max_lambdas, delays, util_weights)]
+
+    def calculate_utility(self, delivery_rate, max_delivery_rate, delay, weight):
+        """
+        Calculates the utility for a particular subscription according to the specified parameters, which may be
+        estimates or actual measured values.
+        :param delivery_rate: rate of successful notification delivery to the subscriber
+        :param max_delivery_rate: rate of original publications that match this subscription
+        :param delay: end-to-end delay from publication to subscriber reception (in seconds)
+        :param weight:
+        :return: a non-negative number
+        """
+        return calculate_utility(delivery_rate, max_delivery_rate, delay, weight)
 
     ### Priority setting functions
 
