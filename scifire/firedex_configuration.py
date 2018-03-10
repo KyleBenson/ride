@@ -166,6 +166,19 @@ class FiredexConfiguration(FiredexScenario):
 
     ####   HELPER FUNCTIONS:
 
+    def get_subscriptions(self, subscriber=None):
+        """
+        Return the list of subscriptions for the given subscriber.
+        :param subscriber: by default, gets subscriptions of all subscribers and returns a dict keyed by each subscriber
+        :return:
+        """
+
+        # TODO: properly handle multiple subscribers!
+        if subscriber is None:
+            return {subscriber: self.subscriptions for subscriber in self.subscribers}
+        else:
+            return self.subscriptions
+
     @property
     def advertisements(self):
         """
@@ -271,8 +284,11 @@ class FiredexConfiguration(FiredexScenario):
         :return:
         """
 
+        if subscriber is None:
+            subscriber = self.arbitrary_subscriber
+
         # TODO: make this into a helper function?
-        util_weights_per_topic = {k: v for k, v in zip(self.subscriptions, self._utility_weights)}
+        util_weights_per_topic = {k: v for k, v in zip(self.get_subscriptions(subscriber), self._utility_weights)}
         try:
             return util_weights_per_topic[topic]
         except KeyError:

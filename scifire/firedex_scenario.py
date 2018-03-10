@@ -204,6 +204,14 @@ class FiredexScenario(NetworkChannelState):
     def subscribers(self):
         return self.publishers
 
+    @property
+    def arbitrary_subscriber(self):
+        """
+        Used when not considering multiple subscribers to just return the first available subscriber.
+        :return:
+        """
+        return self.subscribers[0]
+
     @classmethod
     def get_arg_parser(cls, parents=(), add_help=False):
         """
