@@ -228,6 +228,9 @@ class FiredexConfiguration(FiredexScenario):
         # make a copy so we don't change the configuration dict!
         if isinstance(rv_dist_cfg, dict):
             rv_dist_cfg = rv_dist_cfg.copy()
+        # XXX: ensure we have a dict so we can change the params without causing TypeErrors!
+        else:
+            rv_dist_cfg = RandomVariable.expand_config(rv_dist_cfg)
 
         rv = RandomVariable.build(rv_dist_cfg)
         if rv.is_upper_bounded():
