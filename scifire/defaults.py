@@ -6,6 +6,8 @@ DEFAULT_ALGORITHM = 'random'  # can add 'seed' by putting this in a dict-style c
 DEFAULT_RO_TOLERANCE = 0.0
 
 DEFAULT_NUM_TOPICS = 10
+# NOTES on topic classes: all arguments should be lists/tuples, but you can specify single-element lists to be expanded
+#    to match the longest-length args e.g. highest # classes
 DEFAULT_TOPIC_CLASS_WEIGHTS = (0.7, 0.3)  # sensor data, async events
 # NOTES on DISTributions:
 #   The experiment sets default 'args' for uniform and zipf: sets an upper range limit for the former to include

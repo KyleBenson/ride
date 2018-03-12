@@ -4,6 +4,7 @@ from firedex_algorithm_experiment import FiredexAlgorithmExperiment
 
 
 class TestExperimentConfiguration(unittest.TestCase):
+
     def test_subscriptions(self):
         # only one topic for each class
         exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.2, 0.2),
@@ -112,6 +113,35 @@ class TestExperimentConfiguration(unittest.TestCase):
                         # verify the ads are for the right topics
                         self.assertEqual(len(c0_ads), exp_num_pub_class_ads[0])
                         self.assertEqual(len(c1_ads), exp_num_pub_class_ads[1])
+
+    def test_topic_classes(self):
+        """
+        Verifies that specifying different-sized lists of topic class parameters doesn't cause errors.
+        :return:
+        """
+
+        # NOTE: these test cases written assuming the default # topic_classes is 2!
+
+        # generic test case
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False)
+        exp.generate_configuration()
+        self.assertEqual(len(set(exp.subscriptions)), 10)
+        self.assertEqual(exp.ntopic_classes, 2)
+
+        # single class test case should expand these params to 2 topic classes
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5,), topic_class_sub_rates=(1.0,),
+                                         draw_subscriptions_from_advertisements=False)
+        exp.generate_configuration()
+        self.assertEqual(len(set(exp.subscriptions)), 10)
+        self.assertEqual(exp.ntopic_classes, 2)
+
+        # 5 class test case should expand other params to 5 topic classes
+        exp = FiredexAlgorithmExperiment(num_topics=30, topic_class_weights=[0.2]*5, topic_class_sub_rates=(0.5,),
+                                         draw_subscriptions_from_advertisements=False)
+        exp.generate_configuration()
+        self.assertEqual(len(set(exp.subscriptions)), 15)
+        self.assertEqual(exp.ntopic_classes, 5)
 
     def test_rv_sampling_default_params(self):
         """

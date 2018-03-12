@@ -2,6 +2,8 @@
 # (c) Kyle Benson 2018
 
 import argparse
+import inspect
+import itertools
 
 from network_experiment import NetworkChannelState
 from scifire.defaults import *
@@ -76,14 +78,24 @@ class FiredexScenario(NetworkChannelState):
         self.num_priority_levels = num_priority_levels
         self.num_topics = num_topics
 
+        # XXX: to allow specifying topic class params with some params enumerating all classes and others setting
+        # a single value for all classes, we get all topic class parameters, figure out the # topic classes as max
+        # length of all these, and make a helper function to expand any shorter-length params to this length:
+        args, _, _, values = inspect.getargvalues(inspect.currentframe())
+        self.ntopic_classes = max(len(values[arg]) for arg in args if arg.startswith('topic_class_'))
+        def __expand_topic_class_param(param):
+            # make the classes into a cycle to ensure the correct # classes:
+            changed = list(itertools.islice(itertools.cycle(param), self.ntopic_classes))
+            return changed
+
         # publication-related params
-        self.topic_class_weights = topic_class_weights
+        self.topic_class_weights = __expand_topic_class_param(topic_class_weights)
         self._ntopics_per_class = None  # filled in later according to the above weights
-        self.topic_class_data_sizes = topic_class_data_sizes
-        self.topic_class_pub_rates = topic_class_pub_rates
-        self.topic_class_pub_dists = topic_class_pub_dists
-        self.topic_class_advertisements_per_ff = topic_class_advertisements_per_ff
-        self.topic_class_advertisements_per_iot = topic_class_advertisements_per_iot
+        self.topic_class_data_sizes = __expand_topic_class_param(topic_class_data_sizes)
+        self.topic_class_pub_rates = __expand_topic_class_param(topic_class_pub_rates)
+        self.topic_class_pub_dists = __expand_topic_class_param(topic_class_pub_dists)
+        self.topic_class_advertisements_per_ff = __expand_topic_class_param(topic_class_advertisements_per_ff)
+        self.topic_class_advertisements_per_iot = __expand_topic_class_param(topic_class_advertisements_per_iot)
 
         # TODO: implement this eventually
         self.reliable_publication = reliable_publication
@@ -91,24 +103,13 @@ class FiredexScenario(NetworkChannelState):
             log.warning("reliable publications not currently implemented!")
 
         # subscription-related params
-        self.topic_class_sub_dists = topic_class_sub_dists
-        self.topic_class_sub_rates = topic_class_sub_rates
+        self.topic_class_sub_dists = __expand_topic_class_param(topic_class_sub_dists)
+        self.topic_class_sub_rates = __expand_topic_class_param(topic_class_sub_rates)
         self.ic_sub_rate_factor = ic_sub_rate_factor
-        # TODO: manipulate distributions with default args according to e.g. num_topics
-        # self.topic_subscription_dist['scale'] = self.num_topics
-        self.topic_class_sub_start_times = topic_class_sub_start_times
-        self.topic_class_sub_durations = topic_class_sub_durations
+        self.topic_class_sub_start_times = __expand_topic_class_param(topic_class_sub_start_times)
+        self.topic_class_sub_durations = __expand_topic_class_param(topic_class_sub_durations)
 
-        self.topic_class_utility_weights = topic_class_utility_weights
-
-        # Validate input params:
-        # First, verify consistent # topic classes and record a value to make sure we don't have mis-matched lens later
-        ntopic_classes = [len(self.topic_class_weights), len(self.topic_class_data_sizes), len(topic_class_pub_rates),
-                          len(self.topic_class_sub_dists)]
-        self.ntopic_classes = ntopic_classes[0]
-        if not all(x == self.ntopic_classes for x in ntopic_classes):
-            self.ntopic_classes = min(ntopic_classes)
-            log.info("inconsistent sizes for topic class parameters!  Assuming minimum # topics classes: %d" % self.ntopic_classes)
+        self.topic_class_utility_weights = __expand_topic_class_param(topic_class_utility_weights)
 
     def as_dict(self):
         """
