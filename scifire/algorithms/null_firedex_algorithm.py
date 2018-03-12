@@ -13,13 +13,15 @@ class NullFiredexAlgorithm(FiredexAlgorithm):
         super(NullFiredexAlgorithm, self).__init__(**kwargs)
 
     def _run_algorithm(self, configuration, subscribers=None):
-        flow = configuration.net_flows[0]
-        prio = configuration.prio_classes[0]
+        if subscribers is None:
+            subscribers = configuration.subscribers
 
-        # NOTE: we just ignore the subscribers parameter here since all flows/priorities will be the same!
-        # TODO: when we update the config.net_flows API for multiple subscribers, we'll have to change this a bit...
+        for sub in subscribers:
+            flows = configuration.net_flows_for_subscriber(sub)
+            flow = flows[0]
+            prio = configuration.prio_classes[0]
 
-        for t in configuration.topics:
-            self.set_topic_net_flow(t, flow, configuration)
-        for f in configuration.net_flows:
-            self.set_net_flow_priority(f, prio, configuration)
+            for t in configuration.topics:
+                self.set_topic_net_flow(t, flow, configuration)
+            for f in flows:
+                self.set_net_flow_priority(f, prio, configuration)

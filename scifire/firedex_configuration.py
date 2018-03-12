@@ -270,6 +270,15 @@ class FiredexConfiguration(FiredexScenario):
             return range(self.num_net_flows)
         return list(self._network_flows)
 
+    def net_flows_for_subscriber(self, subscriber):
+        """
+        Returns a list of network flows associated with the requested subscriber.
+        :param subscriber:
+        :return:
+        """
+        # TODO: handle multiple subscribers!
+        return self.net_flows
+
     @property
     def data_sizes(self):
         return self._data_sizes.values()
