@@ -27,7 +27,7 @@ class TestTopics(unittest.TestCase):
 
         # all in one class
         ntopics = 11
-        topic_class_weights = (1.0,)
+        topic_class_weights = (1.0, 0.0)
         scen = FiredexScenario(num_topics=ntopics, topic_class_weights=topic_class_weights)
         self.assertEqual(scen.ntopics_per_class[0], 11)
 
