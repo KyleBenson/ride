@@ -54,6 +54,7 @@ nffs = [3, 6, 12, 18]
 sub_dists = (({'dist': 'uniform'}, {'dist': 'uniform'}), ({'dist': 'zipf', 'args': [2]}, {'dist': 'zipf', 'args': [2]}))
 bandwidths = [10, 100, 1000]  # in Mbps
 algs = ALL_ALGORITHMS
+ro_tolerances = [0.001, 0.01, 0.1, 0.2, .4]
 # NOTE: if a parameter is a dict (e.g. single RV dist. or alg.), you need to wrap it in a dict keyed by its parameter
 # name so that the runner doesn't treat it as a collection of parameters but a single parameter!
 # algs = [dict(algorithm={'algorithm': 'random', 'seed': 567678383})]
@@ -67,12 +68,14 @@ EXPERIMENTAL_TREATMENTS = {
     ## this is a good setup for testing that most things are working okay
     # 'num_topics': ntopics,
     ## this is for explicitly forcing just a single run to quickly test the simulator itself
-    # 'testing': [{'bandwidth': 100, 'nruns': 1}],
+    'testing': [{'bandwidth': 0.1, 'nruns': 1, 'testing': False}],
     ## Actual varied parameter explorations:
     'nprios': [{'num_priority_levels': p, 'num_net_flows': p} for p in nprios],  # currently assume nprios==nflows always!
     'error_rate': errs,
     'bandwidth': bandwidths,
     # 'algorithm': algs,
+    'prio_probs': [{'bandwidth': 0.2, 'nruns': 10, 'algorithm': dict(algorithm='random', ro_tolerance=ro_tol),
+                 'output_filename': 'results_%fro.json' % ro_tol} for ro_tol in ro_tolerances],
     ## NOTE: the rest of these parameter explorations do not have the parameter included in the default output_filename
     # 'topic_dists': [{'num_topics': t, 'num_ffs': f, 'num_iots': f*2, 'topic_class_sub_dists': sub_dist,
     #                  'output_filename': 'results_%dt_%df_sub-%s.json' % (t, f, sub_dist[0]['dist'])}\
@@ -81,7 +84,8 @@ EXPERIMENTAL_TREATMENTS = {
 }
 
 # these aren't passed to the experiment class
-nprocs = None if not testing else 1  # None uses cpu_count()
+nprocs = 2  # queuing simulator is multi-threaded
+# nprocs = None if not testing else 1  # None uses cpu_count()
 
 def makecmds(output_dirname=''):
     """Generator for each process (parallel call to the experiment)."""
