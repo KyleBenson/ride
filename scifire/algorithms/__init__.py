@@ -1,8 +1,9 @@
 from scifire.algorithms.null_firedex_algorithm import NullFiredexAlgorithm
 from scifire.algorithms.random_firedex_algorithm import RandomFiredexAlgorithm
+from scifire.algorithms.greedy_split_firedex_algorithm import GreedySplitFiredexAlgorithm
 
-ALL_ALGORITHMS = ('random', 'null')
-# TODO: static, naive, sophisticated ones?
+
+ALL_ALGORITHMS = ('random', 'null', 'split')
 
 
 def build_algorithm(algorithm='random', **kwargs):
@@ -18,9 +19,9 @@ def build_algorithm(algorithm='random', **kwargs):
         return RandomFiredexAlgorithm(**kwargs)
     elif algorithm == 'null':
         return NullFiredexAlgorithm(**kwargs)
-    # TODO: assign them based on static utility functions e.g. maybe order topics by utility and break into even prio groups?
-    # elif algorithm == 'static':
-    # TODO: assign static priorities without considering the analytical model i.e. just relative utilities?
-    # elif algorithm == 'naive':
+    elif algorithm in ('greedy-split', 'greedy', 'split', 'static', 'naive'):
+        return GreedySplitFiredexAlgorithm(**kwargs)
+    # TODO:
+    # elif algorithm == 'opt':
     else:
         raise ValueError("unrecognized priority-assignment algorithm %s" % algorithm)
