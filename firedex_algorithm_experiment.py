@@ -39,7 +39,11 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         if not isinstance(algorithm, dict):
             algorithm = dict(algorithm=algorithm)
-        self.algorithm = build_algorithm(**algorithm)  # type: FiredexAlgorithm
+        # 0 priority levels means we aren't assigning ANY priorities!
+        if self.num_priority_levels > 0:
+            self.algorithm = build_algorithm(**algorithm)  # type: FiredexAlgorithm
+        else:
+            self.algorithm = build_algorithm(algorithm='null')  # type: FiredexAlgorithm
 
         self.regen_bad_ros = regen_bad_ros
         self.testing = testing

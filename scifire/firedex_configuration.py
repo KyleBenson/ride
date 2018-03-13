@@ -256,10 +256,16 @@ class FiredexConfiguration(FiredexScenario):
     def prio_classes(self):
         """
         Returns a list of the distinct priority classes where the first item is the highest priority.
+        Note that if self.num_priority_levels == 0, the returned list contains only the null value cls.NO_PRIORITY
         :return:
         :rtype: list[int]
         """
-        return range(self.num_priority_levels)
+        if self.num_priority_levels > 0:
+            return range(self.num_priority_levels)
+        else:
+            return tuple((FiredexConfiguration.NO_PRIORITY,))
+
+    NO_PRIORITY = -1
 
     @property
     def net_flows(self):
