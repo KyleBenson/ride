@@ -17,7 +17,6 @@ class RandomFiredexAlgorithm(FiredexAlgorithm):
         super(RandomFiredexAlgorithm, self).__init__(**kwargs)
         self.rand = random.Random(seed)
 
-    # TODO: always return lowest prio level for non-subscribed topics?
     def _run_algorithm(self, configuration, subscribers=None):
         """
         :param configuration:
@@ -30,9 +29,9 @@ class RandomFiredexAlgorithm(FiredexAlgorithm):
 
         for sub in subscribers:
             flows = configuration.net_flows_for_subscriber(sub)
-            for t in configuration.topics:
+            for req in configuration.get_subscriptions(sub):
                 flow = self.rand.sample(flows, 1)[0]
-                self.set_topic_net_flow(t, flow, configuration, subscriber=sub)
+                self.set_subscription_net_flow(req, flow, configuration)
 
             # XXX: because we currently assume nflows == nprios, we need to make sure each prioq is used here or we end up
             # with e.g. only 2/3 priorities used!  Hence, for now we just assign flows to directly map to their
@@ -46,4 +45,4 @@ class RandomFiredexAlgorithm(FiredexAlgorithm):
                                           (configuration.num_net_flows, configuration.num_priority_levels))
 
             for f, p in zip(flows, prios):
-                self.set_net_flow_priority(f, p, configuration, subscriber=sub)
+                self.set_net_flow_priority(f, p, configuration)

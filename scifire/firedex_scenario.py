@@ -38,6 +38,7 @@ class FiredexScenario(NetworkChannelState):
                  # subscriptions
                  topic_class_sub_dists=DEFAULT_TOPIC_CLASS_SUB_DISTS,
                  topic_class_sub_rates=DEFAULT_TOPIC_CLASS_SUB_RATES, ic_sub_rate_factor=DEFAULT_IC_SUB_RATE_FACTOR,
+                 # TODO: distinguish subscription rates for FFs vs. IoTs?  currently ONLY FFs subscribe!
                  topic_class_sub_start_times=DEFAULT_TOPIC_CLASS_SUB_START_TIMES,
                  topic_class_sub_durations=DEFAULT_TOPIC_CLASS_SUB_DURATIONS,
                  # utilities
@@ -110,6 +111,11 @@ class FiredexScenario(NetworkChannelState):
         self.topic_class_sub_durations = __expand_topic_class_param(topic_class_sub_durations)
 
         self.topic_class_utility_weights = __expand_topic_class_param(topic_class_utility_weights)
+
+        # Generate names for the various hosts
+        self.ffs = ["ff%d" % i for i in range(self.num_ffs)]
+        self.ic = self.ffs[0]
+        self.iots = ["iot%d" % i for i in range(self.num_iots)]
 
     def as_dict(self):
         """
@@ -188,22 +194,20 @@ class FiredexScenario(NetworkChannelState):
 
     @property
     def npublishers(self):
-        return self.num_ffs + self.num_iots
+        return len(self.publishers)
 
     @property
     def publishers(self):
-        # ENHANCE: explicitly label IC?
-        ffs = ["ff%d" % i for i in range(self.num_ffs)]
-        iots = ["iot%d" % i for i in range(self.num_iots)]
-        return ffs + iots
+        return self.ffs + self.iots
 
     @property
     def nsubscribers(self):
-        return self.npublishers
+        return len(self.subscribers)
 
     @property
     def subscribers(self):
-        return self.publishers
+        # TODO: how to work in IoT dev subs too?
+        return self.ffs
 
     @property
     def arbitrary_subscriber(self):

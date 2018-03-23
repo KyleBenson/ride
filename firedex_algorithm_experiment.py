@@ -98,7 +98,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         # NOTE: since the exp class IS a config class, just pass self and the alg can ignore exp-specific parts
         try:
             self.algorithm.force_update()  # for multiple runs
-            prios = self.algorithm.get_topic_priorities(self)
+            prios = self.algorithm.get_subscription_priorities(self)
             cfg = self.get_simulator_input_dict(prios)
 
         except QueueStabilityError as e:
@@ -147,7 +147,7 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,
                       exp_srv_delay=expected_service_delays, exp_total_delay= expected_total_delays,
-                      exp_delivery=expected_delivery_rates, utility_weights=self._utility_weights,
+                      exp_delivery=expected_delivery_rates, utility_weights=self.subscription_utility_weights,
                       exp_utilities=expected_utilities)
 
         # save some extra parameters if an error occurs
@@ -169,8 +169,8 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
             "lambdas": [topic1_pub_rate, topic2_pub_rate, ...],
             "mus": [topic1_service_rate, topic2_service_rate, ...],
             "error_rate": 0.1,
-            "subscriptions": [0, 2, 3, 5],  #currently only for a single subscriber!
-            "priorities": [0, 0, 1, 2, 3],
+            "subscriptions": [0, 2, 3, 5, 8],    # for all subscribers!
+            "priorities": [0, 0, 1, 2, ...],     # one for EACH topic even if not subscribed
             "prio_probs": [1.0, 0.9, 0.8, 0.7],  # rate of events let through for each priority class
           }
         """
@@ -182,8 +182,23 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
 
         # priorities expected just as a list enumerating the priority class of each topic in order
         if priorities is not None:
+            # since we have per-subscription priorities, we need to fill in dummy values for the non-subscribed topics
+            # convert to topic dict first
+            priorities = {sub.topic: priorities[sub] for sub in priorities}
+            for topic in self.topics:
+                # TODO: set NO PRIO instead of lowest one
+                priorities.setdefault(topic, self.prio_classes[-1])
+
             priorities = list(sorted(priorities.items()))
             priorities = [p for t,p in priorities]
+
+            # XXX: since the simulator determines the # prios by just getting the max of those specified, we should do:
+            nprios = max(priorities) + 1
+
+            assert self.num_topics == len(priorities), \
+                "expected %d priorities (one for each topic) but got %d" % (self.num_topics, len(priorities))
+        else:
+            nprios = self.num_priority_levels
 
         # need to reverse lookup the network flow from the priority classes to tell the simulator drop rates for each
         # priority, but this could be an issue:
@@ -196,12 +211,21 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         nf_prios = self.algorithm.get_net_flow_priorities(self)
         for flow in self.net_flows:
             drop_rate = self.algorithm.get_drop_rates(self)[flow]
-            prio_probs[nf_prios[flow]] = 1.0 - drop_rate
+            v = 1.0 - drop_rate
+            p = nf_prios[flow]
+
+            if p in prio_probs and prio_probs[p] != v:
+                log.warning("prio_prob[%d]=%f but now we're changing it to %f: something may be wrong!" % (p, prio_probs[p], v))
+            prio_probs[p] = v
 
         # turn it into a list ordered by priority class
         prio_probs = [prob for prio, prob in sorted(prio_probs.items())]
 
-        return dict(mus=self.service_rates, lambdas=lambdas, subscriptions=self.subscriptions,
+        # XXX: to resolve a potential issue for if we don't generate all prio_probs:
+        while len(prio_probs) < nprios:
+            prio_probs.append(0.0)  # drop all traffic of this prio, which shouldn't actually be ANY!
+
+        return dict(mus=self.service_rates, lambdas=lambdas, subscriptions=self.subscription_topics,
                     priorities=priorities, error_rate=float(self.error_rate), prio_probs=prio_probs)
 
     ####  Boiler-plate helper functions for running experiments

@@ -12,13 +12,13 @@ class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
     which is max utility / (pub rate * pub size).
     """
 
-    def info_per_byte(self, topic, configuration, subscriber):
+    def info_per_byte(self, subscription, configuration):
         """
         Calculate the info/byte metric: max utility / (pub rate * pub size)
-        :param topic:
+        :param subscription:
+        :type subscription: FiredexConfiguration.Subscription
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: which subscriber we're considering the utility function of for this topic
         :return:
         """
 
@@ -28,13 +28,13 @@ class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
         # Similarly, we should maybe not be scaling by pub rate since utility already accounts for that...
         #   maybe instead calculate incremental additional info/byte according to some decision?
 
-        pub_rate = self.publication_rates(configuration)[topic]
+        pub_rate = self.publication_rates(configuration)[subscription.topic]
         # XXX: use 0 delay, which in the future we may assume is impossible hence making an epsilon value
         delay = 0.000001
-        weight = configuration.get_utility_weight(topic, subscriber)
+        weight = subscription.utility_weight
         max_util = self.calculate_utility(pub_rate, pub_rate, delay, weight)
 
-        pub_size = configuration.data_sizes[topic]
+        pub_size = configuration.data_sizes[subscription.topic]
         info_per_byte = max_util / (pub_rate * pub_size)
         # info_per_byte = weight / (pub_rate * pub_size)
 
@@ -50,7 +50,7 @@ class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
         """
 
         subs = configuration.get_subscriptions(subscriber)
-        ipbs = sorted(((self.info_per_byte(sub, configuration, subscriber), sub) for sub in subs), reverse=True)
+        ipbs = sorted(((self.info_per_byte(sub, configuration), sub) for sub in subs), reverse=True)
         return [sub for ipb, sub in ipbs]
 
     def _even_split_groups(self, items, ngroups):
@@ -97,6 +97,10 @@ class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
         if subscribers is None:
             subscribers = configuration.subscribers
 
+        # TODO: might want to consider ordering ALL subscriptions rather than just per-subscriber...
+        # BUT, we have to make sure we assign the correct net flows to the subscriptions...
+        # maybe we assign priorities FIRST for all subscriptions and THEN split up net flows for a subscribers subscriptions?
+
         for sub in subscribers:
             flows = configuration.net_flows_for_subscriber(sub)
             reqs = self.sorted_subscriptions(configuration, sub)
@@ -104,10 +108,10 @@ class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
 
             for flow, req_group in zip(flows, reqs):
                 for req in req_group:
-                    self.set_topic_net_flow(req, flow, configuration, subscriber=sub)
+                    self.set_subscription_net_flow(req, flow, configuration)
 
             prios = configuration.prio_classes
             flows_for_prios = self._even_split_groups(flows, len(prios))
             for fs, p in zip(flows_for_prios, prios):
                 for f in fs:
-                    self.set_net_flow_priority(f, p, configuration, subscriber=sub)
+                    self.set_net_flow_priority(f, p, configuration)

@@ -37,7 +37,7 @@ class FiredexAlgorithm(object):
         # network ) AND for each subscriber connected with that broker.
 
         # these are filled in by _run_algorithm()
-        self._topic_flow_map = dict()
+        self._req_flow_map = dict()
         self._flow_prio_map = dict()
 
         self.ro_tolerance = ro_tolerance
@@ -60,59 +60,62 @@ class FiredexAlgorithm(object):
     Mus = namedtuple('Mus', ['broker_in', 'broker_out', 'switch_in', 'switch_out'])
     Ros = namedtuple('Ros', ['broker_in', 'broker_out', 'switch_in', 'switch_out'])
 
-    def service_rates(self, configuration, subscriber=None):
+    def service_rates(self, configuration):
         """
-        Returns the expected service rates (MUs) at each queue for all topics given the configuration and
-        optionally-specified subscriber.
+        Returns the expected service rates (MUs) at each queue for all topics given the configuration, which assumes
+        that all the topics are subscribed to i.e. will be passed through the SDN switch queue.
         :param configuration:
-        :param subscriber:
         :return:
         :rtype: FiredexAlgorithm.Mus
         """
 
+        # NOTE: rates are per-topic until the point at which a publication is matched to a subscription and
+        # forwarded as a notification: then it's per-subscription
+
         mus_switch_out = [configuration.calculate_service_rate(pkt_size) for pkt_size in configuration.data_sizes]
+        # ASSUMPTION: packet sizes for a topic are the same across subscriptions' notifications
+        mus_switch_out = configuration.topics_to_subscriptions(mus_switch_out)
 
-        return FiredexAlgorithm.Mus([DEFAULT_MU] * configuration.num_topics, [DEFAULT_MU] * configuration.num_topics,
-                                    [DEFAULT_MU] * configuration.num_topics, mus_switch_out)
+        return FiredexAlgorithm.Mus([DEFAULT_MU] * configuration.num_topics, [DEFAULT_MU] * len(configuration.subscriptions),
+                                    [DEFAULT_MU] * len(configuration.subscriptions), mus_switch_out)
 
-    def total_delays(self, configuration, subscriber=None):
+    def total_delays(self, configuration):
         """
-        Calculates the end-to-end delay of each topic on its route from the publisher(s) to the optionally-specified
+        Calculates the end-to-end delay of each subscriptions' notifications en route from the publisher(s)
+        through the broker and to to the corresponding
         subscriber.  This includes queuing/service delays as well as network propagation delay (latency).
 
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: the subscriber we calculate delays for
-        :return: list of lists of service delays where each outer index corresponds to the
-                topic sharing that index in config.topics
+        :return: list of delays (in ms) for each subscription
         :rtype: list[float]
         """
 
         # TODO: consider pub-to-broker (averaged over pubs?) and broker-to-switch latency too?  maybe re-tx delay?
-        return [configuration.latency + d for d in self.service_delays(configuration, subscriber=subscriber)]
+        return [configuration.latency + d for d in self.service_delays(configuration)]
 
     # ENHANCE: consider publisher-to-broker delay
 
-    def service_delays(self, configuration, subscriber=None):
+    def service_delays(self, configuration):
         """
-        Calculates the service delay of each topic for each queue we model in our system.  Only considers the queues
-        on route to the optionally-specified subscriber.
+        Calculates the service delay of each subscription at each of its corresponding queues we model in our system.
 
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: the subscriber we calculate delays for
         :return: list of service delays where each index corresponds to the topic sharing that index in config.topics
         :rtype: list[float]
         """
 
-        lambdas = self.arrival_rates(configuration, subscriber=subscriber)
-        mus = self.service_rates(configuration, subscriber=subscriber)
+        lambdas = self.arrival_rates(configuration)
+        mus = self.service_rates(configuration)
 
         # First the broker delays:
         # Each are MM1 queues
         lam_b_in = lambdas.broker_in
         mu_b_in = mus.broker_in[0]  # independent of topic!
         delta_b_in = [((1.0/mu_b_in)/(1-lam/mu_b_in)) for lam in lam_b_in]
+
+        # NOTE: at this point we switch over to subscriptions rather than topics
 
         lam_b_thru = lambdas.broker_thru
         mu_b_out = mus.broker_out[0]  # independent of topic!
@@ -124,16 +127,16 @@ class FiredexAlgorithm(object):
 
         # First, the priority queue needs to consider each priority class according to the network flow/priority mappings.
         # So we get the total rates for each of these classes first.
-        topic_prios = self.get_topic_priorities(configuration, subscriber=subscriber)
-        lam_topics = zip(lam_s_in, configuration.topics)
-        lam_prios = [sum(lam if topic_prios[top] == p else 0.0 for lam, top in lam_topics) for p in configuration.prio_classes]
+        req_prios = self.get_subscription_priorities(configuration)
+        lam_reqs = zip(lam_s_in, req_prios.keys())
+        lam_prios = [sum(lam if req_prios[req] == p else 0.0 for lam, req in lam_reqs) for p in configuration.prio_classes]
         num = sum(lam_prios)
 
-        delta_s_in = [(num / ((mu_s_in - sum(lam_prios[:topic_prios[top]])) *
-                              (mu_s_in - sum(lam_prios[: max(topic_prios[top] - 1, 0)])))  # prio=0 --> -1 index --> bad!
-                       + 1.0/mu_s_in) for lam, top in lam_topics]
+        delta_s_in = [(num / ((mu_s_in - sum(lam_prios[:req_prios[req]])) *
+                              (mu_s_in - sum(lam_prios[: max(req_prios[req] - 1, 0)])))  # prio=0 --> -1 index --> bad!
+                       + 1.0/mu_s_in) for lam, req in lam_reqs]
 
-        # Now the multi-class queue where we consider a different mu per-topic
+        # Now the multi-class queue where we consider a different mu per-subscription (really just topic currently)
         lam_s_thru = lambdas.switch_thru
         mu_s_out = mus.switch_out
         denom = (1.0 - sum(lam/mu for lam, mu in zip(lam_s_thru, mu_s_out)))
@@ -143,42 +146,39 @@ class FiredexAlgorithm(object):
         final_delays = zip(*final_delays)
         final_delays = [sum(terms) for terms in final_delays]
 
-        # Only topics for which the subscriber will actually receive events should have expected service delays!
-        # A subscriber receives events for a topic if they're subscribed to it AND it actually makes its way to the subscriber
-        subs = set(configuration.subscriptions)
-        final_lambdas = lambdas.sub_in
-        final_delays = [d if (t in subs and l > 0.0) else 0.0 for t, d, l in zip(configuration.topics, final_delays, final_lambdas)]
-
         return final_delays
 
-    def arrival_rates(self, configuration, subscriber=None):
+    def arrival_rates(self, configuration):
         """
-        Returns the expected arrival rates at each queue of all topics for the optionally-specified subscriber.
+        Returns the expected arrival rates at each queue. Up through the point at which a publication is matched to a
+        subscription and forwarded to the corresponding subscriber as a notification, the rates are *per-topic*.
+        Afterwards, they're *per-subscription* to represent notification messages destined to the subscriber.
+
         :param configuration:
-        :param subscriber:
         :return:
         :rtype: FiredexAlgorithm.Lambdas[list[float]]
         """
+
+        # NOTE: We have to consider all subscribers as a queue shared by multiple has arrival rates for ALL of their
+        # subscriptions.  Hence we have to do a conversion at the publication-notification boundary.
 
         # ENHANCE: consider publisher queues?
 
         # First, consider the broker queues:
         lambdas_b_in = self.broker_arrival_rates(configuration)
 
-        # we simply 0 out any topics for which no subscriptions
-        # TODO: handle multiple subscribers!
-        # NOTE: to do this, we'll have to potentially consider other subscribers anyway as a queue shared by two subs
-        # still has arrival rates for topics to which one of those subscribers is not interested.
-        subs = set(configuration.subscriptions)
-        lambdas_b_thru = [l if t in subs else 0.0 for t, l in zip(configuration.topics, lambdas_b_in)]
+        # Now we have notifications!  This conversion will handle dropping any topics with no subscriptions.
+        lambdas_b_thru = configuration.topics_to_subscriptions(lambdas_b_in)
         lambdas_b_out = lambdas_b_thru
+
         # ENHANCE: per-flow lambdas?
 
         # Next, the SDN switch queues:
         # consider drop rate en route to switch
-        net_flows = self.get_topic_net_flows(configuration, subscriber)
-        lambdas_s_in = [l * (1.0 - self.get_drop_rates(configuration, subscriber)[net_flows[topic]])\
-                        for l, topic in zip(lambdas_b_out, configuration.topics)]
+        net_flows = self.get_subscription_net_flows(configuration)
+
+        lambdas_s_in = [l * (1.0 - self.get_drop_rates(configuration)[flow])\
+                        for l, (sub, flow) in zip(lambdas_b_out, net_flows.items())]
         # ENHANCE: consider finite buffer size in prioq?
         lambdas_s_thru = lambdas_s_in
         lambdas_s_out = lambdas_s_thru
@@ -189,15 +189,14 @@ class FiredexAlgorithm(object):
         return FiredexAlgorithm.Lambdas(lambdas_b_in, lambdas_b_thru, lambdas_b_out,
                                         lambdas_s_in, lambdas_s_thru, lambdas_s_out, lambdas_delivery)
 
-    def delivery_rates(self, configuration, subscriber=None):
+    def delivery_rates(self, configuration):
         """
-        Returns the expected delivery rates of all topics for the optionally-specified subscriber.
+        Returns the expected delivery rates of all topics.
         :param configuration:
-        :param subscriber:
         :return:
         :rtype: list[float]
         """
-        return self.arrival_rates(configuration, subscriber=subscriber).sub_in
+        return self.arrival_rates(configuration).sub_in
 
     def broker_arrival_rates(self, configuration):
         """
@@ -233,6 +232,7 @@ class FiredexAlgorithm(object):
         if tolerance is None:
             tolerance = self.ro_tolerance
 
+        # TODO: what about multiple switches?  map net flows to switches??? we'll have to consider them eventually in mininet anyway...
         ros = self.get_ros(configuration)
         ros_okay = all(sum(qros) < (1.0 - tolerance) for qros in ros)
         return ros_okay
@@ -265,16 +265,11 @@ class FiredexAlgorithm(object):
         :return: the estimated utilities, which matches the return structure of configuration.subscriptions
         """
 
-        subs = configuration.subscriptions
-        util_weights = configuration._utility_weights
+        util_weights = configuration.subscription_utility_weights
 
-        # need to convert these lists of size ntopics to size nsubs
-        delays = self.total_delays(configuration)  # per subscriber?
-        delays = [delays[s] for s in subs]
-        lambdas = self.delivery_rates(configuration)  # per subscriber?
-        lambdas = [lambdas[s] for s in subs]
-        max_lambdas = self.publication_rates(configuration)
-        max_lambdas = [max_lambdas[s] for s in subs]
+        delays = self.total_delays(configuration)
+        lambdas = self.delivery_rates(configuration)
+        max_lambdas = configuration.topics_to_subscriptions(self.publication_rates(configuration))
 
         return [self.calculate_utility(dr, mdr, d, w) for dr, mdr, d, w in zip(lambdas, max_lambdas, delays, util_weights)]
 
@@ -292,70 +287,51 @@ class FiredexAlgorithm(object):
 
     ### Priority setting functions
 
-    # TODO: consolidate_subscriber_flows=True as a param to the setters should ignore the specified subscriber and
-    # set the flows/priorities for specified topics the same across all subscribers!  This might be used in a real
-    # implementation in order to limit the number of OpenFlow flow rules used for prioritization
-
-    def set_topic_net_flow(self, topic, net_flow, configuration, subscriber=None):
+    def set_subscription_net_flow(self, subscription, net_flow, configuration):
         """
-        Set the network flow to be used for the given topic when forwarded to the specified subscriber.  Not specifying
-        subscriber sets this flow for ALL subscribers in the given configuration.
-        :param topic:
+        Set the network flow to be used for the given subscription when forwarded to the corresponding subscriber.
+
+        :param subscription:
+        :type subscription: FiredexConfiguration.Subscription
         :param net_flow:
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: defaults to all subscribers
         :return:
         """
 
-        if subscriber is None:
-            subscribers = configuration.subscribers
-        else:
-            subscribers = [subscriber]
+        sub = configuration.subscriber_for_flow(net_flow)
+        assert sub == subscription.subscriber, "subscriber for net flow doesn't match the given subscription!"
+        self._req_flow_map.setdefault(configuration, dict())[subscription] = net_flow
 
-        for sub in subscribers:
-            self._topic_flow_map.setdefault(configuration, dict()).setdefault(sub, dict())[topic] = net_flow
+    # We also refer to subscriptions as requests at times.
+    set_req_flow = set_subscription_net_flow
 
-    def set_net_flow_priority(self, net_flow, priority, configuration, subscriber=None):
+    def set_net_flow_priority(self, net_flow, priority, configuration):
         """
         Set the priority class for the given network flow.
         :param net_flow:
         :param priority:
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: defaults to all subscribers
         :return:
         """
 
-        if subscriber is None:
-            subscribers = configuration.subscribers
-        else:
-            subscribers = [subscriber]
+        self._flow_prio_map.setdefault(configuration, dict())[net_flow] = priority
 
-        for sub in subscribers:
-            self._flow_prio_map.setdefault(configuration, dict()).setdefault(sub, dict())[net_flow] = priority
-
-    def set_net_flow_drop_rate(self, net_flow, drop_rate, configuration, subscriber=None):
+    def set_net_flow_drop_rate(self, net_flow, drop_rate, configuration):
         """
         Set the preemptive drop rate for the given network flow.
         :param net_flow:
         :param drop_rate: should be in range [0,1]
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: defaults to all subscribers
         :return:
         """
 
         if not 0.0 <= drop_rate <= 1.0:
             raise ValueError("requested drop_rate (%f) not in expected range of [0,1]")
 
-        if subscriber is None:
-            subscribers = configuration.subscribers
-        else:
-            subscribers = [subscriber]
-
-        for sub in subscribers:
-            self._drop_rates.setdefault(configuration, dict()).setdefault(sub, dict())[net_flow] = drop_rate
+        self._drop_rates.setdefault(configuration, dict())[net_flow] = drop_rate
 
     def get_drop_rates(self, configuration, subscriber=None):
         """
@@ -365,81 +341,81 @@ class FiredexAlgorithm(object):
 
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: which subscriber's drop rates are being requested (default=arbitrarily pick one, which assumes
-            the values were set across all subscribers)
+        :param subscriber: which subscriber's drop rates are being requested (default=all subscribers)
         :return: mapping of network flows to drop rates
         :rtype: dict
         """
 
         try:
             if subscriber is None:
-                # arbitrary subscriber from underlying mapping
-                return next(self._drop_rates[configuration].itervalues())
+                return self._drop_rates[configuration].copy()
             else:
-                return self._drop_rates[configuration][subscriber].copy()
+                relevant_flows = configuration.net_flows_for_subscriber(subscriber)
+                return {k: v for k, v in self._drop_rates[configuration].items() if k in relevant_flows}
         except IndexError as e:
             raise ValueError("request for bad configuration or subscriber caused error: %s" % e)
 
-    def get_topic_priorities(self, configuration, subscriber=None):
+    def get_subscription_priorities(self, configuration, subscriber=None):
         """
         Runs the actual algorithm to determine what the priority levels should be according to the current real-time
-        configuration specified.  This implementation just defers to the get_topic_net_flows() and
+        configuration specified.  This implementation just defers to the get_subscription_net_flows() and
         get_net_flow_priorities() methods.
 
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: which subscriber priorities being requested (default=arbitrarily pick one, which assumes
-            the values were set across all subscribers)
+        :param subscriber: which subscriber priorities being requested (default=None=all subscribers)
         :return: mapping of topic IDs to priority classes
         :rtype: dict
         """
 
-        if self._update_needed(configuration, subscriber):
-            self.__run_algorithm(configuration, subscriber)
+        if self._update_needed(configuration):
+            self.__run_algorithm(configuration)
 
-        topic_flow_map = self.get_topic_net_flows(configuration, subscriber)
+        topic_flow_map = self.get_subscription_net_flows(configuration, subscriber)
         flow_prio_map = self.get_net_flow_priorities(configuration, subscriber)
 
         topic_prio_map = {t: flow_prio_map[f] for t, f in topic_flow_map.items()}
         return topic_prio_map
 
-    def get_topic_net_flows(self, configuration, subscriber=None):
+    get_req_prios = get_subscription_priorities
+
+    def get_subscription_net_flows(self, configuration, subscriber=None):
         """
         Runs the algorithm to assign topics to network flows based on current configuration state.
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: which subscriber net flows being requested (default=arbitrarily pick one, which assumes
-            the values were set across all subscribers)
-        :return: mapping of topic IDs to network flow IDs
+        :param subscriber: which subscriber's net flows being requested (default=all subscribers)
+        :return: mapping of subscriptions to network flows
         :rtype: dict
         """
 
-        if self._update_needed(configuration, subscriber):
-            self.__run_algorithm(configuration, subscriber)
+        if self._update_needed(configuration):
+            self.__run_algorithm(configuration)
+
         if subscriber is None:
-            # arbitrary subscriber from underlying mapping
-            return next(self._topic_flow_map[configuration].itervalues())
-        else:
-            return self._topic_flow_map[configuration][subscriber]
+            return self._req_flow_map[configuration].copy()
+        return {sub: self._req_flow_map[configuration][sub] for sub in configuration.get_subscriptions(subscriber)}
+
+    get_req_flows = get_subscription_net_flows
 
     def get_net_flow_priorities(self, configuration, subscriber=None):
         """
         Runs the algorithm to assign network flows to priority levels based on current configuration state.
         :param configuration:
         :type configuration: FiredexConfiguration
-        :param subscriber: which subscriber priorities being requested (default=arbitrarily pick one, which assumes
-            the values were set across all subscribers)
+        :param subscriber: which subscriber priorities being requested (default=None=all subscribers)
         :return: mapping of network flow IDs to priority classes
         :rtype: dict
         """
 
         if self._update_needed(configuration, subscriber):
             self.__run_algorithm(configuration, subscriber)
+
         if subscriber is None:
-            # arbitrary subscriber from underlying mapping
-            return next(self._flow_prio_map[configuration].itervalues())
+            return self._flow_prio_map[configuration].copy()
         else:
-            return self._flow_prio_map[configuration][subscriber]
+            sub_flows = configuration.net_flows_for_subscriber(subscriber)
+            return {flow: self._flow_prio_map[configuration][flow] for flow in sub_flows}
 
     def force_update(self, configuration=None, subscribers=None):
         """
@@ -451,19 +427,23 @@ class FiredexAlgorithm(object):
 
         # to blow away all configurations, just reset everything
         if configuration is None:
-            self._topic_flow_map = dict()
+            self._req_flow_map = dict()
             self._flow_prio_map = dict()
 
         # for a specific configuration, just delete it IF IT EXISTS
         elif subscribers is None:
-            self._topic_flow_map.pop(configuration, None)
+            self._req_flow_map.pop(configuration, None)
             self._flow_prio_map.pop(configuration, None)
 
         # otherwise, carefully pop off each subscriber for the configuration (again, IF IT EXISTS)
         else:
             for subscriber in subscribers:
-                self._topic_flow_map.get(configuration, dict()).pop(subscriber, None)
-                self._flow_prio_map.get(configuration, dict()).pop(subscriber, None)
+                for req in configuration.get_subscriptions(subscriber):
+                    self._req_flow_map.get(configuration, dict()).pop(req, None)
+
+                for flow in configuration.net_flows_for_subscriber(subscriber):
+                    self._flow_prio_map.get(configuration, dict()).pop(flow, None)
+                    self._drop_rates.get(configuration, dict()).pop(flow, None)
 
     def __run_algorithm(self, configuration, subscribers=None):
         """
@@ -516,7 +496,7 @@ class FiredexAlgorithm(object):
         else:
             subs = [subscriber]
 
-        update = configuration not in self._topic_flow_map or any(s not in self._topic_flow_map[configuration] for s in subs)
+        update = configuration not in self._req_flow_map
         return update
 
     def _apply_drop_rate_policy(self, configuration, subscribers=None, policy=None):
@@ -535,8 +515,10 @@ class FiredexAlgorithm(object):
         :return:
         """
 
-        if subscribers is None:
-            subscribers = configuration.subscribers
+        # if only a subset of subscribers was requested, we should check that each flow we try matches one of the
+        # requested subscribers
+        if subscribers is not None:
+            subscribers = set(subscribers)
 
         if policy is None:
             policy = self.drop_policy
@@ -548,10 +530,12 @@ class FiredexAlgorithm(object):
             ros_met = False
             iterations_left = 1000
             while not ros_met and iterations_left > 0:
-                for sub in subscribers:
-                    for net_flow, prio in self.get_net_flow_priorities(configuration, sub).items():
-                        drop_rate = 1.0 - exp_base**(-prio-1)
-                        self.set_net_flow_drop_rate(net_flow, drop_rate, configuration, sub)
+                for net_flow, prio in self.get_net_flow_priorities(configuration).items():
+                    if subscribers is not None and configuration.subscriber_for_flow(net_flow) not in subscribers:
+                        continue
+
+                    drop_rate = 1.0 - exp_base**(-prio-1)
+                    self.set_net_flow_drop_rate(net_flow, drop_rate, configuration)
 
                 ros_met = self.ros_okay(configuration)
                 exp_base += 0.1

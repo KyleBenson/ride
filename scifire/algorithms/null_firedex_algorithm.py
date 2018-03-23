@@ -6,7 +6,7 @@ log = logging.getLogger(__name__)
 
 class NullFiredexAlgorithm(FiredexAlgorithm):
     """
-    Algorithm implementation that assigns priorites randomly for a baseline comparison with actual algorithms.
+    Algorithm implementation that assigns the same priority for each subscription as a baseline comparison with actual algorithms.
     """
 
     def __init__(self, **kwargs):
@@ -21,7 +21,7 @@ class NullFiredexAlgorithm(FiredexAlgorithm):
             flow = flows[0]
             prio = configuration.prio_classes[0]
 
-            for t in configuration.topics:
-                self.set_topic_net_flow(t, flow, configuration)
+            for req in configuration.get_subscriptions(sub):
+                self.set_subscription_net_flow(req, flow, configuration)
             for f in flows:
                 self.set_net_flow_priority(f, prio, configuration)

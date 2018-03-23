@@ -1,5 +1,8 @@
 from scale_client.stats.random_variable import RandomVariable
 from scifire.firedex_scenario import FiredexScenario
+
+from collections import namedtuple
+import itertools
 import logging
 log = logging.getLogger(__name__)
 
@@ -20,10 +23,13 @@ class FiredexConfiguration(FiredexScenario):
         self.pub_rates = []
         self._data_sizes = dict()
         self.service_rates = []
-        self._advertisements = None
-        self.subscriptions = None  # type: list[int]
-        self._network_flows = None
-        self._utility_weights = None
+        # these are indexed by hosts i.e. publishers or subscribers
+        self._advertisements = None  # type: tuple[dict]
+        self._subscriptions = None  # type: list[FiredexConfiguration.Subscription]
+        # TODO: should probably do a similar simple object for network flows to keep matched with subscriber
+        self._network_flows = None  # type: dict
+        # also keep a backwards lookup since each network is unique to a subscriber
+        self._net_flow_subscriber_map = None  # type: dict
 
     def generate_configuration(self):
         """
@@ -34,8 +40,8 @@ class FiredexConfiguration(FiredexScenario):
         the algorithms, or configure clients in an emulated experiment.
         """
 
-        data_size_rvs = [RandomVariable.build(kws) for kws in self.topic_class_data_sizes]
-        pub_rate_rvs = [RandomVariable.build(kws) for kws in self.topic_class_pub_rates]
+        data_size_rvs = [self.build_random_variable(kws) for kws in self.topic_class_data_sizes]
+        pub_rate_rvs = [self.build_random_variable(kws) for kws in self.topic_class_pub_rates]
         # TODO: make these dicts instead of lists?
         self.service_rates = []
         self.pub_rates = []
@@ -54,54 +60,66 @@ class FiredexConfiguration(FiredexScenario):
 
         # Need to generate advertisements first in case we base subscriptions on them
         self.generate_advertisements()
+        # This generates utilities too.
         self.generate_subscriptions()
 
-        self.generate_utility_weights()
+    ## use this as a first version of a potential future object with more attributes e.g. start/end_time etc.
+    Subscription = namedtuple('Subscription', ['subscriber', 'topic', 'utility_weight'])
 
     def generate_subscriptions(self):
         """
-        Generates the topic subscriptions for this scenario configuration.
+        Generates the subscriptions for this scenario configuration: each subscription matches a subscriber to one of
+        the topics topics it's interested in and a utility function to capture the level of interest / value of info.
 
-        NOTE: this is currently only for a single subscriber and the subscriptions are assumed to remain constant
-        for the entire experiment's duration.
+        NOTE: the subscriptions are assumed to remain constant for the entire experiment's duration.
+        NOTE: the utility function is just a weight (i.e. all the same assumed log(1+lambda)-based function)
 
-        :return: list of topics subscribed to
+        :return: self.subscriptions
         """
-
-        # TODO: generate subs for multiple subscribers
-        # TODO: need to distinguish IC from other FFs when we do this
 
         # IDEA: for a single subscriber, consider each topic class and generate topics from the given distribution
         # until we have a number of unique subscriptions >= #requested for that class
         # TODO: need to bring in topic start time and duration distributions too... maybe make subscriptions a class???
         # ENHANCE: maybe we should actually have the # subscriptions be a RV so we can vary the subscribers that way?
 
-        subs = []
-        for class_idx, (class_topic_rate, rv) in enumerate(zip(self.topic_class_sub_rates, self.topic_class_sub_dists)):
-            # to reduce variance in the simulator due to subscriptions for non-advertised topics, we draw
-            # subscriptions only from those that are advertised unless otherwise explicitly requested.
-            if self.draw_subscriptions_from_advertisements:
-                topic_choices = [ad for ad in self.advertised_topics if self.class_for_topic(ad) == class_idx]
-            else:
-                topic_choices = self.topics_for_class(class_idx)
+        self._subscriptions = []
+        for subscriber in self.subscribers:
+            subs = []
+            for class_idx, (class_topic_rate, rv_top, rv_uw) in enumerate(zip(self.topic_class_sub_rates, self.topic_class_sub_dists,
+                                                                   self.topic_class_utility_weights)):
+                # to reduce variance in the simulator due to subscriptions for non-advertised topics, we draw
+                # subscriptions only from those that are advertised unless otherwise explicitly requested.
+                if self.draw_subscriptions_from_advertisements:
+                    topic_choices = [ad for ad in self.advertised_topics if self.class_for_topic(ad) == class_idx]
+                else:
+                    topic_choices = self.topics_for_class(class_idx)
 
-            ntopics = int(class_topic_rate * len(topic_choices))
-            # XXX: even if config looks okay, IC might request too many topics for a class
-            ntopics = min(len(topic_choices), ntopics)
+                ntopics = int(class_topic_rate * len(topic_choices))
+                # distinguish IC from other FFs
+                if subscriber == self.ic:
+                    ntopics *= self.ic_sub_rate_factor
+                # XXX: even if config looks okay, IC might request too many topics for a class
+                ntopics = min(len(topic_choices), ntopics)
 
-            rv = self.build_sampling_random_variable(rv, len(topic_choices))
-            try:
-                class_subs = rv.sample(topic_choices, ntopics)
-                subs.extend(class_subs)
-            except ValueError as e:
-                log.error("failed to generate topics for class %d due to error: %s" % (class_idx, e))
+                rv_top = self.build_sampling_random_variable(rv_top, len(topic_choices))
+                rv_uw = self.build_sampling_random_variable(rv_uw, len(topic_choices))
 
-        self.subscriptions = subs
-        if not self.subscriptions:
+                try:
+                    class_subs = rv_top.sample(topic_choices, ntopics)
+                    class_utils = [rv_uw.get() for s in class_subs]
+
+                    class_subs = [FiredexConfiguration.Subscription(subscriber, s, utility_weight=uw) for s, uw in zip(class_subs, class_utils)]
+                    subs.extend(class_subs)
+                except ValueError as e:
+                    log.error("failed to generate topics for class %d due to error: %s" % (class_idx, e))
+
+            self._subscriptions.extend(subs)
+
+        if not self._subscriptions:
             log.error("failed to generate any subscriptions!  Check your topic_class_sub_<rates|dists> !!")
         else:
             log.debug("topic subscriptions: %s" % self.subscriptions)
-        return subs
+        return self.subscriptions
 
     def generate_advertisements(self):
         """
@@ -143,41 +161,73 @@ class FiredexConfiguration(FiredexScenario):
         self._advertisements = (ff_ads, iot_ads)
         return self.advertisements
 
-    def generate_utility_weights(self):
-        """
-        For each subscription (each subscriber and each topic they subscribe to), generates a random weight from the
-        topic class distribution to represent variance in the utility functions (i.e. value of receiving publications
-        on that topic relative to other topics).
-        :return:
-        """
-
-        # TODO: actually handle multiple subscribers!!
-
-        all_subs = self.subscriptions
-        tc_subs = [[s for s in all_subs if self.class_for_topic(s) == tc] for tc in self.topic_classes]
-        tc_uw_rvs = [self.build_sampling_random_variable(rv_cfg, subs) for rv_cfg, subs in zip(self.topic_class_utility_weights, tc_subs)]
-
-        util_weights = []
-        for subs, rv in zip(tc_subs, tc_uw_rvs):
-            for s in subs:
-                util_weights.append(rv.get())
-
-        self._utility_weights = util_weights
-
     ####   HELPER FUNCTIONS:
+
+    # NOTE: originally wrote everything to consider topics, but extending it to consider multiple subscribers proved
+    #    we needed to just consider subscriptions directly since otherwise we need to pass around the subscriber
+    #    everywhere and it could get separated from its corresponding topic(s) easily (esp. since we just use lists).
+
+    @property
+    def subscription_topics(self):
+        """
+        :return: the list of ALL subscriptions for ALL subscribers.
+        :rtype: list[str|int]
+        """
+        return [sub.topic for sub in self.subscriptions]
+
+    @property
+    def subscriptions(self):
+        """
+        Return all Subscription objects active in the system.
+        :rtype: list[FiredexConfiguration.Subscription]
+        """
+        return self._subscriptions
+
+    def get_subscription_topics(self, subscriber=None):
+        """
+        Return the list of subscription topics for all subscribers or just the given subscriber if specified.
+        :param subscriber:
+        :return:
+        :rtype: list[str|int]
+        """
+        return [sub.topic for sub in self.get_subscriptions(subscriber)]
 
     def get_subscriptions(self, subscriber=None):
         """
-        Return the list of subscriptions for the given subscriber.
-        :param subscriber: by default, gets subscriptions of all subscribers and returns a dict keyed by each subscriber
+        Return the list of subscriptions for all subscribers or just the given subscriber if specified.
+        :param subscriber:
+        :return:
+        :rtype: list[FiredexConfiguration.Subscription]
+        """
+
+        if subscriber is None:
+            return self.subscriptions
+        # ENHANCE: use a dict for quicker lookup?  probably not bother as that'd make dynamics a huge pain...
+        return [sub for sub in self.subscriptions if sub.subscriber == subscriber]
+
+    # DEPRECATED: Mostly kept around for a bunch of older test cases
+    def get_utility_weight(self, topic, subscriber=None):
+        """
+        Returns the utility weight of the specified topic and subscriber.  If the subscriber has not subscribed to this
+        topic, returns 0.
+
+        :param topic:
+        :param subscriber: which subscriber to find the utilities of (default=pick any arbitrarily)
         :return:
         """
 
-        # TODO: properly handle multiple subscribers!
         if subscriber is None:
-            return {subscriber: self.subscriptions for subscriber in self.subscribers}
-        else:
-            return self.subscriptions
+            subscriber = self.arbitrary_subscriber
+
+        for sub in self.get_subscriptions(subscriber):
+            if sub.topic == topic:
+                return sub.utility_weight
+        else:  # must not be subscribed to
+            return 0
+
+    @property
+    def subscription_utility_weights(self):
+        return [sub.utility_weight for sub in self.subscriptions]
 
     @property
     def advertisements(self):
@@ -193,6 +243,20 @@ class FiredexConfiguration(FiredexScenario):
         :returns: a set of all topics advertised by ANY publisher
         """
         return set(ad for pub_class in self.advertisements for ads in pub_class.itervalues() for ad in ads)
+
+    def topics_to_subscriptions(self, topic_values):
+        """
+        Converts a per-topic vector (list) of values into a corresponding per-subscription vector (list) of the
+        corresponding values.
+        :param topic_values:
+        :return:
+        """
+
+        # ASSUMPTION: we can index a topic vector with the topic values contained in the list self.subscriptions
+        #   This is trivial as long as we keep lists of enumerated topics (i.e. range(ntopics));
+        #   otherwise we might need to use dicts if we move to strings for topics.
+
+        return [topic_values[top] for top in self.subscription_topics]
 
     def calculate_service_rate(self, pkt_size, bandwidth=None):
         """
@@ -221,6 +285,7 @@ class FiredexConfiguration(FiredexScenario):
         :param rv_dist_cfg:
         :param population_size:
         :return:
+        :rtype: RandomVariable
         """
 
         # ENHANCE: store the random variable so we can keep it between runs?  would need to identify it e.g. with a string...
@@ -240,7 +305,7 @@ class FiredexConfiguration(FiredexScenario):
                     low = args[0]
                     args.append(population_size - low)
                     rv_dist_cfg['args'] = args
-                    rv = RandomVariable.build(rv_dist_cfg)
+                    rv = self.build_random_variable(rv_dist_cfg)
 
         if rv.dist == 'zipf':
             args = rv_dist_cfg.get('args')
@@ -248,9 +313,18 @@ class FiredexConfiguration(FiredexScenario):
             if 'loc' not in rv_dist_cfg and (not args or len(args) <= 1):
                 args = rv_dist_cfg.copy()
                 args['loc'] = -1
-                rv = RandomVariable.build(args)
+                rv = self.build_random_variable(args)
 
         return rv
+
+    def build_random_variable(self, rv_dist_cfg):
+        """
+        Just builds a random variable currently, but may store it for re-use in the future so use this to build them!
+        :param rv_dist_cfg: RandomVariable configuration
+        :return:
+        :rtype: RandomVariable
+        """
+        return RandomVariable.build(rv_dist_cfg)
 
     @property
     def prio_classes(self):
@@ -270,14 +344,13 @@ class FiredexConfiguration(FiredexScenario):
     @property
     def net_flows(self):
         """
-        Returns a list of the network flows.  Don't make assumption about what each network flow object is!  It may
+        Returns a list of all network flows for all subscribers.
+        Don't make assumption about what each network flow object is!  It may
         just be an int (simulation) or it may be a more complex object with information about e.g. port numbers.
         :return:
+        :rtype: list
         """
-        # let's at least have a default for the most basic simulated experiments
-        if self._network_flows is None:
-            return range(self.num_net_flows)
-        return list(self._network_flows)
+        return list(itertools.chain(*[self.net_flows_for_subscriber(sub) for sub in self.subscribers]))
 
     def net_flows_for_subscriber(self, subscriber):
         """
@@ -285,32 +358,42 @@ class FiredexConfiguration(FiredexScenario):
         :param subscriber:
         :return:
         """
-        # TODO: handle multiple subscribers!
-        return self.net_flows
+        self.__ensure_net_flows_generated()
+        return self._network_flows[subscriber]
+
+    def subscriber_for_flow(self, net_flow):
+        """
+        :param net_flow:
+        :returns: the subscriber associated with the given network flow
+        """
+        self.__ensure_net_flows_generated()
+        return self._net_flow_subscriber_map[net_flow]
+
+    def __ensure_net_flows_generated(self, force_regeneration=False):
+        """
+        For simulated versions that don't specify the network flows but rather generate them just based on the #flows
+        requested per subscriber, this method handles the actual generation to ensure other methods using the underlying
+        map(s) will find actual network flows as expected.
+        :param force_regeneration: if explicitly set to True, will re-generate flows even if already done before
+        :return:
+        """
+
+        # for basic simulated version, ensure we have some defaults by just filling in the dict if we haven't yet
+        if force_regeneration or self._network_flows is None:
+            self._network_flows = dict()
+            self._net_flow_subscriber_map = dict()
+            for i, sub in enumerate(self.subscribers):
+                flows = range(i*self.num_net_flows, (i+1)*self.num_net_flows)
+                self._network_flows[sub] = flows
+
+                # TODO: make a setter function to handle this correctly so if we receive net flows from the sub we bookkeep correctly?
+                # set up a backwards lookup
+                for f in flows:
+                    self._net_flow_subscriber_map[f] = sub
 
     @property
     def data_sizes(self):
         return self._data_sizes.values()
-
-    def get_utility_weight(self, topic, subscriber=None):
-        """
-        Returns the utility weight of the specified topic and subscriber.  If the subscriber has not subscribed to this
-        topic, returns 0.
-
-        :param topic:
-        :param subscriber: which subscriber to find the utilities of (default=pick any arbitrarily)
-        :return:
-        """
-
-        if subscriber is None:
-            subscriber = self.arbitrary_subscriber
-
-        # TODO: make this into a helper function?
-        util_weights_per_topic = {k: v for k, v in zip(self.get_subscriptions(subscriber), self._utility_weights)}
-        try:
-            return util_weights_per_topic[topic]
-        except KeyError:
-            return 0  # must not be subscribed to
 
 
 class QueueStabilityError(ValueError):

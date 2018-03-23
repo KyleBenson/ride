@@ -41,20 +41,33 @@ class FireStatistics(NetworkExperimentStatistics):
                 df = pd.read_csv(filename, names=('delay', 'rcv_rate', 'sim_exp_delay'))
 
                 # to track subscriptions to topics, create a bit vector and add that as a column
-                # similar for utilities, need to create a vector for all topics from a subscriptions-only vector
+                # similar for utilities, expected values, etc.
+                # need to create a vector for all topics from a subscriptions-only vector
+                # ENHANCE: just call to FdxConfig.topics_to_subscriptions??? really basic logic though...
+                # ENHANCE: generalize all this in case we add some more fields later?
+
+                vec_len = params['ntopics']
                 subs = params.pop('subscriptions')
-                subs_vec = [0] * params['ntopics']
+                subs_vec = [0] * vec_len
                 utils = params.pop('utils')
-                utils_vec = [0] * params['ntopics']
+                utils_vec = [0] * vec_len
                 exp_utils = params.pop('exp_utils')
-                exp_utils_vec = [0] * params['ntopics']
-                for sub, util, exp_util in zip(subs, utils, exp_utils):
+                exp_utils_vec = [0] * vec_len
+                exp_rcv = params.pop('exp_rcv')
+                exp_rcv_vec = [0] * vec_len
+                exp_delay = params.pop('exp_delay')
+                exp_delay_vec = [0] * vec_len
+                for sub, util, exp_util, rcv, delay in zip(subs, utils, exp_utils, exp_rcv, exp_delay):
                     subs_vec[sub] = 1
                     utils_vec[sub] = util
                     exp_utils_vec[sub] = exp_util
+                    exp_rcv_vec[sub] = rcv
+                    exp_delay_vec[sub] = delay
                 df['subd'] = subs_vec
                 df['utils'] = utils_vec
                 df['exp_utils'] = exp_utils_vec
+                df['exp_rcv'] = exp_rcv_vec
+                df['exp_delay'] = exp_delay_vec
 
                 # store all the parameters as columns
                 for k, v in params.items():
@@ -183,7 +196,12 @@ if __name__ == '__main__':
     final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
 
     # doing this for now to view columns easier...
-    del final_stats['treatment']
+    ignored_cols = ('nffs', 'niots',
+                    'bw', 'jitter',
+                    # 'treatment',
+                    )
+    for col in ignored_cols:
+        del final_stats[col]
 
     # print "STATS:\n", final_stats
 
