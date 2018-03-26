@@ -3,74 +3,43 @@
 # @author: Kyle Benson
 # (c) Kyle Benson 2018
 
-import argparse
 import json
 import os
 import subprocess
 # For working with the temp configuration file
 import tempfile
 
-from network_experiment import NetworkExperiment
+from firedex_experiment import FiredexExperiment
 from scifire.algorithms.firedex_algorithm import FiredexAlgorithm  # just for type hinting
-from scifire.firedex_configuration import FiredexConfiguration, QueueStabilityError
-from scifire.firedex_scenario import FiredexScenario
+from scifire.firedex_configuration import QueueStabilityError
 from scifire.algorithms import build_algorithm
 from scifire.defaults import *
 import logging
 log = logging.getLogger(__name__)
 
 
-# TODO: eventually refactor this into a FiredexExperiment class so we can keep the alg/sim-specific stuff just here
-class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
+class FiredexAlgorithmExperiment(FiredexExperiment):
     """
     Simulation-based experiments that run in our Java-based queuing network simulation.
-    NOTE: we consider this experiment class as a configuration object plus the experiment, but didn't bother to
-    add another inheritance layer since a current configuration includes network elements too.
     """
 
-    def __init__(self, algorithm=DEFAULT_ALGORITHM, regen_bad_ros=False, testing=False, **kwargs):
+    def __init__(self, regen_bad_ros=False, testing=False, **kwargs):
         """
-        :param algorithm: configuration for the priority-assignment algorithm
         :param regen_bad_ros: regenerate the configuration if the ro condition is not met (default=False)
         :param testing: when explicitly set to True, don't run external simulator; used for just viewing random configs
         :param kwargs: passed to super constructor
         """
         super(FiredexAlgorithmExperiment, self).__init__(**kwargs)
 
-        if not isinstance(algorithm, dict):
-            algorithm = dict(algorithm=algorithm)
         # 0 priority levels means we aren't assigning ANY priorities!
         if self.num_priority_levels > 0:
-            self.algorithm = build_algorithm(**algorithm)  # type: FiredexAlgorithm
+            alg_cfg = self.algorithm  # type: dict
+            self.algorithm = build_algorithm(**alg_cfg)  # type: FiredexAlgorithm
         else:
             self.algorithm = build_algorithm(algorithm='null')  # type: FiredexAlgorithm
 
         self.regen_bad_ros = regen_bad_ros
         self.testing = testing
-
-        # FUTURE: mobility models for FFs / devs?
-
-        # update params with any static ones, otherwise the ones generated later need to be updated as we output the file
-        self.results['params'].update(FiredexScenario.as_dict(self))
-        self.record_parameter('ro_tol', self.algorithm.ro_tolerance)
-
-        # since we'll be comparing algorithms in plots, we should make it a more compact object i.e. a string:
-        alg_rep = algorithm['algorithm']
-        if len(algorithm) > 1:
-            alg_params = {k: v for k, v in algorithm.items() if k != 'algorithm'}
-            alg_params = sorted(alg_params.items())
-            alg_params = [str(v) for k, v in alg_params]
-            alg_rep += "-" + "-".join(alg_params)
-        self.record_parameter('algorithm', alg_rep)
-
-    def setup_experiment(self):
-        """
-        Generate proper configuration for this scenario e.g. subscriptions, publications, etc.
-        :return:
-        """
-
-        self.generate_configuration()
-        super(FiredexAlgorithmExperiment, self).setup_experiment()
 
     def run_experiment(self):
         """Run the algorithm on our current scenario and feed the configuration to a queuing network simulator
@@ -228,25 +197,6 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         return dict(mus=self.service_rates, lambdas=lambdas, subscriptions=self.subscription_topics,
                     priorities=priorities, error_rate=float(self.error_rate), prio_probs=prio_probs)
 
-    ####  Boiler-plate helper functions for running experiments
-
-    @classmethod
-    def get_arg_parser(cls, parents=(FiredexConfiguration.get_arg_parser(), NetworkExperiment.get_arg_parser()), add_help=True):
-        """
-        Argument parser that can be combined with others when this class is used in a script.
-        Need to not add help options to use that feature, though.
-        :param tuple[argparse.ArgumentParser] parents:
-        :param add_help: if True, adds help command (set to False if using this arg_parser as a parent)
-        :return argparse.ArgumentParser arg_parser:
-        """
-
-        arg_parser = argparse.ArgumentParser(parents=parents, add_help=add_help, conflict_handler='resolve')
-
-        # TODO: add experimental parameters here that don't go in the scenario?  maybe the event-generation models go here?
-        # e.g. algorithm goes here since that'll actually use the FiredexScenario
-
-        return arg_parser
-
     @classmethod
     def build_from_args(cls, args):
         """Constructs from command line arguments."""
@@ -257,19 +207,6 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         args = vars(args)
 
         return cls(**args)
-
-    def record_result(self, result):
-        # TODO: is this even needed?  might need to add some custom info...
-        # First, add additional parameters used on this run.
-        return super(FiredexAlgorithmExperiment, self).record_result(result)
-
-    def output_results(self):
-        # add additional parameters we generated after constructor for this exp. configuration
-        extra_params = dict(lams=self.pub_rates, mus=self.service_rates)
-        for k,v in extra_params.items():
-            self.record_parameter(k, v)
-
-        super(FiredexAlgorithmExperiment, self).output_results()
 
 
 if __name__ == "__main__":
