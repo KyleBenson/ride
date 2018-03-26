@@ -92,7 +92,7 @@ class FiredexAlgorithm(object):
         """
 
         # TODO: consider pub-to-broker (averaged over pubs?) and broker-to-switch latency too?  maybe re-tx delay?
-        return [configuration.latency + d for d in self.service_delays(configuration)]
+        return [configuration.latency_seconds() + d for d in self.service_delays(configuration)]
 
     # ENHANCE: consider publisher-to-broker delay
 
