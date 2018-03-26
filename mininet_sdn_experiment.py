@@ -306,11 +306,11 @@ class MininetSdnExperiment(NetworkExperiment):
         if not isinstance(intfs, list):
             intfs = [intfs]
 
-        # TODO: use helper function
-        bw = bandwidth if bandwidth is not None else self.bandwidth * 1000000
+        # XXX: expects BW in bits per sec
+        bw = bandwidth if bandwidth is not None else self.bandwidth_bytes() * 8
 
         intf_names = [intf.name for intf in intfs]
-        log.debug("Setting up %d priority queues on %d interfaces: %s" %
+        log.info("**Setting up %d priority queues on %d interfaces: %s" %
                   (prio_levels, len(intfs), intf_names))
 
         command = 'sudo ovs-vsctl '
@@ -339,12 +339,11 @@ class MininetSdnExperiment(NetworkExperiment):
                   command)
 
         # Calling subprocess Popen to set the command
-        p = subprocess.Popen(command, shell=True)
         try:
-            p.wait(timeout=5)
-        except:
-            log.error('Command timed out while adding priority queues on %s interfaces: ' %
-                      intf_names)
+            p = subprocess.Popen(command, shell=True)
+            p.wait()
+        except BaseException as e:
+            log.error("Command to add priority queues failed: %s" % e)
 
         if p.poll() != 0:
             log.error('Could not create priority queues on %s interfaces: ' %

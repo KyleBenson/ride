@@ -49,8 +49,8 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         # TODO: expand this into a tree network!  ideally, with some switches having wi-fi nodes
         self.bldg = None    # building's internal network
         self.inet = None    # represents Internet connection that allows ICP, BMS, EOC, and hosts to all communicate
-        self.dummy_sw = None    # Adding a dummy switch between inet and bdlg so that we can add priority queues
-        self.prio_queue_links = None    # List of links that require priority queues
+        self.prioq_dummy_sw = None    # Adding a dummy switch between inet and bdlg so that we can add priority queues
+        self.prioq_links = None       # List of links that require priority queues
         # ENHANCE: we'll add different specific heterogeneous networks e.g. sat, cell, wimax, wifi
         # ENHANCE: add switches for each of the special hosts?  not needed currently for 2-switch topo....
 
@@ -104,7 +104,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         # 1. create all our special switches for the network itself
         self.bldg = self.add_switch('bldg', dpid=':'.join(['bb']*8))
         self.inet = self.add_switch('inet', dpid='11:ee:77:00:00:00:00:00')
-        self.dummy_sw = self.add_switch('dummy_sw', dpid=':'.join(['dd']*8))
+        self.prioq_dummy_sw = self.add_switch('prioq', dpid=':'.join(['dd'] * 8))
         # TODO: icp_switch?
 
         # 2. create special host nodes
@@ -132,7 +132,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
 
         # NOTE: we apply default channel characteristics to inet links only
         # TODO: set up some for other links?  internal building topo should have some at least...
-        inet_connected_nodes = [self.dummy_sw, self.icp_sw]
+        inet_connected_nodes = [self.prioq_dummy_sw, self.icp_sw]
         if self.with_eoc:
             inet_connected_nodes.append(self.eoc_sw)
 
@@ -141,7 +141,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
             # QUESTION: should we save these links so that we can e.g. explicitly vary their b/w during the sim?
 
         # Connect special hosts in the building
-        bldg_connected_nodes = [self.bms_sw, self.dummy_sw]
+        bldg_connected_nodes = [self.bms_sw, self.prioq_dummy_sw]
         if self.with_black_box:
             bldg_connected_nodes.append(self.black_box)
 
@@ -149,8 +149,8 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
             self.add_link(self.bldg, bldg_comp, use_tc=False)
 
         # Get all the links to add priority queues
-        links = self.get_links_between(self.dummy_sw, self.bldg) # Returns a list of links between the given two nodes
-        self.prio_queue_links = links
+        links = self.get_links_between(self.prioq_dummy_sw, self.bldg) # Returns a list of links between the given two nodes
+        self.prioq_links = links
 
         # Connect IoT and FF hosts
         # For now, we'll just add all FFs and IoT devs directly to the bldg
@@ -175,11 +175,11 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         super(FiredexMininetExperiment, self).setup_experiment()
 
         # Setup priority queues on the links
-        if self.prio_queue_links:
-            self.setup_priority_queues_links(links=self.prio_queue_links,
+        if self.prioq_links:
+            self.setup_priority_queues_links(links=self.prioq_links,
                                              prio_levels=self.num_priority_levels,
-                                             # TODO: use helper function for this...
-                                             bandwidth=self.bandwidth * 1000000)
+                                             # XXX: expects it in bits per sec
+                                             bandwidth=self.bandwidth_bytes() * 8)
 
         # Start the brokers first so that they're running by the time the clients start publishing
         self.run_brokers()
@@ -193,7 +193,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
 
         # TODO: clean up all this hacky iperf stuff; this is all just a place-holder...
         # run iperf for video feeds: we'll use SDN to selectively fork the video feed to black_box and, when requested, ICP
-        video_hosts = (self.ffs[0], self.iots[0])
+        video_hosts = (self.ffs[0] if len(self.ffs) else self.icp, self.iots[0] if len(self.iots) else self.icp)
         iperfs = []  # 4-tuples
         iperf_res = []  # actual parsed results
         srv = self.icp
