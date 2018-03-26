@@ -20,6 +20,7 @@ class FireStatistics(NetworkExperimentStatistics):
             ### keep these after we average across runs
             "algorithm",
             "treatment", # in case we group param treatments and assign a specific filename, it's easier to groupby this
+            "ro_tol",
             ## these are data points!  explicitly added from e.g. params
             "topic",
             "prio",

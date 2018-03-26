@@ -51,8 +51,8 @@ class FiredexAlgorithmExperiment(NetworkExperiment, FiredexConfiguration):
         # FUTURE: mobility models for FFs / devs?
 
         # update params with any static ones, otherwise the ones generated later need to be updated as we output the file
-        # TODO: any static params to update here?
         self.results['params'].update(FiredexScenario.as_dict(self))
+        self.record_parameter('ro_tol', self.algorithm.ro_tolerance)
 
         # since we'll be comparing algorithms in plots, we should make it a more compact object i.e. a string:
         alg_rep = algorithm['algorithm']
