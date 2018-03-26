@@ -203,7 +203,7 @@ class MininetSdnExperiment(NetworkExperiment):
         :param bandwidth:
         :param latency:
         :param jitter:
-        :param error_rate: link loss rate expressed as an integer percentage
+        :param error_rate: link loss rate expressed as a rate e.g. [0 .. 1.0]
         :return:
         """
 
@@ -218,6 +218,8 @@ class MininetSdnExperiment(NetworkExperiment):
             delay = '%fms' % (latency if latency is not None else self.latency)
             jitter = '%fms' % (jitter if jitter is not None else self.jitter)
             loss = error_rate if error_rate is not None else self.error_rate
+            # Mininet expects it as an integer percentage!
+            loss = int((loss * 100) + 0.5)
 
             log.debug("adding link from %s to %s with channel: latency=%s, jitter=%s, loss=%d, BW=%s" % \
                       (from_link, to_link, delay, jitter, loss, bw))

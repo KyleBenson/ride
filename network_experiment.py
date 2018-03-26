@@ -30,8 +30,8 @@ class NetworkChannelState(object):
         """
         :param latency: in ms
         :param jitter:
-        :param error_rate: of packets, as a % e.g. 5
-        :type error_rate: int
+        :param error_rate: of packets, as a rate in range [0 .. 1.0]
+        :type error_rate: float
         :param bandwidth: in Mbps
         :param kwargs:
         """
