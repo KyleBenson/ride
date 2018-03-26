@@ -52,6 +52,16 @@ class NetworkChannelState(object):
             bw = self.bandwidth
         return bw * 1000000 / 8.0  # originally Mbps
 
+    def latency_seconds(self, lat=None):
+        """
+        Convert latency to seconds from the expected default units (e.g. milliseconds)
+        :param lat: defaults to self.latency
+        :return:
+        """
+        if lat is None:
+            lat = self.latency
+        return lat / 100.0  # originally in ms
+
 
 class NetworkExperiment(NetworkChannelState):
     """Inherits from NetworkChannelState to use its channel characteristics as default values for the network."""
