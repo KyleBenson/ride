@@ -267,6 +267,107 @@ class MininetSdnExperiment(NetworkExperiment):
             new_params.update(params)
             to_iface.config(**new_params)
 
+    def get_links_between(self, node1, node2):
+        """
+        Returns the list of links between two nodes
+        :param node1:
+        :param node2:
+        :return:
+        """
+        return [link for link in self.links
+                if (node1, node2) in (
+                    (link.intf1.node, link.intf2.node),
+                    (link.intf2.node, link.intf1.node))]
+
+    def setup_priority_queues(self, intfs, prio_levels, bandwidth=None):
+        """
+        Create Linux TC queues with priorities for use with OVS and OpenFlow rules that direct certain packets to them
+        for priority delivery.
+
+        Queue with priority 0 will be named 0
+        Queue with priority 1 will be named 1
+        .
+        .
+        Queue with priority 7 will be name 7
+
+        There can be maximum of 8 priority levels
+        WARNING: Any unmarked flow will classified as priority 0 and sent to queue 0
+
+        :param intfs: interface / list of interfaces to set priority queues for
+        :param prio_levels: number of priority classes/queues
+        :param bandwidth: Max link bandwidth in bps, defaults to DEFAULT_BANDWIDTH
+        :return: None
+        """
+
+        # NOTE: don't need to set queues on server switches since all network elements will have them.
+        # Plus, those switches don't have the same (any) channel constraints!
+        # We do, however, want to make sure to configure each interface connecting to a host (or its serving switch).
+
+        if not isinstance(intfs, list):
+            intfs = [intfs]
+
+        # TODO: use helper function
+        bw = bandwidth if bandwidth is not None else self.bandwidth * 1000000
+
+        intf_names = [intf.name for intf in intfs]
+        log.debug("Setting up %d priority queues on %d interfaces: %s" %
+                  (prio_levels, len(intfs), intf_names))
+
+        command = 'sudo ovs-vsctl '
+        # Adding all the interfaces
+        for intf in intf_names:
+            command += ' -- set port ' + intf + ' qos=@newqos -- '
+        # Setting queue type and max bandwidth
+        command += '--id=@newqos create QoS type=linux-htb other-config:max-rate=' + \
+                   str(bw) + \
+                   ' queues='
+        # Setting the number of queues to create
+        for p in range(1, prio_levels+1):
+            qname = str(p)  # This will be the name of the queue used in flow rules
+            qid = '@' + qname + 'q'
+            command += qname + '=' + qid + ','
+        command = command[:-1]
+        command += ' -- '
+        # Creating queues and setting their priorities
+        for p in range(1, prio_levels+1):
+            qid = '@' + str(p) + 'q'
+            command += ' --id=' + qid + ' create queue other-config:priority=' + \
+                       str(p) + \
+                       ' --'
+        command = command[:-2]
+        log.debug('Executing OVS command to setup queues: %s' %
+                  command)
+
+        # Calling subprocess Popen to set the command
+        p = subprocess.Popen(command, shell=True)
+        try:
+            p.wait(timeout=5)
+        except:
+            log.error('Command timed out while adding priority queues on %s interfaces: ' %
+                      intf_names)
+
+        if p.poll() != 0:
+            log.error('Could not create priority queues on %s interfaces: ' %
+                      intf_names)
+        else:
+            log.debug("Successfully set up %d priority queues on %d interfaces: %s" %
+                      (prio_levels, len(intfs), intf_names))
+
+    def setup_priority_queues_links(self, links, prio_levels=None, bandwidth=None):
+        """
+        Converts the given links to list of interfaces and sets up priority queues on those interfaces
+        :param links: link / list of links
+        :param prio_levels: number of queues, defaults to DEFAULT_NUM_PRIORITIES
+        :param bandwidth: Max link bandwidth in bps, defaults to DEFAULT_BANDWIDTH
+        :return: None
+        """
+        intfs = []
+        if not isinstance(links, list):
+            intfs.extend([links.intf1, links.intf2])
+        else:
+            intfs.extend(sum([[link.intf1, link.intf2] for link in links], []))
+        self.setup_priority_queues(intfs, prio_levels, bandwidth)
+
     def add_nat(self, connection_point, nat_name=None, nat_ip=None):
         """Add a NAT to the specified node in the network.  It will actually be built in 'start_network' since we have
         to build the network first in order to properly configure hosts.  Hence, self.nats will not contain nats until
