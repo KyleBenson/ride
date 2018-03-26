@@ -1,5 +1,5 @@
-# NOTE: stick to just one as long as we're using the external queuing simulator since it doesn't do multiple subscribers!
-DEFAULT_NUM_FFS = 1
+# NOTE: stick to just IC (no FFs) as long as we're using the external queuing simulator since it doesn't do multiple subscribers!
+DEFAULT_NUM_FFS = 0
 DEFAULT_NUM_IOTS = 6
 DEFAULT_NUM_PRIORITIES = 3
 DEFAULT_NUM_NET_FLOWS = DEFAULT_NUM_PRIORITIES

@@ -114,7 +114,7 @@ class FiredexScenario(NetworkChannelState):
 
         # Generate names for the various hosts
         self.ffs = ["ff%d" % i for i in range(self.num_ffs)]
-        self.ic = self.ffs[0]
+        self.icp = "icp0"   # Incident Command Post         --  where we want to collect data for situational awareness
         self.iots = ["iot%d" % i for i in range(self.num_iots)]
 
     def as_dict(self):
@@ -198,7 +198,7 @@ class FiredexScenario(NetworkChannelState):
 
     @property
     def publishers(self):
-        return self.ffs + self.iots
+        return self.ffs + self.iots + [self.icp]
 
     @property
     def nsubscribers(self):
@@ -207,7 +207,7 @@ class FiredexScenario(NetworkChannelState):
     @property
     def subscribers(self):
         # TODO: how to work in IoT dev subs too?
-        return self.ffs
+        return self.ffs + [self.icp]
 
     @property
     def arbitrary_subscriber(self):

@@ -96,7 +96,7 @@ class FiredexConfiguration(FiredexScenario):
 
                 ntopics = int(class_topic_rate * len(topic_choices))
                 # distinguish IC from other FFs
-                if subscriber == self.ic:
+                if subscriber == self.icp:
                     ntopics *= self.ic_sub_rate_factor
                 # XXX: even if config looks okay, IC might request too many topics for a class
                 ntopics = min(len(topic_choices), ntopics)

@@ -21,11 +21,11 @@ import argparse
 
 from config import *
 from scifire.defaults import *
-from firedex_algorithm_experiment import FiredexAlgorithmExperiment
+from firedex_experiment import FiredexExperiment
 from mininet_sdn_experiment import MininetSdnExperiment
 from scale_client.core.client import make_scale_config_entry, make_scale_config
 
-class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment):
+class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
 
     def __init__(self, experiment_duration=FIRE_EXPERIMENT_DURATION,
                  with_eoc=False, with_black_box=False,
@@ -34,7 +34,6 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         super(FiredexMininetExperiment, self).__init__(experiment_duration=experiment_duration, **kwargs)
 
         # Special hosts in our topology
-        self.icp = None  # Incident Command Post         --  where we want to collect data for situational awareness
         self.bms = None  # Building Management System    --  manages IoT devices and SDN
         self.eoc = None  # Emergency Operations Center   --  where regional cloud services run e.g. event processing
         self.with_eoc = with_eoc
@@ -44,9 +43,6 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         self.icp_sw = None
         self.bms_sw = None
         self.eoc_sw = None
-
-        self.ffs = []
-        self.iot_devs = []
 
         # Special switches in our topology
         # TODO: expand this into a tree network!  ideally, with some switches having wi-fi nodes
@@ -58,7 +54,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         # TODO: add other params to results['params'] ???
 
     @classmethod
-    def get_arg_parser(cls, parents=(FiredexAlgorithmExperiment.get_arg_parser(add_help=False),
+    def get_arg_parser(cls, parents=(FiredexExperiment.get_arg_parser(add_help=False),
                                      MininetSdnExperiment.get_arg_parser()), add_help=True):
         """
         Argument parser that can be combined with others when this class is used in a script.
@@ -108,7 +104,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         # TODO: icp_switch?
 
         # 2. create special host nodes
-        self.icp, self.icp_sw = self.add_server('icp', ip=icp_subnet % 1, mac=fire_mac % ('cc', '01'))
+        self.icp, self.icp_sw = self.add_server(self.icp, ip=icp_subnet % 1, mac=fire_mac % ('cc', '01'))
         self.bms, self.bms_sw = self.add_server('bms', ip=bldg_subnet % 1, mac=bldg_mac % ('cc', '01'))
         if self.with_eoc:
             self.eoc, self.eoc_sw = self.add_server('eoc', ip=eoc_subnet % 1, mac=eoc_mac % 1)
@@ -116,13 +112,17 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
             self.black_box = self.add_host('bb', ip=bldg_subnet % 200, mac=bldg_mac % ('bb', 'bb'))
 
         # 3. create FF and IoT host nodes
-        for i in range(self.num_ffs):
-            ff = self.add_host('ff%d' % i, ip=ff_subnet % i, mac=ff_mac % i)
+        ffs = self.ffs
+        self.ffs = []
+        for i, f in enumerate(ffs):
+            ff = self.add_host(f, ip=ff_subnet % i, mac=ff_mac % i)
             self.ffs.append(ff)
 
-        for i in range(self.num_iots):
-            iot = self.add_host('iot%d' % i, ip=iot_subnet % i, mac=iot_mac % i)
-            self.iot_devs.append(iot)
+        iots = self.iots
+        self.iots = []
+        for i, d in enumerate(iots):
+            iot = self.add_host(d, ip=iot_subnet % i, mac=iot_mac % i)
+            self.iots.append(iot)
 
         # 4. create all the necessary links
 
@@ -148,7 +148,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
         # For now, we'll just add all FFs and IoT devs directly to the bldg
         # TODO: setup wifi network and/or hierarchical switches
         # TODO: set channel characteristics
-        for h in self.ffs + self.iot_devs:
+        for h in self.ffs + self.iots:
             self.add_link(self.bldg, h, use_tc=False)
 
         # 5. add NAT so that any SdnTopology apps will be able to contact the SDN controller's REST API
@@ -180,7 +180,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         # TODO: clean up all this hacky iperf stuff; this is all just a place-holder...
         # run iperf for video feeds: we'll use SDN to selectively fork the video feed to black_box and, when requested, ICP
-        video_hosts = (self.ffs[0], self.iot_devs[0])
+        video_hosts = (self.ffs[0], self.iots[0])
         iperfs = []  # 4-tuples
         iperf_res = []  # actual parsed results
         srv = self.icp
@@ -260,7 +260,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexAlgorithmExperiment)
 
         # Building IoT devices all publish their periodic event data to the BMS broker.
         broker_ip = self.bms.IP()
-        for dev in self.iot_devs:
+        for dev in self.iots:
             # NOTE: make sure we distinguish the coapthon client instances from each other by incrementing CoAP port for multiple topics!
 
             dev_cfg = make_scale_config(
