@@ -1,7 +1,5 @@
 # Architecture and Workflow
 
-See [Architecture and Workflow](docs/ARCHITECTURE.md) for details about how Ride works.
-
 Here we briefly explain the workflow and how we implemented the architecture.
 Ride's theoretical architecture is as follows:
 
