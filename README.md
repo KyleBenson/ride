@@ -10,8 +10,9 @@ It pre-computes multiple Maximally-Disjoint Multicast Trees (MDMTs) for the regi
 This repository includes the algorithms, prototype implementation, SDN controller REST API adapter, and Mininet-based experimental framework we used to evaluate its performance.
 The [docs](docs/) folder contains further documentation, including [implementation decision notes](docs/IMPLEMENTATION_NOTES.md) and a list of [TODOs/future work](docs/TODO.md).
 
-Refer to (LINK COMING AFTER CAMERA READY SUBMISSION) for the formal research paper that presents Ride and please cite it as:
-TODO: add final citation form...
+Refer to [this link for the formal research paper](http://www.ics.uci.edu/~dsm/papers/2018/ride-iotdi-2018.pdf) that presents Ride and please cite it as:
+
+Kyle E. Benson, Guoxi Wang, Young-Jin Kim, and Nalini Venkatasubramanian. "Ride: A Resilient IoT Data Exchange Middleware Leveraging SDN and Edge Cloud Resources". *in Proceedings of 2018 ACM/IEEE Third International Conference on Internet-of-Things Design and Implementation (IoTDI)*, Orlando, Florida, USA, 2018.
 
 ## Getting Started
 
