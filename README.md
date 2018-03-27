@@ -7,6 +7,8 @@ It monitors cloud data paths (overlay links from the local smart campus network 
 The second phase, Ride-D, uses this information to disseminate time critical alerts via an intelligent network and application-aware multicast mechanism.
 It pre-computes multiple Maximally-Disjoint Multicast Trees (MDMTs) for the registered subscribers and alert topic, installs them to the SDN data plane, and intelligently selects the best for alert dissemination based on current network state.
 
+<img src="docs/approach.png" height=500>
+
 This repository includes the algorithms, prototype implementation, SDN controller REST API adapter, and Mininet-based experimental framework we used to evaluate its performance.
 The [docs](docs/) folder contains further documentation, including [implementation decision notes](docs/IMPLEMENTATION_NOTES.md) and a list of [TODOs/future work](docs/TODO.md).
 
