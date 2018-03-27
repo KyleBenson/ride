@@ -71,7 +71,8 @@ EXPERIMENTAL_TREATMENTS = {
     # 'testing': [{'bandwidth': 1, 'nruns': 1, 'testing': True, 'algorithm': dict(algorithm='random', ro_tolerance=0.6)}],
     ## Actual varied parameter explorations:
     'sim_exps': [{'num_priority_levels': p, 'num_net_flows': p,
-                  'algorithm': dict(algorithm=a, ro_tolerance=ro)}
+                  'algorithm': dict(algorithm=a, ro_tolerance=ro),
+                  'output_filename': ('results_%dp_%.1fr_%s.json' % (p, ro, a))}
                  for p in nprios for ro in [0.1, 0.6]
                  for a in (['random', 'greedy'] if p > 1 else ['null'])],  # currently assume nprios==nflows always!
     # 'nprios': [{'num_priority_levels': p, 'num_net_flows': p} for p in nprios],  # currently assume nprios==nflows always!
