@@ -26,13 +26,17 @@ DEFAULT_TOPIC_CLASS_PUB_RATES = (1, 0.2)
 DEFAULT_TOPIC_CLASS_PUB_DISTS = ({'dist': 'uniform'}, {'dist': 'uniform'})
 # TODO: make these into distributions?
 # TODO: could easily add a third class only for FF data!
-DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_FF = (10, 4)
-DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_IOT = (2, 1)
+# XXX: since we're currently just running on a single subscriber, let's just subscribe to ALL topics:
+DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_FF = (DEFAULT_NUM_TOPICS * DEFAULT_TOPIC_CLASS_WEIGHTS[0],
+                                             DEFAULT_NUM_TOPICS * DEFAULT_TOPIC_CLASS_WEIGHTS[1])
+DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_IOT = DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_FF
+# DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_FF = (10, 4)
+# DEFAULT_TOPIC_CLASS_ADVERTISEMENTS_PER_IOT = (2, 1)
 
 DEFAULT_TOPIC_CLASS_SUB_DISTS = ({'dist': 'uniform'}, {'dist': 'uniform'})
 # average portion of topics in that class that a subscriber should request
 # NOTE: make sure these are high enough that we'll actually generate subscriptions!  We round the actual #subs down...
-DEFAULT_TOPIC_CLASS_SUB_RATES = (0.5, 0.8)
+DEFAULT_TOPIC_CLASS_SUB_RATES = (1, 1)
 # the IC (FF #0) subscribes to this times many more topics than regular FFs
 # ENHANCE: other skews for the IC?  e.g. all FF-published event topics, more data telemetry than events, etc.?
 DEFAULT_IC_SUB_RATE_FACTOR = 1
