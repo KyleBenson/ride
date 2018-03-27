@@ -9,7 +9,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         # no subscriptions to ensure such a weird case won't crash the whole program
         print "Test case for no subscriptions may generate a warning that no subscriptions were generated!" \
               "Thats ok as long as it's only one warning..."
-        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=0, num_iots=0,
                                          topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.0, 0.0),
                                          draw_subscriptions_from_advertisements=False)
         exp.generate_configuration()
@@ -18,7 +18,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(len(exp.get_subscription_topics(exp.arbitrary_subscriber)), 0)
 
         # only one topic for each class
-        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=0, num_iots=0,
                                          topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.2, 0.2),
                                          draw_subscriptions_from_advertisements=False)
         exp.generate_configuration()
@@ -31,7 +31,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(len([t for t in subs if t in class1]), 1)
 
         # half topics for each class
-        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=0, num_iots=0,
                                           topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.5, 0.5),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 10]},
                                                                 {"dist": "uniform", "args": [0, 10]}),
@@ -46,7 +46,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(len([t for t in subs if t in class1]), 5)
 
         # all topics for each class
-        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=0, num_iots=0,
                                          topic_class_weights=(0.25, 0.75), topic_class_sub_rates=(1.0, 1.0),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 5]},
                                                                 {"dist": "uniform", "args": [0, 15]}),
@@ -61,7 +61,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(len([t for t in subs if t in class1]), 15)
 
         # try Zipf distribution, which many pub-sub papers say is well-representative
-        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=0, num_iots=0,
                                          topic_class_weights=(0.25, 0.75), topic_class_sub_rates=(0.5, 0.2),
                                          topic_class_sub_dists=({"dist": "zipf", "args": [2, -1]},
                                                                 {"dist": "zipf", "args": [2, -1]}),
@@ -79,7 +79,7 @@ class TestExperimentConfiguration(unittest.TestCase):
 
     def test_multiple_subscribers(self):
         # half topics for each class
-        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=2, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=1, num_iots=0,
                                           topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.5, 0.5),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 10]},
                                                                 {"dist": "uniform", "args": [0, 10]}),
@@ -94,7 +94,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(len([t for t in subs if t in class1]), 10)
 
         # all topics for each class
-        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=2, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=1, num_iots=0,
                                          topic_class_weights=(0.25, 0.75), topic_class_sub_rates=(1.0, 1.0),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 5]},
                                                                 {"dist": "uniform", "args": [0, 15]}),
@@ -113,7 +113,7 @@ class TestExperimentConfiguration(unittest.TestCase):
 
     def test_ic_subscriptions(self):
         # half topics for each class => all with ic factor *2
-        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=1, num_iots=0, ic_sub_rate_factor=2,
+        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=0, num_iots=0, ic_sub_rate_factor=2,
                                           topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.5, 0.5),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 10]},
                                                                 {"dist": "uniform", "args": [0, 10]}),
@@ -128,7 +128,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(len([t for t in subs if t in class1]), 10)
 
         # requesting too high a ic factor still just gives all topics
-        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=1, num_iots=0, ic_sub_rate_factor=200,
+        exp = FiredexAlgorithmExperiment(num_topics=20, num_ffs=0, num_iots=0, ic_sub_rate_factor=200,
                                          topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.1, 0.1),
                                          topic_class_sub_dists=({"dist": "uniform", "args": [0, 10]},
                                                                 {"dist": "uniform", "args": [0, 10]}),
@@ -204,7 +204,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         # NOTE: they also assume only a single subscriber!
 
         # generic test case
-        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=0, num_iots=0,
                                          topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
                                          draw_subscriptions_from_advertisements=False)
         exp.generate_configuration()
@@ -212,7 +212,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(exp.ntopic_classes, 2)
 
         # single class test case should expand these params to 2 topic classes
-        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=0, num_iots=0,
                                          topic_class_weights=(0.5,), topic_class_sub_rates=(1.0,),
                                          draw_subscriptions_from_advertisements=False)
         exp.generate_configuration()
@@ -220,7 +220,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         self.assertEqual(exp.ntopic_classes, 2)
 
         # 5 class test case should expand other params to 5 topic classes
-        exp = FiredexAlgorithmExperiment(num_topics=30, num_ffs=1, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=30, num_ffs=0, num_iots=0,
                                          topic_class_weights=[0.2]*5, topic_class_sub_rates=(0.5,),
                                          draw_subscriptions_from_advertisements=False)
         exp.generate_configuration()
@@ -352,7 +352,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         # ensure we get unique flows for each subscriber
         nsubs = 3
         flows_per_sub = 4
-        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=nsubs, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=nsubs-1, num_iots=0,
                                          num_net_flows=flows_per_sub,
                                          topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.8, 0.8),
                                          draw_subscriptions_from_advertisements=False)
@@ -365,7 +365,7 @@ class TestExperimentConfiguration(unittest.TestCase):
     def test_utility_function_weights(self):
         # constant weights
         class_util_weights = (2, 4)
-        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=1, num_iots=0,  # only a single subscriber
+        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=0, num_iots=0,  # only a single subscriber
                                          topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.8, 0.8),
                                          draw_subscriptions_from_advertisements=False,
                                          topic_class_utility_weights=class_util_weights)
@@ -391,7 +391,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         # constant weights
         class_util_weights = (2, 4)
         nsubs = 3
-        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=nsubs, num_iots=0,
+        exp = FiredexAlgorithmExperiment(num_topics=10, num_ffs=nsubs-1, num_iots=0,
                                          topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.8, 0.8),
                                          draw_subscriptions_from_advertisements=False,
                                          topic_class_utility_weights=class_util_weights)
