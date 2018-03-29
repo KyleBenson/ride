@@ -460,6 +460,10 @@ class MininetSdnExperiment(NetworkExperiment):
         # May need to ping the hosts again if links start up too late...
         hosts = self.hosts
 
+        # WARNING: if error_rate > 0, this may miss some hosts due to packet drops...
+        # Maybe we should send more than one ping (hard-coded in mininet)?  Currently it seems that we'll just
+        #   repeat the pings if not all expected hosts found so maybe that's good enough?
+
         def ping_hosts(hosts):
             log.info('*** Pinging hosts so controller can gather IP addresses...')
             # don't want the NAT involved as hosts won't get a route to it
