@@ -119,9 +119,12 @@ class NetworkExperimentStatistics(ScaleStatistics):
         # parse each dir and combine all the parsed results into a single data frame
         stats = []
         for d, r in dirs_to_parse:
-            this_run_params = self.extract_run_params(r, filename, **exp_params)
-            o = self.parse_outputs_dir(d, treatment=treatment, **this_run_params)
-            stats.append(o)
+            try:
+                this_run_params = self.extract_run_params(r, filename, **exp_params)
+                o = self.parse_outputs_dir(d, treatment=treatment, **this_run_params)
+                stats.append(o)
+            except BaseException as e:
+                log.warning("skipping output directory %s that generated error: %s" % (d, e))
         stats = self.merge_all(*stats)
 
         return stats

@@ -113,7 +113,7 @@ class FireStatistics(NetworkExperimentStatistics):
         exp_params = super(FireStatistics, self).extract_run_params(run_results, filename, **exp_params)
 
         if run_results['return_code'] != 0:
-            log.warning("skipping run %d from results file %s with non-0 return code..." % (exp_params['run'], filename))
+            raise ValueError("skipping run %d from results file %s with non-0 return code..." % (exp_params['run'], filename))
 
         exp_params['prio'] = run_results['sim_config']['priorities']
         exp_params['subscriptions'] = run_results['sim_config']['subscriptions']
@@ -236,6 +236,7 @@ if __name__ == '__main__':
 
     ####    ANALYTICAL MODEL  vs.   SIM RESULTS
 
+    final_stats = final_stats[final_stats.ro_tol == 0.1]
     ## error rate affects delivery
     # stats.plot(x='loss', y=['lams', 'rcv_lams', 'exp_rcv'], stats=final_stats, average_over=('run', 'topic', 'prio'))
 
@@ -244,7 +245,7 @@ if __name__ == '__main__':
 
     ## Show that lower priority topics have increased delay
     # stats.plot(x='prio', y=['delay', 'exp_delay'], groupby='treatment', stats=final_stats)
-    # stats.plot(x='prio', y='delay', groupby='nprios', stats=final_stats)
+    stats.plot(x='prio', y='delay', groupby=['nprios', 'algorithm'], stats=final_stats)
 
     # Plot actual delay difference
     # final_stats = final_stats[final_stats.run == 75]
@@ -258,11 +259,10 @@ if __name__ == '__main__':
 
     #### Plotting utilities
     ##     Show that we achieve more of max possible utility for higher priority subscription groups:
-    final_stats = final_stats[final_stats.ro_tol == 0.6]
     # May be more helpful to plot utility as a percent achieved of max possible
     # TODO: may be even better to just sum up utilities instead of averaging! still want to scale by max though...
-    final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
-    stats.plot(x='prio', y='util_perc', groupby=['nprios', 'algorithm'], stats=final_stats)
+    # final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
+    # stats.plot(x='prio', y='util_perc', groupby=['nprios', 'algorithm'], stats=final_stats)
     # stats.plot(x='prio', y='utils', groupby=['nprios', 'algorithm'], stats=final_stats)
 
     ###   Explicitly save results to file
