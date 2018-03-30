@@ -90,7 +90,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         # Generate an output filename for the simulator based on the output filename we're using
         sim_out_fname = os.path.join(self.outputs_dir, "sim_output.csv")
 
-        sim_jar_file = os.path.join('scifire', 'pubsub-prio.jar')
+        sim_jar_file = os.path.join('scifire', 'queue_simulator', 'pubsub-prio.jar')
         if not os.path.exists(sim_jar_file):
             log.error("cannot find the simulation JAR file! Make sure you download/compile it and put it at %s" % sim_jar_file)
         cmd = "java -cp %s pubsubpriorities.PubsubV6Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
