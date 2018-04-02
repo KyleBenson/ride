@@ -20,5 +20,12 @@ class FiredexCoapSubscriber(FiredexSubscriber):
 
         self._clients = []
         for sub in subscriptions:
-            ip, port = self.address_for_topic(sub)
-            self._clients.append(CoapSensor(broker, topic=remote_path % sub, hostname=ip, port=port))
+            flow = self.address_for_topic(sub)
+            kwargs = dict()
+            if flow.src_port:
+                kwargs['src_port'] = flow.src_port
+            if flow.dst_port:
+                kwargs['port'] = flow.dst_port
+            if flow.dst_addr:
+                kwargs['hostname'] = flow.dst_addr
+            self._clients.append(CoapSensor(broker, topic=remote_path % sub, **kwargs))

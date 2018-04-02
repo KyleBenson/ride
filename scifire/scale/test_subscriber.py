@@ -6,6 +6,8 @@ from scale_client.event_sinks.local_coap_event_sink import LocalCoapEventSink
 from scale_client.networks.coap_server import CoapServer
 from scale_client.sensors.dummy.random_virtual_sensor import RandomVirtualSensor
 from scifire.scale.firedex_coap_subscriber import FiredexCoapSubscriber
+from scifire.scale.firedex_subscriber import NetworkFlow
+from scale_client.util.uri import parse_uri
 
 # XXX: run the clients in separate threads since the client.run() call blocks
 import threading
@@ -42,7 +44,7 @@ class TestSubscriber(unittest.TestCase):
 
         # each topic gets its own flow in (most of) the tests
         self.topic_flow_map = {t: i for i, t in enumerate(self.all_topics)}
-        self.net_flows = [('127.0.0.1', port) for port in self.ports]
+        self.net_flows = [NetworkFlow(dst_addr='127.0.0.1', dst_port=port) for port in self.ports]
         self.assertEqual(len(self.topic_flow_map), len(self.net_flows))
 
         for port, top in zip(self.ports, self.all_topics):
@@ -155,9 +157,17 @@ class TestSubscriber(unittest.TestCase):
             exp_nevents = len(pub_stats.events)
             self.assertEqual(exp_nevents, self.nevents)
             self.assertGreater(exp_nevents, 2)
-            this_act_nevents = len([ev for ev in self.subscriber_stats.events if ev.topic == topic])
+
+            this_topic_events = [ev for ev in self.subscriber_stats.events if ev.topic == topic]
+            this_act_nevents = len(this_topic_events)
             self.assertGreater(this_act_nevents, 2)
             self.assertEventsGathered(act_nevents, exp_nevents)
+
+            # verify we received these events from the right location
+            for ev in this_topic_events:
+                exp_port = self.net_flows[self.topic_flow_map[topic]].dst_port
+                act_port = int(parse_uri(ev.source).port)
+                self.assertEqual(exp_port, act_port)
 
     # TODO: figure out how to test this if we have problems during integration... the way we build one Client for each
     # publisher / net flow would have to change so that a client has a single flow but multiple topics
