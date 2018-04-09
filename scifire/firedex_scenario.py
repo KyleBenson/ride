@@ -193,6 +193,10 @@ class FiredexScenario(NetworkChannelState):
         raise ValueError("topic %s not found in any topic classes!" % topic)
 
     @property
+    def all_hosts(self):
+        return [self.icp] + self.ffs + self.iots
+
+    @property
     def npublishers(self):
         return len(self.publishers)
 

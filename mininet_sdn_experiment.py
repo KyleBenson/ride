@@ -120,6 +120,7 @@ class MininetSdnExperiment(NetworkExperiment):
 
     def setup_experiment(self):
         """Finishes setting up the network by default."""
+        super(MininetSdnExperiment, self).setup_experiment()
         self.start_network()
         self.ensure_network_setup()
 

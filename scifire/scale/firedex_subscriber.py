@@ -27,7 +27,8 @@ class FiredexSubscriber(VirtualSensor):
         # XXX: we don't want to pass subscriptions along or the Application will subscribe to them internally!
         super(FiredexSubscriber, self).__init__(broker, subscriptions=tuple(), **kwargs)
 
-        self._net_flows = net_flows
+        # XXX: accept either the real object or just a tuple (e.g. when passed via JSON cmd-line args)
+        self._net_flows = [f if isinstance(f, NetworkFlow) else NetworkFlow(*f) for f in net_flows]
         self._static_topic_flow_map = static_topic_flow_map
 
         if static_topic_flow_map and not net_flows:

@@ -76,6 +76,20 @@ class FiredexExperiment(NetworkExperiment, FiredexConfiguration):
 
         return arg_parser
 
+    @classmethod
+    def build_from_args(cls, args):
+        """Constructs from command line arguments."""
+
+        args = cls.get_arg_parser().parse_args(args)
+
+        # convert to plain dict
+        args = vars(args)
+
+        if args['output_filename'] is None:
+            log.warning("NO OUTPUT FILENAME SPECIFIED!")
+
+        return cls(**args)
+
     def record_result(self, result):
         # TODO: is this even needed?  might need to add some custom info...
         # First, add additional parameters used on this run.

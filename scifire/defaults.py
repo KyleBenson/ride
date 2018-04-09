@@ -15,7 +15,7 @@ DEFAULT_TOPIC_CLASS_WEIGHTS = (0.7, 0.3)  # sensor data, async events
 #       all topics; shifts zipf left to include 0 (if you want to not include 0 as the default would do, do e.g. 'args': [2, 0]
 #   uniform generates values in range [args0, args0+args1]
 #   zipf's second arg shifts the distribution, so make sure you do e.g. args=[2, -1] to e.g. allow selecting topic0!
-DEFAULT_TOPIC_CLASS_DATA_SIZES = (200, 10000)
+DEFAULT_TOPIC_CLASS_DATA_SIZES = (10, 200)
 # DEFAULT_TOPIC_CLASS_DATA_SIZES = ({'dist': 'expon', 'args': [20], 'lbound': 1, 'ubound': 10000},
 #                                   {'dist': 'expon', 'args': [1000], 'lbound': 1, 'ubound': 10000})
 # Event Publication rates in 'events/second'
@@ -56,4 +56,4 @@ IOT_DEV_TOPIC = 'sensor_data'
 DEFAULT_VIDEO_RATE_MBPS = 1.0
 DEFAULT_VIDEO_PORT = 5000
 
-FIRE_EXPERIMENT_DURATION = 15
+FIRE_EXPERIMENT_DURATION = 200
