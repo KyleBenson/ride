@@ -50,22 +50,32 @@ class FireStatistics(NetworkExperimentStatistics):
                 vec_len = params['ntopics']
                 subs = params.pop('subscriptions')
                 subs_vec = [0] * vec_len
-                utils = params.pop('utils')
+                # for utilities, we will calculate the actual and max possible utility given the weights, lambdas, delays, etc.
+                uws = params.pop('uws')
+                uws_vec = [0] * vec_len
                 utils_vec = [0] * vec_len
+                max_utils_vec = [0] * vec_len
                 exp_utils = params.pop('exp_utils')
                 exp_utils_vec = [0] * vec_len
                 exp_rcv = params.pop('exp_rcv')
                 exp_rcv_vec = [0] * vec_len
                 exp_delay = params.pop('exp_delay')
                 exp_delay_vec = [0] * vec_len
-                for sub, util, exp_util, rcv, delay in zip(subs, utils, exp_utils, exp_rcv, exp_delay):
+
+                for sub, uw, exp_util, rcv, delay in zip(subs, uws, exp_utils, exp_rcv, exp_delay):
                     subs_vec[sub] = 1
-                    utils_vec[sub] = util
+                    uws_vec[sub] = uw
+                    # max rcv rate is the rate events are published:
+                    max_rcv = params['lams'][sub]
+                    utils_vec[sub] = calculate_utility(rcv, max_rcv, delay, uw)
+                    max_utils_vec[sub] = calculate_utility(max_rcv, max_rcv, delay, uw)
                     exp_utils_vec[sub] = exp_util
                     exp_rcv_vec[sub] = rcv
                     exp_delay_vec[sub] = delay
+
                 df['subd'] = subs_vec
                 df['utils'] = utils_vec
+                df['max_utils'] = max_utils_vec
                 df['exp_utils'] = exp_utils_vec
                 df['exp_rcv'] = exp_rcv_vec
                 df['exp_delay'] = exp_delay_vec
@@ -103,7 +113,7 @@ class FireStatistics(NetworkExperimentStatistics):
         exp_params = super(FireStatistics, self).extract_run_params(run_results, filename, **exp_params)
 
         if run_results['return_code'] != 0:
-            log.warning("skipping run %d from results file %s with non-0 return code..." % (exp_params['run'], filename))
+            raise ValueError("skipping run %d from results file %s with non-0 return code..." % (exp_params['run'], filename))
 
         exp_params['prio'] = run_results['sim_config']['priorities']
         exp_params['subscriptions'] = run_results['sim_config']['subscriptions']
@@ -122,7 +132,7 @@ class FireStatistics(NetworkExperimentStatistics):
         exp_params['exp_rcv'] = run_results['exp_delivery']
 
         # for calculating/plotting utility, record utility functions (also assigned per-row based on topic for subscriptions)
-        exp_params['utils'] = run_results['utility_weights']
+        exp_params['uws'] = run_results['utility_weights']
         exp_params['exp_utils'] = run_results['exp_utilities']
 
         return exp_params
@@ -226,6 +236,7 @@ if __name__ == '__main__':
 
     ####    ANALYTICAL MODEL  vs.   SIM RESULTS
 
+    final_stats = final_stats[final_stats.ro_tol == 0.1]
     ## error rate affects delivery
     # stats.plot(x='loss', y=['lams', 'rcv_lams', 'exp_rcv'], stats=final_stats, average_over=('run', 'topic', 'prio'))
 
@@ -234,17 +245,25 @@ if __name__ == '__main__':
 
     ## Show that lower priority topics have increased delay
     # stats.plot(x='prio', y=['delay', 'exp_delay'], groupby='treatment', stats=final_stats)
-    # stats.plot(x='prio', y='delay', groupby='nprios', stats=final_stats)
+    stats.plot(x='prio', y='delay', groupby=['nprios', 'algorithm'], stats=final_stats)
 
     # Plot actual delay difference
     # final_stats = final_stats[final_stats.run == 75]
-    final_stats['delay_diff'] = final_stats.delay - final_stats.exp_delay
-    stats.plot(x='prio', y='delay_diff', groupby='treatment', stats=final_stats)
+    # final_stats['delay_diff'] = final_stats.delay - final_stats.exp_delay
+    # stats.plot(x='prio', y='delay_diff', groupby='treatment', stats=final_stats)
     # stats.plot(x='topic', y='delay_diff', groupby='treatment', average_over=('run', 'prio'), stats=final_stats)
     # stats.plot(x='topic', y='delay_diff', groupby='nprios', average_over=('run', 'prio'), stats=final_stats)
     # stats.plot(x='prio', y='delay_diff', groupby='nprios', stats=final_stats)
     # stats.plot(x='topic', y=['delay', 'exp_delay'], average_over=('run', 'prio'), groupby='nprios', stats=final_stats)
     # stats.plot(x='prio', y=['lams', 'delay_diff'], groupby='nprios', stats=final_stats)
+
+    #### Plotting utilities
+    ##     Show that we achieve more of max possible utility for higher priority subscription groups:
+    # May be more helpful to plot utility as a percent achieved of max possible
+    # TODO: may be even better to just sum up utilities instead of averaging! still want to scale by max though...
+    # final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
+    # stats.plot(x='prio', y='util_perc', groupby=['nprios', 'algorithm'], stats=final_stats)
+    # stats.plot(x='prio', y='utils', groupby=['nprios', 'algorithm'], stats=final_stats)
 
     ###   Explicitly save results to file
     # stats.config.output_file = "out.csv"
