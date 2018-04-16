@@ -47,14 +47,19 @@ else:
     from firedex_algorithm_experiment import FiredexAlgorithmExperiment as TheExperiment
 
 # we'll explore each of these when running experiments
-ntopics = [10, 100, 1000]
-nprios = [1, 3, 6, 9]  # 1 means no priorities, which just runs the 'null' algorithm
-errs = [0, 0.01, 0.1, 0.2]
-nffs = [3, 6, 12, 18]
-sub_dists = (({'dist': 'uniform'}, {'dist': 'uniform'}), ({'dist': 'zipf', 'args': [2]}, {'dist': 'zipf', 'args': [2]}))
-bandwidths = [10, 100, 1000]  # in Mbps
+# ntopics = [10, 100, 1000]
+# nprios = [1, 3, 6, 9]  # 1 means no priorities, which just runs the 'null' algorithm
+# errs = [0, 0.01, 0.1, 0.2]
+# nffs = [3, 6, 12, 18]
+# sub_dists = (({'dist': 'uniform'}, {'dist': 'uniform'}), ({'dist': 'zipf', 'args': [2]}, {'dist': 'zipf', 'args': [2]}))
+# bandwidths = [10, 100, 1000]  # in Mbps
 algs = ALL_ALGORITHMS
-ro_tolerances = [0.01, 0.1, 0.2, .4]
+# ro_tolerances = [0.01, 0.1, 0.2, .4]
+dsizes = (({'dist': 'expon', 'args': [110], 'lbound': 90, 'ubound': 120},{'dist': 'expon', 'args': [90], 'lbound': 80, 'ubound': 100}),
+          ({'dist': 'expon', 'args': [600], 'lbound': 550, 'ubound': 650},{'dist': 'expon', 'args': [500], 'lbound': 450, 'ubound': 550}),
+          ({'dist': 'expon', 'args': [1000], 'lbound': 950, 'ubound': 1050},{'dist': 'expon', 'args': [1100], 'lbound': 1050, 'ubound': 1150}))
+
+prates = ({'dist': 'expon', 'args': [25], 'lbound': 22, 'ubound': 28},{'dist': 'expon', 'args': [8], 'lbound': 7, 'ubound': 10})
 # NOTE: if a parameter is a dict (e.g. single RV dist. or alg.), you need to wrap it in a dict keyed by its parameter
 # name so that the runner doesn't treat it as a collection of parameters but a single parameter!
 # algs = [dict(algorithm={'algorithm': 'random', 'seed': 567678383})]
@@ -70,11 +75,20 @@ EXPERIMENTAL_TREATMENTS = {
     ## this is for explicitly forcing just a single run to quickly test the simulator itself
     # 'testing': [{'bandwidth': 1, 'nruns': 1, 'testing': True, 'algorithm': dict(algorithm='random', ro_tolerance=0.6)}],
     ## Actual varied parameter explorations:
-    'sim_exps': [{'num_priority_levels': p, 'num_net_flows': p,
-                  'algorithm': dict(algorithm=a, ro_tolerance=ro),
-                  'output_filename': ('results_%dp_%.1fr_%s.json' % (p, ro, a))}
-                 for p in nprios for ro in [0.1, 0.6]
-                 for a in (['random', 'greedy'] if p > 1 else ['null'])],  # currently assume nprios==nflows always!
+    'data_sizes': [{'topic_class_data_sizes': dsize,
+                    'topic_class_pub_rates': prates,
+                    'num_priority_levels':9,
+                    'algorithm':'greedy',
+                    'num_net_flows':9,
+                    'num_topics':200,
+                    'bandwidth':6,
+                    'testing': True,
+                    'output_filename': 'results_%d.json' % dsize_idx} for dsize_idx, dsize in enumerate(dsizes)],
+    # 'sim_exps': [{'num_priority_levels': p, 'num_net_flows': p,
+    #               'algorithm': dict(algorithm=a, ro_tolerance=ro),
+    #               'output_filename': ('results_%dp_%.1fr_%s.json' % (p, ro, a))}
+    #              for p in nprios for ro in [0.1, 0.6]
+    #              for a in (['random', 'greedy'] if p > 1 else ['null'])],  # currently assume nprios==nflows always!
     # 'nprios': [{'num_priority_levels': p, 'num_net_flows': p} for p in nprios],  # currently assume nprios==nflows always!
     # 'error_rate': errs,
     # 'bandwidth': bandwidths,
@@ -89,7 +103,7 @@ EXPERIMENTAL_TREATMENTS = {
 }
 
 # these aren't passed to the experiment class
-nprocs = 2  # queuing simulator is multi-threaded
+nprocs = 1  # queuing simulator is multi-threaded
 # nprocs = None if not testing else 1  # None uses cpu_count()
 
 def makecmds(output_dirname=''):
