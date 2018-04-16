@@ -122,12 +122,18 @@ class NetworkExperimentStatistics(ScaleStatistics):
             try:
                 this_run_params = self.extract_run_params(r, filename, **exp_params)
                 o = self.parse_outputs_dir(d, treatment=treatment, **this_run_params)
-                stats.append(o)
+                if self.is_results_good(o):
+                    stats.append(o)
             except BaseException as e:
-                log.warning("skipping output directory %s that generated error: %s" % (d, e))
-        stats = self.merge_all(*stats)
-
-        return stats
+                if self.config.raise_errors:
+                    raise
+                else:
+                    log.warning("skipping output directory %s that generated error: %s" % (d, e))
+        if stats:
+            stats = self.merge_all(*stats)
+            return stats
+        else:
+            return None
 
     def extract_run_params(self, run_results, filename, **exp_params):
         """
@@ -182,14 +188,19 @@ class NetworkExperimentStatistics(ScaleStatistics):
             # need to determine how to parse this file before we can do it
             fname = os.path.join(out_dir, fname)
             parser = self.choose_parser(fname, treatment=treatment, **params)
+            if parser is None:
+                continue
 
             data = self.read_file(fname)
 
             # NOTE: this should include the treatment as a column in the resulting DataFrame
-            data = parser(data, treatment=treatment, **params)
-            res.append(data)
+            data = parser(data, filename=fname, treatment=treatment, **params)
+            if self.is_results_good(data):
+                res.append(data)
 
         # may need to override this in order to merge the different DataFrames in a particular way specific to your application
+        if not res:
+            return None
         res = self.collate_outputs_results(*res)
         return res
 

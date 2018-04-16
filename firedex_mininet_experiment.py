@@ -203,7 +203,34 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         log.debug("sleeping %d seconds for procs to finish..." % cooldown_time)
         time.sleep(cooldown_time)
 
-        return dict(start_time=start_time)
+        results = dict(start_time=start_time)
+        results.update(self.get_analytical_model_results())
+        results.update(self.get_run_config_for_results_dict())
+
+        return results
+
+    def get_analytical_model_results(self):
+        """
+        Calculates the expected performance using the analytical model in order to determine its accuracy.
+        :return: a dict of resulting expectations to be saved in 'results'
+        """
+        # XXX: just need to convert subscriber mininet Hosts into their names
+        ret = super(FiredexMininetExperiment, self).get_analytical_model_results()
+        new_ret = dict()
+        for k, v in ret.items():
+            new_ret[k] = {subscriber.name: data for subscriber, data in v.items()}
+        return new_ret
+
+    def get_run_config_for_results_dict(self):
+        """
+        :return:  a dict of configuration parameters for this run
+        """
+        # XXX: just need to convert subscriber mininet Hosts into their names
+        ret = super(FiredexMininetExperiment, self).get_run_config_for_results_dict()
+        # ret['subscriptions'] = {host.name: subs for host, subs in ret['subscriptions'].items()}
+        ret['priorities'] = {host.name: v for host, v in ret['priorities'].items()}
+        ret['drop_rates'] = {host.name: v for host, v in ret['drop_rates'].items()}
+        return ret
 
     def run_brokers(self):
 
@@ -273,7 +300,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                  # TODO: set bounds so we can guarantee it fits in CoAP packet!  maybe we need to have a 'lightweight' SensedEvent transmitted with fewer fields??
                 data_size_bounds = (1,500)
 
-                sensor_configs += "".join([make_scale_config_entry(name="IoTSensor(%s)" % topic, event_type=topic,
+                sensor_configs += "".join([make_scale_config_entry(name="IoTSensor_%s_%s" % (host.name, topic), event_type=topic,
                                     event_generator=dict(topic=topic, publication_period=self.get_publication_period(topic),
                                                          data_size_bounds=data_size_bounds, data_size=data_sizes[topic],
                                                          total_time=self.experiment_duration),
