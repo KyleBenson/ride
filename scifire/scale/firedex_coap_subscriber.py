@@ -29,8 +29,14 @@ class FiredexCoapSubscriber(FiredexSubscriber):
     def on_start(self):
         super(FiredexCoapSubscriber, self).on_start()
 
+        # we need to gather up the subscriptions for each CoapSensor and create a coap client for each network flow
+        sensor_configs = {f: [] for f in self._net_flows}
+
         for sub in self._subs:
             flow = self.address_for_topic(sub)
+            sensor_configs[flow].append(sub)
+
+        for flow, subs in sensor_configs.items():
             kwargs = dict()
             if flow.src_port:
                 kwargs['src_port'] = flow.src_port
@@ -41,7 +47,9 @@ class FiredexCoapSubscriber(FiredexSubscriber):
 
             # XXX: set timeout to be shorter so we will re-attempt to observe if the first try failed
             timeout = 20
-            client = CoapSensor(self._broker, topic=self._remote_path % sub, timeout=timeout, **kwargs)
+
+            subs = [self._remote_path % sub for sub in subs]
+            client = CoapSensor(self._broker, subscriptions=subs, timeout=timeout, **kwargs)
             client.on_start()
             self._clients.append(client)
-            log.debug("FiredexCoapSubscriber added CoapSensor")
+            log.debug("FiredexCoapSubscriber added CoapSensor(sub_port=%s) with subs: %s" % (flow.src_port, str(subs)))

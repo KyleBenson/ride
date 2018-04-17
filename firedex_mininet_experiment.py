@@ -245,15 +245,18 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                                                 output_file=os.path.join(self.outputs_dir, "events_%s"),
                                                 class_path="event_file_logging_application.EventFileLoggingApplication")
 
+        # DYNAMICS: bring SdnApp back in so we can run the algorithm from there and manage the network accordingly
         # This is just for the ICP so that it can interact with the SDN Controller, which in our scenario we assume is near the BMS
-        sdn_cfg = make_scale_config_entry(name="SdnApp", topology_mgr=self._get_topology_manager_config(),
-                                          class_path="topology_manager.scale_sdn_application.ScaleSdnApplication")
+        # sdn_cfg = make_scale_config_entry(name="SdnApp", topology_mgr=self._get_topology_manager_config(),
+        #                                   class_path="topology_manager.scale_sdn_application.ScaleSdnApplication")
 
-        # TODO: add in EOC too?  not sure what exactly we'll do with it though...
-        for broker_node in (self.icp, self.bms):
+        # FUTURE: add in ICP and EOC too?  not sure what exactly we'll do with it though...
+        # broker_nodes = (self.icp, self.bms)
+        broker_nodes = (self.bms,)
+        for broker_node in broker_nodes:
             hostname = "broker@%s" % broker_node.name
-            broker_cfg = make_scale_config(networks=coap_cfg,
-                                           applications=event_log_cfg + (sdn_cfg if broker_node is self.icp else ''))
+            broker_cfg = make_scale_config(networks=coap_cfg, applications=event_log_cfg)
+            # applications=event_log_cfg + (sdn_cfg if broker_node is self.icp else ''))
             cmd = self.make_host_cmd(broker_cfg % hostname, hostname)
             self.run_proc(cmd, broker_node, hostname)
 
@@ -325,15 +328,26 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                 # NOTE: scale expects topics to be strings!
                 subs = [str(t) for t in self.get_subscription_topics(host)]
 
-                # TODO: need to run algorithm to get actual topic flow map....
+                req_flow_map = self.algorithm.get_subscription_net_flows(self, subscriber=host)
+                flow_prio_map = self.algorithm.get_net_flow_priorities(self, subscriber=host)
+                drop_rates = self.algorithm.get_drop_rates(self, subscriber=host)
+
+                # XXX: convert our req_flow_map into a topic-to-flow index map.
+                # since net flows are unique per subscriber, we need to subtract the minimum flow # from each for this
+                #   subscriber to start the flow indices at 0
+                min_sim_flow = min(*req_flow_map.values())
+                topic_flow_map = {req.topic: (f - min_sim_flow) for req, f in req_flow_map.items()}
+
+                log.warning("TOPIC FLOW MAP: %s" % str(topic_flow_map))
                 # XXX: let destination port be the default one
-                flows = [(None, None, broker_ip, None)]
-                # TODO: figure out how to set src_port for several topics!
-                # flows = [(None, COAP_CLIENT_BASE_SRC_PORT, broker_ip, None)]
-                topic_flow_map = {t: 0 for t in subs}
+                real_flows = [(None, COAP_CLIENT_BASE_SRC_PORT + i, broker_ip, None) for i in range(self.num_net_flows)]
+
+                # TODO: install SDN flow rules for drop_rates/priorities
+                # TODO: make sure that the two types of flows match up as expected!
+                #    else might assign wrong priority to them... should probably be okay since everything sequential
 
                 sensor_configs += make_scale_config_entry(name="FdxSubscriber", subscriptions=subs,
-                                                          net_flows=flows, static_topic_flow_map=topic_flow_map,
+                                                          net_flows=real_flows, static_topic_flow_map=topic_flow_map,
                                                           # TODO: make this work for all Apps not just DummyVS?
                                                           start_delay=random.uniform(15, 20),
                                     class_path="scifire.scale.firedex_coap_subscriber.FiredexCoapSubscriber")
