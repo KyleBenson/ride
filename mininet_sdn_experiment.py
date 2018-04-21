@@ -53,7 +53,7 @@ class MininetSdnExperiment(NetworkExperiment):
             super(MininetSdnExperiment, self).__init__()
 
         # set later as it needs resetting between runs and must be created after the network starts up
-        self.topology_adapter = None
+        self.topology_adapter = None  # type: topology_manager.sdn_topology.SdnTopology
         self.topology_adapter_type = topology_adapter
         self.controller = None
         self.controller_port = controller_port
@@ -760,7 +760,7 @@ class MininetSdnExperiment(NetworkExperiment):
         :return:
         """
 
-        base_args = "-q %d --log %s" % (self.experiment_duration, self.debug_level)
+        base_args = "-q %d --log %s" % (self.experiment_duration/2, self.debug_level)
         cmd = SCALE_CLIENT_BASE_COMMAND % (base_args + cmd)
 
         if WITH_LOGS:
