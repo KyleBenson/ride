@@ -175,9 +175,14 @@ class OnosSdnTopology(SdnTopology):
     def build_actions(self, *args):
         actions = []
         for a in args:
-            if isinstance(a, str) or len(a) == 1:
-                raise NotImplementedError("ONOS REST API doesn't accept no-argument actions")
-            if len(a) == 2:
+            if isinstance(a, basestring) or len(a) == 1:
+                if not isinstance(a, basestring):
+                    a = a[0]
+                if a.lower() == 'drop':
+                    new_action = {"type": "NOACTION"}
+                else:
+                    raise NotImplementedError("ONOS REST API didn't recognize no-argument action: %s" % a)
+            elif len(a) == 2:
                 action_type = a[0]
                 value = a[1]
                 if action_type.startswith("set_"):
@@ -210,9 +215,9 @@ class OnosSdnTopology(SdnTopology):
                     new_action = {"type": "QUEUE", "queueId": str(a[1])}
                 else:
                     raise ValueError("Unrecognized or unimplemented action %s" % a)
-                actions.append(new_action)
             else:
                 raise NotImplementedError("Multi-argument actions not yet implemented")
+            actions.append(new_action)
 
         return actions
 
