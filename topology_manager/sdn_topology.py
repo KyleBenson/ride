@@ -89,7 +89,8 @@ class SdnTopology(NetworkTopology):
 
     # Generic flow rule generating functions based on the topology
 
-    def build_flow_rules_from_path(self, path, use_matches=None, add_matches=None, use_queues=None, **kwargs):
+    def build_flow_rules_from_path(self, path, use_matches=None, add_matches=None,
+                                   use_queues=None, use_actions=None, **kwargs):
         """
         Converts a simple path to a list of flow rules that can then be installed in the corresponding switches.
         :param path: the path packets will follow through the topology
@@ -100,6 +101,7 @@ class SdnTopology(NetworkTopology):
          matches i.e. ipv4_src/ipv4_dst/in_port!)
         :param use_queues: optionally forward through the specified queue instead of via the regular 'output' command
                NOTE: every port on the path is expected to have the same 'queueId' available!
+        :param use_actions: optionally use these actions instead of the default that just outputs to the next hop
         :param kwargs: additional arguments passed to build_flow_rule()
         """
 
@@ -119,10 +121,14 @@ class SdnTopology(NetworkTopology):
             in_port, _ = self.get_ports_for_nodes(switch, src)
             out_port, _ = self.get_ports_for_nodes(switch, dst)
 
-            if use_queues is None:
-                actions = self.build_actions(("output", out_port))
-            else:
+            if use_queues is not None and use_actions is not None:
+                raise ValueError("Ambiguously requested both pre_actions AND use_queues!  Got %s and %s" % (use_actions, use_queues))
+            elif use_actions is not None:
+                actions = self.build_actions(*use_actions)
+            elif use_queues is not None:
                 actions = self.build_actions(("queue", int(use_queues)), ("output", int(out_port)))
+            else:
+                actions = self.build_actions(("output", out_port))
 
             if use_matches is None:
                 if add_matches is None:
