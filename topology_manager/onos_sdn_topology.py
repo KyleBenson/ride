@@ -224,6 +224,7 @@ class OnosSdnTopology(SdnTopology):
     def build_bucket(self, actions, weight=None, watch_group=None, watch_port=None):
         bucket = {'treatment': {'instructions': actions}}
         if weight is not None:
+            assert isinstance(weight, int), "Group bucket 'weight' must be specified as an integer (surprising I know...) but got %s! " % weight
             bucket['weight'] = weight
         if watch_port is not None:
             bucket['watchPort'] = str(watch_port)
