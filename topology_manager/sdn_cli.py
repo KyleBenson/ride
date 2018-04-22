@@ -58,6 +58,8 @@ def parse_args(args):
     \t\t\t\t\t  (NO *ARGS! **KWARGS passed to build_flow_rules_from_multicast_tree(...)!)
     mdmts ntrees alg <mcast_args>       - same as mcast, except it builds 'ntrees' multiple maximally-disjoint multicast trees using the algorithm 'alg'
     redirect src old_dst new_dst        - redirect packets from src to old_dst by installing flow rules that convert ipv4_dst to that of new_dst
+    group switch_id bucket1 [bucket2...]  - creates a new group using the 'build_group' command (see its kwargs for more options),
+    \t\t\t\t\t  where each bucket is a dict of kwargs that will be passed to 'build_bucket'
     del-flow switch_id flow_id          - delete the requested flow rule
     del-flows                           - deletes all flow rules
     del-groups                          - deletes all groups
@@ -190,6 +192,17 @@ if __name__ == "__main__":
         flow_rules = topo.build_redirection_flow_rules(*cmd_args, **cmd_kwargs)
         for f in flow_rules:
             assert topo.install_flow_rule(f), "problem installing flow: %s" % f
+
+    elif cmd == 'group':
+        assert nargs >= 2, "group command must at least have the switch_id and one bucket to create"
+        buckets = [json.loads(b) for b in cmd_args[1:]]
+        # XXX: need to convert actions from short-hand form
+        buckets = [{k: (topo.build_actions(*v) if k == 'actions' else v) for k, v in b.items()} for b in buckets]
+        buckets = [topo.build_bucket(**b) for b in buckets]
+
+        g = topo.build_group(cmd_args[0], buckets, **cmd_kwargs)
+        print("installing group: %s" % str(g))
+        assert topo.install_group(g), "problem installing group: %s" % g
 
     elif cmd == 'del-flow':
         assert nargs >= 2, "delete flow command must at least have the switchId and flowId!"
