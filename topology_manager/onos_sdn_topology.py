@@ -244,7 +244,7 @@ class OnosSdnTopology(SdnTopology):
         @:return rule - dict representing the flow rule that can be installed on the switch"""
 
         # These are required fields
-        rule = {"type": group_type,
+        rule = {"type": group_type.upper(),  # XXX: must be capitalized apparently...
                 "deviceId": switch,
                 # Required field that must be a hex string, but must also be unique.
                 # Hence, we make it a combination of the switch DPID and the group_id,
