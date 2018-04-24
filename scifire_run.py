@@ -55,11 +55,11 @@ else:
 # bandwidths = [10, 100, 1000]  # in Mbps
 algs = ALL_ALGORITHMS
 # ro_tolerances = [0.01, 0.1, 0.2, .4]
-dsizes = (({'dist': 'expon', 'args': [110], 'lbound': 90, 'ubound': 120},{'dist': 'expon', 'args': [90], 'lbound': 80, 'ubound': 100}),
-          ({'dist': 'expon', 'args': [600], 'lbound': 550, 'ubound': 650},{'dist': 'expon', 'args': [500], 'lbound': 450, 'ubound': 550}),
-          ({'dist': 'expon', 'args': [1000], 'lbound': 950, 'ubound': 1050},{'dist': 'expon', 'args': [1100], 'lbound': 1050, 'ubound': 1150}))
-
-prates = ({'dist': 'expon', 'args': [25], 'lbound': 22, 'ubound': 28},{'dist': 'expon', 'args': [8], 'lbound': 7, 'ubound': 10})
+dsizes = (({'dist': 'expon', 'args': [110], 'lbound': 90, 'ubound': 500},{'dist': 'expon', 'args': [800], 'lbound': 500, 'ubound': 1100}),
+          # ({'dist': 'expon', 'args': [600], 'lbound': 550, 'ubound': 650},{'dist': 'expon', 'args': [500], 'lbound': 450, 'ubound': 550}),
+          # ({'dist': 'expon', 'args': [1000], 'lbound': 950, 'ubound': 1050},{'dist': 'expon', 'args': [1100], 'lbound': 1050, 'ubound': 1150}))
+          )
+prates = ({'dist': 'expon', 'args': [6], 'lbound': 4, 'ubound': 7},{'dist': 'expon', 'args': [4], 'lbound': 3, 'ubound': 5})
 # NOTE: if a parameter is a dict (e.g. single RV dist. or alg.), you need to wrap it in a dict keyed by its parameter
 # name so that the runner doesn't treat it as a collection of parameters but a single parameter!
 # algs = [dict(algorithm={'algorithm': 'random', 'seed': 567678383})]
@@ -77,12 +77,17 @@ EXPERIMENTAL_TREATMENTS = {
     ## Actual varied parameter explorations:
     'data_sizes': [{'topic_class_data_sizes': dsize,
                     'topic_class_pub_rates': prates,
-                    'num_priority_levels':9,
-                    'algorithm':'greedy',
-                    'num_net_flows':9,
-                    'num_topics':200,
-                    'bandwidth':6,
-                    'testing': True,
+                    'num_priority_levels':3,
+                    'num_net_flows':3,
+                    'algorithm': dict(algorithm='greedy', ro_tolerance=0.8),
+                    'num_topics':6,
+                    'num_iots':150,
+                    'num_ffs':0,
+                    'topic_class_advertisements_per_ff':(3,5),
+                    'topic_class_advertisements_per_iot':(3,2),
+                    'bandwidth':1,
+                    'testing': False,
+                    # 'testing': True,
                     'output_filename': 'results_%d.json' % dsize_idx} for dsize_idx, dsize in enumerate(dsizes)],
     # 'sim_exps': [{'num_priority_levels': p, 'num_net_flows': p,
     #               'algorithm': dict(algorithm=a, ro_tolerance=ro),

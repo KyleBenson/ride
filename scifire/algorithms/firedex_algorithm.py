@@ -124,24 +124,44 @@ class FiredexAlgorithm(object):
         # Then the SDN switch delays:
         lam_s_in = lambdas.switch_in
         mu_s_in = mus.switch_in[0]  # independent of topic!
+        delta_s_in = [((1.0 / mu_s_in) / (1 - lam / mu_s_in)) for lam in lam_s_in]
 
-        # First, the priority queue needs to consider each priority class according to the network flow/priority mappings.
-        # So we get the total rates for each of these classes first.
-        req_prios = self.get_subscription_priorities(configuration)
-        lam_reqs = zip(lam_s_in, req_prios.keys())
-        lam_prios = [sum(lam if req_prios[req] == p else 0.0 for lam, req in lam_reqs) for p in configuration.prio_classes]
-        num = sum(lam_prios)
-
-        delta_s_in = [(num / ((mu_s_in - sum(lam_prios[:req_prios[req]])) *
-                              (mu_s_in - sum(lam_prios[: max(req_prios[req] - 1, 0)])))  # prio=0 --> -1 index --> bad!
-                       + 1.0/mu_s_in) for lam, req in lam_reqs]
-
-        # Now the multi-class queue where we consider a different mu per-subscription (really just topic currently)
         lam_s_thru = lambdas.switch_thru
         mu_s_out = mus.switch_out
-        denom = (1.0 - sum(lam/mu for lam, mu in zip(lam_s_thru, mu_s_out)))
-        delta_s_out = [(1.0/mu)/denom for mu in mu_s_out]
 
+        # Next, the multi-class priority queue needs to consider a different mu per-subscription AND
+        #  each priority class according to the network flow/priority mappings.
+        req_prios = self.get_subscription_priorities(configuration)
+
+        # estimation of lambdas for each priority
+        lam_prios = [sum(lam for lam, req in zip(lam_s_thru, configuration.subscriptions) if req_prios[req] == p)
+                     for p in configuration.prio_classes]
+        # estimation of mus for each priority
+        mu_prios = [lam_prios[p] / sum(lam/mu for lam, req, mu in zip(lam_s_thru, configuration.subscriptions, mu_s_out) if req_prios[req] == p)
+                     for p in configuration.prio_classes]
+        ro_prios = [lam/mu for lam, mu in zip(lam_prios, mu_prios)]
+        # its the sum of ros for all priorities (check 3.43 in Gross book for queueing theory)
+        sigma_prios = [sum(ro_prios[:i+1]) for i in range(len(ro_prios))]
+
+        # numerator of 3.43, Gross book for queueing theory
+        num = sum(ro/mu for ro, mu in zip(ro_prios, mu_prios))
+        # waiting time in the queue for each priority
+        delta_prios_q = [num/((1-sigma_prios[p]) * (1 - (sigma_prios[p-1] if p > 0 else 0))) for p in configuration.prio_classes]
+
+        #applying little's law to find the queue size for each priority
+        queue_sizes_prios_q = [delta * lam for delta, lam in zip(delta_prios_q, lam_prios)]
+
+        # queue size (in the queue) for each req.
+        queue_sizes_reqs_q = [lam / (lam_prios[req_prios[req]]) * queue_sizes_prios_q[req_prios[req]]
+                              for lam, req in zip(lam_s_thru, configuration.subscriptions)]
+
+        # queue size (in the system) for each req.
+        queue_sizes_reqs = [qsr + lam/mu for qsr, lam, mu in zip(queue_sizes_reqs_q, lam_s_thru, mu_s_out)]
+
+        # applying little's law to find response time of the system
+        delta_s_out = [qsr/lam for lam, qsr in zip(lam_s_thru, queue_sizes_reqs)]
+
+        # Finally, put everything together to return it
         final_delays = [delta_b_in, delta_b_out, delta_s_in, delta_s_out]
         final_delays = zip(*final_delays)
         final_delays = [sum(terms) for terms in final_delays]
@@ -174,13 +194,15 @@ class FiredexAlgorithm(object):
         # ENHANCE: per-flow lambdas?
 
         # Next, the SDN switch queues:
-        # consider drop rate en route to switch
+        # consider drop rate inside the switch
         net_flows = self.get_subscription_net_flows(configuration)
+        # match the ordering with the lambdas
+        net_flows = [net_flows[sub] for sub in configuration.subscriptions]
 
-        lambdas_s_in = [l * (1.0 - self.get_drop_rates(configuration)[flow])\
-                        for l, (sub, flow) in zip(lambdas_b_out, net_flows.items())]
+        lambdas_s_in = lambdas_b_out
         # ENHANCE: consider finite buffer size in prioq?
-        lambdas_s_thru = lambdas_s_in
+        lambdas_s_thru = [l * (1.0 - self.get_drop_rates(configuration)[flow])\
+                        for l, flow in zip(lambdas_s_in, net_flows)]
         lambdas_s_out = lambdas_s_thru
 
         # Lastly, the arrival rate at the subscriber consider packet errors
