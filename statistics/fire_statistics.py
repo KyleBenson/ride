@@ -5,8 +5,120 @@ from scale_client.stats.parsed_sensed_events import ParsedSensedEvents
 import pandas as pd
 from scifire.utilities import calculate_utility
 
+import os
 import logging
 log = logging.getLogger(__name__)
+
+
+class FiredexParsedSensedEvents(ParsedSensedEvents):
+    """
+    Custom version of SensedEvent parser that first parses all the events, arranges them according to subscriptions,
+    and then joins together the events output by publishers/brokers/subscribers as end-to-end events (i.e. from the
+    publisher to broker to subscriber, with the latter two having null values if the event didn't reach them).
+    """
+
+    def __init__(self, data, filename=None, **kwargs):
+        """
+        Parses the given data into a dict of events recorded by the client
+         and passes the resulting data into a pandas.DataFrame with additional columns specified by kwargs,
+        which can include e.g. experimental treatments, host IP address, etc.
+
+        :param data: raw string containing JSON object-like data e.g. nested dicts/lists
+        :type data: str
+        :param filename: name of the file from which this data is being parsed (not used by default)
+        :param timezone: the timezone to use for converting time columns (default='America/Los_Angeles'); set to None to disable conversion
+        :param kwargs: additional static values for columns to distinguish this group of events from others
+            e.g. host_id, host_ip
+        """
+
+        # XXX: extract subscriber's hostname from the filename
+        filename = os.path.split(filename)[-1]
+        sub_name = filename.split('_')[-1].split('-')[-1]
+        kwargs['sub'] = sub_name
+
+        super(FiredexParsedSensedEvents, self).__init__(data, filename=filename, **kwargs)
+
+    def combine_params_columns(self, columns, **params):
+        """
+        To add the relevant params to columns, we need to convert each per-topic or per-subscription param into a
+        per-event format.
+        :param columns:
+        :type columns: dict
+        :param params:
+        :return:
+        :rtype: dict
+        """
+
+        # TODO: this will have to be calculated based on rates once we convert events to rates!
+        # columns['utils'] = []
+        # max_rcv = params['lams'][sub]
+        # columns['max_utils'] = []
+
+        # per-topic ones:
+        lambdas = params.pop('lams')
+        mus = params.pop('mus')
+        lambdas_col = []
+        mus_col = []
+        for top in columns['topic']:
+            # XXX: the lambdas are just a list where each index corresponds to that topic i.e. idx 0 == topic '0'
+            top = int(top)
+            lambdas_col.append(lambdas[top])
+            mus_col.append(mus[top])
+
+        columns['lams'] = lambdas_col
+        columns['mus'] = mus_col
+
+        # Now, per-subscription columns:
+        columns['exp_rcv'] = []
+        columns['exp_delay'] = []
+        columns['prio'] = []
+        columns['drop'] = []
+        columns['uws'] = []
+        columns['exp_utils'] = []
+
+        exp_rcv = params.pop('exp_rcv')
+        exp_delay = params.pop('exp_delay')
+        priorities = params.pop('prio')
+        drop_rates = params.pop('drop')
+        util_weights = params.pop('uws')
+        exp_utils = params.pop('exp_utils')
+
+        # Now we go through each row of the events and extract the relevant additional columns wanted
+        subscriber = params['sub']
+        for topic in columns['topic']:
+            columns['exp_rcv'].append(exp_rcv[subscriber][topic])
+            columns['exp_delay'].append(exp_delay[subscriber][topic])
+            columns['prio'].append(priorities[subscriber][topic])
+            columns['drop'].append(drop_rates[subscriber][topic])
+            columns['uws'].append(util_weights[subscriber][topic])
+            columns['exp_utils'].append(exp_utils[subscriber][topic])
+
+        return super(FiredexParsedSensedEvents, self).combine_params_columns(columns, **params)
+
+    def extract_columns(self, data, parse_metadata=True):
+        """Modify some of the SensedEvent columns here before creating the DataFrame"""
+
+        res = super(FiredexParsedSensedEvents, self).extract_columns(data, parse_metadata=parse_metadata)
+        res.pop('local_resource_uri')
+        res.pop('relay_uri')  # only using a single broker currently!
+
+        # XXX: extract publisher's ID from source URI that looks like: "coap://10.128.20.1:7777/scale/sensors/IoTSensor_iot1_17"
+        sources = res.pop('source')
+        pub_ids = []
+        for src in sources:
+            pub_ids.append(src.split('_')[1])
+        res['pub'] = pub_ids
+
+        # MAYBE: convert topic to int?
+
+        # XXX: value is a sequence number as a long string to make up the right payload length
+        values = res.pop('value')
+        seqs = []
+        for v in values:
+            seqs.append(int(v))
+        res['seq'] = seqs
+
+        return res
 
 
 class FireStatistics(NetworkExperimentStatistics):
@@ -51,18 +163,33 @@ class FireStatistics(NetworkExperimentStatistics):
                 subs = params.pop('subscriptions')
                 subs_vec = [0] * vec_len
                 # for utilities, we will calculate the actual and max possible utility given the weights, lambdas, delays, etc.
-                uws = params.pop('uws')
+                # XXX: since these are all in dict format, need to index by subscriber first; since we only have single
+                #   subscriber in queue sim version, we can just hard-code its name for now:
+                subscriber = 'icp0'
+                uws = params.pop('uws')[subscriber]
                 uws_vec = [0] * vec_len
                 utils_vec = [0] * vec_len
                 max_utils_vec = [0] * vec_len
-                exp_utils = params.pop('exp_utils')
+                exp_utils = params.pop('exp_utils')[subscriber]
                 exp_utils_vec = [0] * vec_len
-                exp_rcv = params.pop('exp_rcv')
+                exp_rcv = params.pop('exp_rcv')[subscriber]
                 exp_rcv_vec = [0] * vec_len
-                exp_delay = params.pop('exp_delay')
+                exp_delay = params.pop('exp_delay')[subscriber]
                 exp_delay_vec = [0] * vec_len
 
-                for sub, uw, exp_util, rcv, delay in zip(subs, uws, exp_utils, exp_rcv, exp_delay):
+                for sub in subs:
+                    # XXX: since topics are strings in the dicts but ints in the 'subscriptions' brought in for queue sim,
+                    #   we need to convert for here and then get the fields we want:
+                    sub = str(sub)
+
+                    uw = uws[sub]
+                    exp_util = exp_utils[sub]
+                    rcv = exp_rcv[sub]
+                    delay = exp_delay[sub]
+
+                    # XXX: back to int for list indexing
+                    sub = int(sub)
+
                     subs_vec[sub] = 1
                     uws_vec[sub] = uw
                     # max rcv rate is the rate events are published:
@@ -106,11 +233,59 @@ class FireStatistics(NetworkExperimentStatistics):
 
             return CsvParser
 
+        elif self.is_mininet(**params):
+
+            # for now we only extract stats from subscriber(s)
+
+            # TODO: add publishers (and maybe brokers?) later on?
+            # NOTE: will need to skip publications without matching subscriptions...
+            # NOTE: publications that weren't received MAY need to be counted for each relevant subscription!
+
+            filename = os.path.split(filename)[-1]
+
+            if filename.startswith('subscriber'):
+                return FiredexParsedSensedEvents
+            else:
+                log.debug("skipping outputs file: %s" % filename)
+                return None
+
+            # OPTIONS:
+            # - publisher: need to know source (from filename?), topic, seq#: match up with subs if possible
+            # - subscriber: extract time_rcvd and source (original, but maybe also broker eventually?)
+            # - events_broker: extract metadata['time_rcvd'] and seq#
+
         else:
             raise ValueError("unrecognized output file type (expected .csv) for filename: %s" % filename)
 
     def extract_run_params(self, run_results, filename, **exp_params):
         exp_params = super(FireStatistics, self).extract_run_params(run_results, filename, **exp_params)
+
+        # First, get some params specific to the different sim versions
+        if self.is_mininet(**exp_params):
+            # TODO: anything else here?
+            # def _extract_mininet_run_params(self, run_results, filename, **exp_params):
+            ret = exp_params
+            ret['prio'] = run_results.pop('priorities')
+            ret['drop'] = run_results.pop('drop_rates')
+
+            # TODO: use this to filter events so we have a warm-up period!
+            ret['time_sim_start'] = run_results['start_time']
+        else:
+            ret = self._extract_queue_sim_run_params(run_results, filename, **exp_params)
+
+        # then we can get those common across all versions:
+
+        # incorporate our analytical model
+        ret['exp_delay'] = run_results['exp_total_delay']
+        ret['exp_rcv'] = run_results['exp_delivery']
+
+        # for calculating/plotting utility, record utility functions (also assigned per-row based on topic for subscriptions)
+        ret['uws'] = run_results['utility_weights']
+        ret['exp_utils'] = run_results['exp_utilities']
+
+        return ret
+
+    def _extract_queue_sim_run_params(self, run_results, filename, **exp_params):
 
         if run_results['return_code'] != 0:
             raise ValueError("skipping run %d from results file %s with non-0 return code..." % (exp_params['run'], filename))
@@ -127,14 +302,6 @@ class FireStatistics(NetworkExperimentStatistics):
         prios = exp_params['prio']
         exp_params['prio_prob'] = [prio_probs[p] for p in prios]
 
-        # incorporate our analytical model
-        exp_params['exp_delay'] = run_results['exp_srv_delay']
-        exp_params['exp_rcv'] = run_results['exp_delivery']
-
-        # for calculating/plotting utility, record utility functions (also assigned per-row based on topic for subscriptions)
-        exp_params['uws'] = run_results['utility_weights']
-        exp_params['exp_utils'] = run_results['exp_utilities']
-
         return exp_params
 
     def collate_outputs_results(self, *results):
@@ -147,7 +314,7 @@ class FireStatistics(NetworkExperimentStatistics):
 
         results = super(FireStatistics, self).collate_outputs_results(*results)
 
-        # TODO: used for mininet version when we start it up again
+        # TODO: used for mininet version... maybe bring back in later?
         # XXX: for now, let's just keep the broker results so we can extract latencies
         # results = [r for r in results if 'time_rcvd' in r]
         # results = super(FireStatistics, self).collate_outputs_results(*results)
@@ -188,6 +355,8 @@ class FireStatistics(NetworkExperimentStatistics):
                 del exp_params[k]
             # TODO: probably bring at least ads back in? if we vary it...
             elif 'subs' in k or 'ads' in k:
+                del exp_params[k]
+            elif k in ('exp_duration',):
                 del exp_params[k]
 
         return exp_params

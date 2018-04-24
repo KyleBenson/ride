@@ -72,7 +72,7 @@ class FiredexAlgorithm(object):
         # NOTE: rates are per-topic until the point at which a publication is matched to a subscription and
         # forwarded as a notification: then it's per-subscription
 
-        mus_switch_out = [configuration.calculate_service_rate(pkt_size) for pkt_size in configuration.data_sizes]
+        mus_switch_out = [configuration.calculate_service_rate(pkt_size) for pkt_size in configuration.data_sizes_per_topic]
         # ASSUMPTION: packet sizes for a topic are the same across subscriptions' notifications
         mus_switch_out = configuration.topics_to_subscriptions(mus_switch_out)
 

@@ -20,7 +20,7 @@ class FiredexConfiguration(FiredexScenario):
         self.draw_subscriptions_from_advertisements = draw_subscriptions_from_advertisements
 
         # these will get filled in later
-        self.pub_rates = []
+        self._pub_rates = dict()
         self._data_sizes = dict()
         self.service_rates = []
         # these are indexed by hosts i.e. publishers or subscribers
@@ -44,7 +44,7 @@ class FiredexConfiguration(FiredexScenario):
         pub_rate_rvs = [self.build_random_variable(kws) for kws in self.topic_class_pub_rates]
         # TODO: make these dicts instead of lists?
         self.service_rates = []
-        self.pub_rates = []
+        self._pub_rates = dict()
         for topics, size_rv, rate_rv in zip(self.topics_per_class, data_size_rvs, pub_rate_rvs):
             for t in topics:
                 self._data_sizes[t] = data_size = size_rv.get_int()
@@ -53,7 +53,7 @@ class FiredexConfiguration(FiredexScenario):
                 self.service_rates.append(srv_rate)
 
                 pub_rate = rate_rv.get()
-                self.pub_rates.append(pub_rate)
+                self._pub_rates[t] = pub_rate
 
         assert len(self.service_rates) == self.num_topics
         assert len(self.pub_rates) == self.num_topics
@@ -136,10 +136,10 @@ class FiredexConfiguration(FiredexScenario):
         ads_rvs = [self.build_sampling_random_variable(dist, len(self.topics_for_class(tc_idx))) for tc_idx, dist in enumerate(self.topic_class_pub_dists)]
 
         # For each type of publisher e.g. FF or IoT-dev
-        for (num_pubs, tc_num_ads, tc_ads_rvs, ads) in ((self.num_ffs, self.topic_class_advertisements_per_ff, ads_rvs, ff_ads),
-                                                        (self.num_iots, self.topic_class_advertisements_per_iot, ads_rvs, iot_ads)):
+        for (publishers, tc_num_ads, tc_ads_rvs, ads) in ((self.ffs, self.topic_class_advertisements_per_ff, ads_rvs, ff_ads),
+                                                         (self.iots, self.topic_class_advertisements_per_iot, ads_rvs, iot_ads)):
             # generate ads for each publisher
-            for p in range(num_pubs):
+            for p in publishers:
                 ads_for_pub = []
                 # based on each topic class distribution/population
                 for tc in range(self.ntopic_classes):
@@ -236,6 +236,37 @@ class FiredexConfiguration(FiredexScenario):
         :rtype: tuple[dict[list[str|int]]]
         """
         return self._advertisements
+
+    @property
+    def ff_advertisements(self):
+        """
+        :return: a dict of lists mapping FF publisher to its topics advertised (published)
+        :rtype: dict[list[str|int]]
+        """
+        return self.advertisements[0]
+
+    @property
+    def iot_advertisements(self):
+        """
+        :return: a dict of lists mapping IoT publisher to its topics advertised (published)
+        :rtype: dict[list[str|int]]
+        """
+        return self.advertisements[1]
+
+    def get_advertisements(self, host):
+        """
+        Returns the list of advertisements for the given host.
+        :param host:
+        :return:
+        """
+        if host in self.ffs:
+            return self.ff_advertisements[host]
+        elif host in self.iots:
+            return self.iot_advertisements[host]
+        elif host == self.icp:
+            raise ValueError("Incident commander ads requested, but not currently supported!")
+        else:
+            raise ValueError("unrecognized host %s's ads requested")
 
     @property
     def advertised_topics(self):
@@ -392,9 +423,44 @@ class FiredexConfiguration(FiredexScenario):
                     self._net_flow_subscriber_map[f] = sub
 
     @property
-    def data_sizes(self):
-        return self._data_sizes.values()
+    def data_sizes_per_topic(self):
+        """Returns a list of data sizes that corresponds with the same ordering of all topics"""
+        return [self.data_sizes[t] for t in self.topics]
 
+    @property
+    def data_sizes(self):
+        return self._data_sizes
+
+    @property
+    def pub_rates(self):
+        return [self._pub_rates[t] for t in self.topics]
+
+    def get_publication_rate(self, topic):
+        """
+        Returns a RandomVariable-style configuration dict (or constant numeric if it's a constant) to represent the
+        publication rate generated for the specified topic.
+        :param topic:
+        :return:
+        """
+
+        # TODO: determine whether this should be wrapped in a dict to specify a non-const distribution!
+
+        # XXX: since we generate topics as integers but the mininet exp uses them as strings, let's just try both...
+        try:
+            return self._pub_rates[topic]
+        except KeyError:
+            try:
+                return self._pub_rates[int(topic) if isinstance(topic, basestring) else str(topic)]
+            except KeyError:
+                raise ValueError("no publication rate found for topic %s" % topic)
+
+    def get_publication_period(self, topic):
+        """Returns a RandomVariable-style configuration dict (or constant numeric if it's a constant) to represent the
+        publication period generated for the specified topic. Note that this value is basically the multiplicative
+        inverse of get_publication_rate(topic)"""
+
+        # TODO: how to handle a RV dict?  maybe have a _getPubRate func that gets the raw value then we can convert it?
+        return 1.0 / self.get_publication_rate(topic)
 
 class QueueStabilityError(ValueError):
     """

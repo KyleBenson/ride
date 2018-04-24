@@ -79,6 +79,7 @@ class MininetSdnExperiment(NetworkExperiment):
 
         self.experiment_duration = experiment_duration
         self.record_parameter('exp_duration', experiment_duration)
+        self.record_parameter('experiment_type', 'mininet')
         # We'll optionally drop to a CLI after the experiment completes for further poking around
         self.show_cli = show_cli
 
@@ -120,6 +121,7 @@ class MininetSdnExperiment(NetworkExperiment):
 
     def setup_experiment(self):
         """Finishes setting up the network by default."""
+        super(MininetSdnExperiment, self).setup_experiment()
         self.start_network()
         self.ensure_network_setup()
 

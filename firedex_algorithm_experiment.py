@@ -6,14 +6,11 @@
 import json
 import os
 import subprocess
-# For working with the temp configuration file
 import tempfile
 
 from firedex_experiment import FiredexExperiment
-from scifire.algorithms.firedex_algorithm import FiredexAlgorithm  # just for type hinting
 from scifire.firedex_configuration import QueueStabilityError
-from scifire.algorithms import build_algorithm
-from scifire.defaults import *
+
 import logging
 log = logging.getLogger(__name__)
 
@@ -30,13 +27,6 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         :param kwargs: passed to super constructor
         """
         super(FiredexAlgorithmExperiment, self).__init__(**kwargs)
-
-        # 0 priority levels means we aren't assigning ANY priorities!
-        if self.num_priority_levels > 0:
-            alg_cfg = self.algorithm  # type: dict
-            self.algorithm = build_algorithm(**alg_cfg)  # type: FiredexAlgorithm
-        else:
-            self.algorithm = build_algorithm(algorithm='null')  # type: FiredexAlgorithm
 
         self.regen_bad_ros = regen_bad_ros
         self.testing = testing
@@ -108,16 +98,9 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         # Delete the temp file since the configuration is saved in the results anyway
         os.remove(cfg_filename)
 
-        # Calculate the expected performance using the analytical model in order to determine its accuracy
-        expected_service_delays = self.algorithm.service_delays(self)
-        expected_total_delays = self.algorithm.total_delays(self)
-        expected_delivery_rates = self.algorithm.delivery_rates(self)
-        expected_utilities = self.algorithm.estimate_utilities(self)
-
-        result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,
-                      exp_srv_delay=expected_service_delays, exp_total_delay= expected_total_delays,
-                      exp_delivery=expected_delivery_rates, utility_weights=self.subscription_utility_weights,
-                      exp_utilities=expected_utilities)
+        result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,)
+        res2 = self.get_analytical_model_results()
+        result.update(res2)
 
         # save some extra parameters if an error occurs
         if ret_code:

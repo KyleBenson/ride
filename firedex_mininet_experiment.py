@@ -185,59 +185,52 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         self.run_brokers()
         self.run_scale_clients()
 
-        # TODO: choose which devs publish what topics?  which devs are video feeds? where are FFs?
-
     def run_experiment(self):
 
-        log.info("*** Starting Experiment...")
+        start_time = time.time()
+        log.info("*** Starting Experiment at %f..." % start_time)
 
-        # TODO: clean up all this hacky iperf stuff; this is all just a place-holder...
-        # run iperf for video feeds: we'll use SDN to selectively fork the video feed to black_box and, when requested, ICP
-        video_hosts = (self.ffs[0] if len(self.ffs) else self.icp, self.iots[0] if len(self.iots) else self.icp)
-        iperfs = []  # 4-tuples
-        iperf_res = []  # actual parsed results
-        srv = self.icp
-        mn_iperfs = True  # this blocks
-        # so run it in background as a proc directly, which sort of lets us parse the results from files but we've had some problems...
-        # set the duration to account for this blocking:
-        iperf_duration = self.experiment_duration
-        if mn_iperfs:
-            iperf_duration /= float(len(video_hosts))
+        log.debug("*** sleeping for %d secs while experiment runs..." % self.experiment_duration)
+        time.sleep(self.experiment_duration)
 
-        for i, v in enumerate(video_hosts):
-            if mn_iperfs:
-                ip = self.iperf(v, srv, port=DEFAULT_VIDEO_PORT+i, bandwidth=DEFAULT_VIDEO_RATE_MBPS, duration=iperf_duration, use_mininet=True)
-            else:
-                # ip = self.iperf(v, srv, port=DEFAULT_VIDEO_PORT+i, bandwidth=DEFAULT_VIDEO_RATE_MBPS, duration=iperf_duration, pipe_results=True, use_mininet=False)
-                fname = "iperf%d" % i
-                ip = self.iperf(v, self.icp, port=DEFAULT_VIDEO_PORT+i, bandwidth=DEFAULT_VIDEO_RATE_MBPS, duration=iperf_duration, output_results=fname, use_mininet=False)
-
-            if ip is not None:
-                ip = zip((v.name, srv.name), ip)
-                iperfs.append(ip)
-
-        if not mn_iperfs:
-            time.sleep(iperf_duration)
+        # ENABLE this to inspect the hosts during the experiment and run commands on them
+        # from mininet.cli import CLI
+        # CLI(self.net)
 
         log.info("*** Experiment complete!")
 
-        log.debug("sleeping a few seconds for procs to finish...")
-        time.sleep(10)
+        cooldown_time = 20
+        log.debug("sleeping %d seconds for procs to finish..." % cooldown_time)
+        time.sleep(cooldown_time)
 
-        log.info("iperf results:")
-        log.info("raw: %s" % iperfs)
-        for (cli_name, cli_res), (srv_name, srv_res) in iperfs:
-            if not mn_iperfs:
-                with open(cli_res) as f:
-                    cli_res = self.parse_iperf(f.read())
-                with open(srv_res) as f:
-                    srv_res = self.parse_iperf(f.read())
+        results = dict(start_time=start_time)
+        results.update(self.get_analytical_model_results())
+        results.update(self.get_run_config_for_results_dict())
 
-            print "iperf from %s --> %s results: %s/%s (s/c)" % (cli_name, srv_name, srv_res, cli_res)
-            iperf_res.append({cli_name: cli_res, srv_name: srv_res})
+        return results
 
-        # TODO: add more stuff to the results here!
-        return {'iperfs': iperf_res}
+    def get_analytical_model_results(self):
+        """
+        Calculates the expected performance using the analytical model in order to determine its accuracy.
+        :return: a dict of resulting expectations to be saved in 'results'
+        """
+        # XXX: just need to convert subscriber mininet Hosts into their names
+        ret = super(FiredexMininetExperiment, self).get_analytical_model_results()
+        new_ret = dict()
+        for k, v in ret.items():
+            new_ret[k] = {subscriber.name: data for subscriber, data in v.items()}
+        return new_ret
+
+    def get_run_config_for_results_dict(self):
+        """
+        :return:  a dict of configuration parameters for this run
+        """
+        # XXX: just need to convert subscriber mininet Hosts into their names
+        ret = super(FiredexMininetExperiment, self).get_run_config_for_results_dict()
+        # ret['subscriptions'] = {host.name: subs for host, subs in ret['subscriptions'].items()}
+        ret['priorities'] = {host.name: v for host, v in ret['priorities'].items()}
+        ret['drop_rates'] = {host.name: v for host, v in ret['drop_rates'].items()}
+        return ret
 
     def run_brokers(self):
 
@@ -245,9 +238,10 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         # self.run_proc(vmq_cmd, self.icp, 'icp broker')
         # self.run_proc(vmq_cmd, self.bms, 'bms broker')
 
+        all_topics = [str(t) for t in self.subscription_topics]
         coap_cfg = make_scale_config_entry(name="CoapServer", events_root="/events/", class_path="coap_server.CoapServer")
         # this will just count up the # events received with this topic
-        event_log_cfg = make_scale_config_entry(name="EventsLog", subscriptions=(IOT_DEV_TOPIC,),
+        event_log_cfg = make_scale_config_entry(name="EventsLog", subscriptions=all_topics,
                                                 output_file=os.path.join(self.outputs_dir, "events_%s"),
                                                 class_path="event_file_logging_application.EventFileLoggingApplication")
 
@@ -269,37 +263,94 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         :return:
         """
 
-        iot_dev_publish_interval = 1.0
+        #### boilerplate taken from smart campus exp
+
+        # ENHANCE: move this to make_host_cmd()????
+
+        # HACK: Need to set PYTHONPATH since we don't install our Python modules directly and running Mininet
+        # as root strips this variable from our environment.
+        env = os.environ.copy()
+        ride_dir = os.path.dirname(os.path.abspath(__file__))
+        if 'PYTHONPATH' not in env:
+            env['PYTHONPATH'] = ride_dir + ':'
+        else:
+            env['PYTHONPATH'] = env['PYTHONPATH'] + ':' + ride_dir
+
+        outputs_dir, logs_dir = self.build_outputs_logs_dirs()
+        #####
 
         # Building IoT devices all publish their periodic event data to the BMS broker.
         broker_ip = self.bms.IP()
-        for dev in self.iots:
+        for host in self.all_hosts:
             # NOTE: make sure we distinguish the coapthon client instances from each other by incrementing CoAP port for multiple topics!
+            hostname = "scale-%s" % host.name
 
-            dev_cfg = make_scale_config(
-                sensors=make_scale_config_entry(name="IoTSensor", event_type=IOT_DEV_TOPIC,
-                                                dynamic_event_data=dict(seq=0),
-                                                class_path="dummy.dummy_virtual_sensor.DummyVirtualSensor",
-                                                output_events_file=os.path.join(self.outputs_dir,
-                                                                                '%s_%s' % (IOT_DEV_TOPIC, dev.name)),
-                                                # give servers a chance to start; spread out their reports too
-                                                start_delay=random.uniform(5, 10),
-                                                sample_interval=iot_dev_publish_interval)
-                ,  # forward these SensedEvents to the broker best-effort (non-CONfirmable) for CoAP
-                sinks=make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
-                                              name="IotDataCoapEventSink", hostname=broker_ip,
-                                              src_port=COAP_CLIENT_BASE_SRC_PORT,
-                                              topics_to_sink=(IOT_DEV_TOPIC,), confirmable_messages=False)
-                # Can optionally enable this to print out each event in its entirety.
-                + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
+            # start with default values and add all the components we want for this host
+            sensor_configs = ""
+            sink_configs = ""
+            app_configs = ""
+
+            # PUBLISHERS run a VirtualSensor for each advertised topic that publishes events and stores them in a file.
+            # Also run an EventSink to report these events to remote broker.
+            if host in self.publishers:
+                # NOTE: scale expects topics to be strings!
+                ads = [str(t) for t in self.get_advertisements(host)]
+                # XXX: converting topics back to ints for indexing... this might break if we switch to fully-string topics!
+                data_sizes = {t: self.data_sizes[int(t)] for t in ads}
+                 # TODO: set bounds so we can guarantee it fits in CoAP packet!  maybe we need to have a 'lightweight' SensedEvent transmitted with fewer fields??
+                data_size_bounds = (1,500)
+
+                sensor_configs += "".join([make_scale_config_entry(name="IoTSensor_%s_%s" % (host.name, topic), event_type=topic,
+                                    event_generator=dict(topic=topic, publication_period=self.get_publication_period(topic),
+                                                         data_size_bounds=data_size_bounds, data_size=data_sizes[topic],
+                                                         total_time=self.experiment_duration),
+                                    class_path="dummy.random_virtual_sensor.RandomVirtualSensor",
+                                    output_events_file=os.path.join(self.outputs_dir,
+                                                                    'publisher_%s_%s' % (topic, host.name)),
+                                    # give servers a chance to start; spread out their reports too
+                                    start_delay=random.uniform(5, 10))
+                                  for topic in ads])
+
+                # TODO: selectively enable confirmable messages?  we have a reliable_tx var somewhere...
+                # forward these SensedEvents to the broker best-effort (non-CONfirmable) for CoAP
+                sink_configs = make_scale_config_entry(class_path="remote_coap_event_sink.RemoteCoapEventSink",
+                                        name="IotDataCoapEventSink", hostname=broker_ip,
+                                        src_port=COAP_CLIENT_BASE_SRC_PORT,
+                                        topics_to_sink=ads, confirmable_messages=False)
+                                        # Can optionally enable this to print out each event in its entirety.
+                                        # + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
+
+            # SUBSCRIBERS run a subscribing VirtualSensor and an Application for saving received events
+            if host in self.subscribers:
+                # NOTE: scale expects topics to be strings!
+                subs = [str(t) for t in self.get_subscription_topics(host)]
+
+                # TODO: need to run algorithm to get actual topic flow map....
+                # XXX: let destination port be the default one
+                flows = [(None, None, broker_ip, None)]
+                # TODO: figure out how to set src_port for several topics!
+                # flows = [(None, COAP_CLIENT_BASE_SRC_PORT, broker_ip, None)]
+                topic_flow_map = {t: 0 for t in subs}
+
+                sensor_configs += make_scale_config_entry(name="FdxSubscriber", subscriptions=subs,
+                                                          net_flows=flows, static_topic_flow_map=topic_flow_map,
+                                                          # TODO: make this work for all Apps not just DummyVS?
+                                                          start_delay=random.uniform(15, 20),
+                                    class_path="scifire.scale.firedex_coap_subscriber.FiredexCoapSubscriber")
+
+                app_configs += make_scale_config_entry(name="EventStore", subscriptions=subs,
+                                        class_path="event_file_logging_application.EventFileLoggingApplication",
+                                        output_file=os.path.join(outputs_dir, 'subscriber_%s' % hostname))
+
+            host_cfg = make_scale_config(
+                sensors=sensor_configs if sensor_configs else None,
+                sinks=sink_configs if sink_configs else None,
+                applications=app_configs if app_configs else None,
             )
 
-            hostname = "scale@%s" % dev.name
-            cmd = self.make_host_cmd(dev_cfg, hostname)
-            self.run_proc(cmd, dev, hostname)
+            cmd = self.make_host_cmd(host_cfg, hostname)
+            self.run_proc(cmd, host, hostname)
 
-        # Fire fighter nodes publish their data to the ICP broker.
-        # TODO:
 
 FiredexMininetExperiment.__doc__ = CLASS_DESCRIPTION
 

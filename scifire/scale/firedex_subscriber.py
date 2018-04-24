@@ -1,6 +1,12 @@
 from scale_client.sensors.virtual_sensor import VirtualSensor
 
 
+# TODO: move this to a util class for re-use in other classes?
+from collections import namedtuple
+NetworkFlow = namedtuple("NetFlow", ("src_addr", "src_port", "dst_addr", "dst_port"))
+# XXX: set default values for our tuple class
+NetworkFlow.__new__.__defaults__ = (None, None, None, None)
+
 class FiredexSubscriber(VirtualSensor):
     """
     FireDeX client-side middleware for the SCALE client.  Enables subscribers to subscribe to certain event topics on
@@ -11,9 +17,9 @@ class FiredexSubscriber(VirtualSensor):
         """
         :param broker:
         :param net_flows: list of network flow objects this VS should configure
-        :type net_flows: list|tuple
+        :type net_flows: list[NetworkFlow]
         :param static_topic_flow_map: static mapping of subscription topics to network flows (i.e. net flow indices)
-        :type static_topic_flow_map: dict
+        :type static_topic_flow_map: dict[str, NetworkFlow]
         :param subscriptions:
         :param kwargs:
         """
@@ -21,7 +27,8 @@ class FiredexSubscriber(VirtualSensor):
         # XXX: we don't want to pass subscriptions along or the Application will subscribe to them internally!
         super(FiredexSubscriber, self).__init__(broker, subscriptions=tuple(), **kwargs)
 
-        self._net_flows = net_flows
+        # XXX: accept either the real object or just a tuple (e.g. when passed via JSON cmd-line args)
+        self._net_flows = [f if isinstance(f, NetworkFlow) else NetworkFlow(*f) for f in net_flows]
         self._static_topic_flow_map = static_topic_flow_map
 
         if static_topic_flow_map and not net_flows:
@@ -30,7 +37,7 @@ class FiredexSubscriber(VirtualSensor):
     @property
     def remote_addresses(self):
         """
-        Returns the addresses (i.e. a tuple of e.g. ipv4, port) for each requested network flow.
+        Returns the addresses (i.e. a NetworkFlow) for each requested network flow.
         :return:
         """
         return self._net_flows
