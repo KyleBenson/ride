@@ -220,7 +220,13 @@ class NetworkExperimentStatistics(ScaleStatistics):
         group_params.discard(column_to_drop)
         group_params = list(group_params)
 
-        return df.groupby(group_params).mean().reset_index().drop(column_to_drop, axis=1)
+        df = df.groupby(group_params).mean().reset_index()
+        # XXX: if we're trying to average over a column with string values, it will have already been dropped!
+        try:
+            df = df.drop(column_to_drop, axis=1)
+        except ValueError:
+            pass
+        return df
     average_over_column = average_over_runs
 
     def plot(self, x, y, groupby=None, average_over=('run',), stats=None, **kwargs):
@@ -248,6 +254,8 @@ class NetworkExperimentStatistics(ScaleStatistics):
         if not isinstance(y, basestring):
             for _y in y:
                 average_over.discard(_y)
+
+        print "STATS BEFORE AVG:", stats
 
         for col in average_over:
             stats = self.average_over_column(stats, column_to_drop=col)
