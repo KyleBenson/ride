@@ -414,7 +414,7 @@ if __name__ == '__main__':
 
     ## Show that lower priority topics have increased delay
     # stats.plot(x='prio', y=['delay', 'exp_delay'], groupby='treatment', stats=final_stats)
-    stats.plot(x='prio', y='delay', groupby=['nprios', 'algorithm'], stats=final_stats)
+    # stats.plot(x='prio', y='delay', groupby=['nprios', 'algorithm'], stats=final_stats)
 
     # Plot actual delay difference
     # final_stats = final_stats[final_stats.run == 75]
@@ -424,6 +424,14 @@ if __name__ == '__main__':
     # stats.plot(x='topic', y='delay_diff', groupby='nprios', average_over=('run', 'prio'), stats=final_stats)
     # stats.plot(x='prio', y='delay_diff', groupby='nprios', stats=final_stats)
     # stats.plot(x='topic', y=['delay', 'exp_delay'], average_over=('run', 'prio'), groupby='nprios', stats=final_stats)
+    # stats.plot(x='topic', y=['delay', 'sim_exp_delay'], stats=final_stats)
+
+    final_stats = final_stats.sort_values('topic')
+    print final_stats
+    final_stats.plot(x='topic', y=['delay', 'sim_exp_delay'])
+    import matplotlib.pyplot as plt
+    plt.show()
+    # stats.plot(x='topic', y='delay', stats=final_stats)
     # stats.plot(x='prio', y=['lams', 'delay_diff'], groupby='nprios', stats=final_stats)
 
     #### Plotting utilities

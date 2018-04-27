@@ -83,7 +83,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         sim_jar_file = os.path.join('scifire', 'queue_simulator', 'pubsub-prio.jar')
         if not os.path.exists(sim_jar_file):
             log.error("cannot find the simulation JAR file! Make sure you download/compile it and put it at %s" % sim_jar_file)
-        cmd = "java -cp %s pubsubpriorities.PubsubV6Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
+        cmd = "java -cp %s pubsubpriorities.PubsubV7Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
 
         # redirect to log files so if we run multiple sims in parallel via run.py they don't overlap; also can view it later now
         cmd = self.redirect_output_to_log(cmd, "sim_stdout.log")

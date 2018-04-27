@@ -4,7 +4,7 @@ DEFAULT_NUM_IOTS = 6
 DEFAULT_NUM_PRIORITIES = 3
 DEFAULT_NUM_NET_FLOWS = DEFAULT_NUM_PRIORITIES
 DEFAULT_ALGORITHM = 'random'  # can add 'seed' by putting this in a dict-style config e.g. {'algorithm': 'random', 'seed': 5}
-DEFAULT_RO_TOLERANCE = 0.1
+DEFAULT_RO_TOLERANCE = 0.8
 
 DEFAULT_NUM_TOPICS = 20
 # NOTES on topic classes: all arguments should be lists/tuples, but you can specify single-element lists to be expanded
