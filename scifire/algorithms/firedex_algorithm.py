@@ -137,8 +137,15 @@ class FiredexAlgorithm(object):
         lam_prios = [sum(lam for lam, req in zip(lam_s_thru, configuration.subscriptions) if req_prios[req] == p)
                      for p in configuration.prio_classes]
         # estimation of mus for each priority
-        mu_prios = [lam_prios[p] / sum(lam/mu for lam, req, mu in zip(lam_s_thru, configuration.subscriptions, mu_s_out) if req_prios[req] == p)
-                     for p in configuration.prio_classes]
+        # XXX: need to carefully avoid dividing by 0 if nothing in this priority class!
+        mu_prios = []
+        for p in configuration.prio_classes:
+            denom = sum(lam/mu for lam, req, mu in zip(lam_s_thru, configuration.subscriptions, mu_s_out) if req_prios[req] == p)
+            if denom == 0 or lam_prios[p] == 0:
+                mu_prios.append(1)
+            else:
+                mu_prios.append(lam_prios[p] / denom)
+
         ro_prios = [lam/mu for lam, mu in zip(lam_prios, mu_prios)]
         # its the sum of ros for all priorities (check 3.43 in Gross book for queueing theory)
         sigma_prios = [sum(ro_prios[:i+1]) for i in range(len(ro_prios))]
