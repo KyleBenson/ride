@@ -52,13 +52,20 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
             log.error("failed to generate configuration that satisfies RO condtition after 1000 retries... check params!")
             return dict(error="bad ros from configuration", ros=self.algorithm.get_ros(self))
 
+        # Since we have multiple subscribers but the simulator can only handle one at a time currently,
+        # we generate a list of simulator results: one for each subscriber.
+        sim_results = dict()
+
         # Now that we have a good configuration, we can proceed with experiments:
         # Since we're running the queuing simulator for a static configuration, we just assign the topic priorities statically
         # NOTE: since the exp class IS a config class, just pass self and the alg can ignore exp-specific parts
         try:
             self.algorithm.force_update()  # for multiple runs
-            prios = self.algorithm.get_subscription_priorities(self)
-            cfg = self.get_simulator_input_dict(prios)
+            cfg = self.get_simulator_input_dict()
+            for sub_cfg in cfg:
+                sub = sub_cfg['subscriber']
+                res = self.run_queuing_simulator(sub_cfg)
+                sim_results[sub] = res
 
         except QueueStabilityError as e:
             ret = dict(error="bad ros from algorithm")
@@ -71,14 +78,27 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
                 pass
             return ret
 
+        result = self.get_analytical_model_results()
+        result['sim_results'] = sim_results
+        return result
+
+    def run_queuing_simulator(self, cfg):
+        """
+        Actually runs the external Java-based queuing simulator.
+        :param cfg: configuration dict from get_simulator_input_dict()
+        :return:
+        """
+
+        subscriber = cfg.pop('subscriber')
+
         # Since we're running an external queuing simulator, make a temporary file for passing experiment configuration
-        cfg_file, cfg_filename = tempfile.mkstemp('firedex_sim_cfg', text=True)
+        cfg_file, cfg_filename = tempfile.mkstemp('firedex_sim_cfg_%s' % subscriber, text=True)
         with os.fdopen(cfg_file, 'w') as f:
             f.write(json.dumps(cfg))
         log.info("temp input config filename for external simulator: %s" % cfg_filename)
 
         # Generate an output filename for the simulator based on the output filename we're using
-        sim_out_fname = os.path.join(self.outputs_dir, "sim_output.csv")
+        sim_out_fname = os.path.join(self.outputs_dir, "sim_output_%s.csv" % subscriber)
 
         sim_jar_file = os.path.join('scifire', 'queue_simulator', 'pubsub-prio.jar')
         if not os.path.exists(sim_jar_file):
@@ -86,7 +106,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         cmd = "java -cp %s pubsubpriorities.PubsubV7Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
 
         # redirect to log files so if we run multiple sims in parallel via run.py they don't overlap; also can view it later now
-        cmd = self.redirect_output_to_log(cmd, "sim_stdout.log")
+        cmd = self.redirect_output_to_log(cmd, "sim_stdout_%s.log" % subscriber)
 
         log.debug("Sim config: %s" % str(cfg))
         if self.testing:
@@ -98,9 +118,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         # Delete the temp file since the configuration is saved in the results anyway
         os.remove(cfg_filename)
 
-        result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname,)
-        res2 = self.get_analytical_model_results()
-        result.update(res2)
+        result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname)
 
         # save some extra parameters if an error occurs
         if ret_code:
@@ -108,20 +126,20 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
 
         return result
 
-    def get_simulator_input_dict(self, priorities=None):
+    def get_simulator_input_dict(self):
         """
         Generates a dict that represents the system configuration parameters used for running a queuing network-based
         simulation experiment.
 
         NOTE: lambdas are the total (over all publishers) arrival rates at the broker of each topic
 
-        :param priorities: priority mapping taken from algorithm.get_topic_priorities() (default=None)
-        :return: a dict of configuration parameters e.g.:
+        :returns: a generator yielding, for each subscriber, a dict of configuration parameters  e.g.:
           {
             "lambdas": [topic1_pub_rate, topic2_pub_rate, ...],
             "mus": [topic1_service_rate, topic2_service_rate, ...],
             "error_rate": 0.1,
-            "subscriptions": [0, 2, 3, 5, 8],    # for all subscribers!
+            "subscriber": "icp0",                # this subscriber's ID
+            "subscriptions": [0, 2, 3, 5, 8],    # for topics this subscriber subscribes to
             "priorities": [0, 0, 1, 2, ...],     # one for EACH topic even if not subscribed
             "prio_probs": [1.0, 0.9, 0.8, 0.7],  # rate of events let through for each priority class
           }
@@ -132,8 +150,16 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         # NOTE: these must all be floats as the Java queuing simulator's JSON parser has issues casting properly
         lambdas = self.algorithm.broker_arrival_rates(self)
 
-        # priorities expected just as a list enumerating the priority class of each topic in order
-        if priorities is not None:
+        # XXX: since we're generating an input dict for each subscriber, we need to scale the mus to represent shared
+        #   bandwidth between the subscribers.  We slice it up evenly for each.
+        mus = [m/self.nsubscribers for m in self.service_rates]
+
+        for subscriber in self.subscribers:
+
+            subscriptions = self.get_subscription_topics(subscriber)
+            priorities = self.algorithm.get_subscription_priorities(self, subscriber)
+
+            # priorities expected just as a list enumerating the priority class of each topic in order
             # since we have per-subscription priorities, we need to fill in dummy values for the non-subscribed topics
             # convert to topic dict first
             priorities = {sub.topic: priorities[sub] for sub in priorities}
@@ -149,36 +175,36 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
 
             assert self.num_topics == len(priorities), \
                 "expected %d priorities (one for each topic) but got %d" % (self.num_topics, len(priorities))
-        else:
-            nprios = self.num_priority_levels
 
-        # need to reverse lookup the network flow from the priority classes to tell the simulator drop rates for each
-        # priority, but this could be an issue:
-        if self.num_priority_levels < self.num_net_flows:
-            log.warning("The queuing simulator only takes priorities, but drop rates are defined per network flow and"
-                        "we have more flows than priority classes!  This might cause problems...")
+            net_flows = self.net_flows_for_subscriber(subscriber)
+            # need to reverse lookup the network flow from the priority classes to tell the simulator drop rates for each
+            # priority, but this could be an issue:
+            if self.num_priority_levels < len(net_flows):
+                log.warning("The queuing simulator only takes priorities, but drop rates are defined per network flow and"
+                            "we have more flows than priority classes!  This might cause problems...")
 
-        # XXX: instead, let's just assume we can just do the following:
-        prio_probs = dict()
-        nf_prios = self.algorithm.get_net_flow_priorities(self)
-        for flow in self.net_flows:
-            drop_rate = self.algorithm.get_drop_rates(self)[flow]
-            v = 1.0 - drop_rate
-            p = nf_prios[flow]
+            # XXX: instead, let's just assume we can just do the following:
+            prio_probs = dict()
+            nf_prios = self.algorithm.get_net_flow_priorities(self, subscriber)
+            for flow in net_flows:
+                drop_rate = self.algorithm.get_drop_rates(self, subscriber)[flow]
+                v = 1.0 - drop_rate
+                p = nf_prios[flow]
 
-            if p in prio_probs and prio_probs[p] != v:
-                log.warning("prio_prob[%d]=%f but now we're changing it to %f: something may be wrong!" % (p, prio_probs[p], v))
-            prio_probs[p] = v
+                if p in prio_probs and prio_probs[p] != v:
+                    log.warning("prio_prob[%d]=%f but now we're changing it to %f: something may be wrong!" % (p, prio_probs[p], v))
+                prio_probs[p] = v
 
-        # turn it into a list ordered by priority class
-        prio_probs = [prob for prio, prob in sorted(prio_probs.items())]
+            # turn it into a list ordered by priority class
+            prio_probs = [prob for prio, prob in sorted(prio_probs.items())]
 
-        # XXX: to resolve a potential issue for if we don't generate all prio_probs:
-        while len(prio_probs) < nprios:
-            prio_probs.append(0.0)  # drop all traffic of this prio, which shouldn't actually be ANY!
+            # XXX: to resolve a potential issue for if we don't generate all prio_probs:
+            while len(prio_probs) < nprios:
+                prio_probs.append(0.0)  # drop all traffic of this prio, which shouldn't actually be ANY!
 
-        return dict(mus=self.service_rates, lambdas=lambdas, subscriptions=self.subscription_topics,
-                    priorities=priorities, error_rate=float(self.error_rate), prio_probs=prio_probs)
+            cfg =  dict(mus=mus, lambdas=lambdas, subscriptions=subscriptions, subscriber=subscriber,
+                        priorities=priorities, error_rate=float(self.error_rate), prio_probs=prio_probs)
+            yield cfg
 
     @classmethod
     def build_from_args(cls, args):

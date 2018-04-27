@@ -4,6 +4,7 @@ from network_experiment_statistics import NetworkExperimentStatistics
 from scale_client.stats.parsed_sensed_events import ParsedSensedEvents
 import pandas as pd
 from scifire.utilities import calculate_utility
+from parse import parse
 
 import os
 import logging
@@ -135,6 +136,8 @@ class FireStatistics(NetworkExperimentStatistics):
             "ro_tol",
             ## these are data points!  explicitly added from e.g. params
             "topic",
+            "pub",
+            "sub",
             "prio",
             "prio_prob"
             ## these should stay as ints, not get averaged into floats!
@@ -160,12 +163,17 @@ class FireStatistics(NetworkExperimentStatistics):
                 # ENHANCE: generalize all this in case we add some more fields later?
 
                 vec_len = params['ntopics']
-                subs = params.pop('subscriptions')
                 subs_vec = [0] * vec_len
                 # for utilities, we will calculate the actual and max possible utility given the weights, lambdas, delays, etc.
-                # XXX: since these are all in dict format, need to index by subscriber first; since we only have single
-                #   subscriber in queue sim version, we can just hard-code its name for now:
-                subscriber = 'icp0'
+
+                # XXX: since these are all in dict format, need to index by this output file's subscriber first:
+                subscriber = parse("sim_output_{:w}.csv", os.path.split(filename)[-1])[0]
+                sim_results = params['sim_results'][subscriber]
+                # NOTE: this will overwrite the 'mus' with the per-subscriber (i.e. bandwidth-sliced) ones!
+                #   Unclear that's actually what we want...
+                params = self._extract_queue_sim_run_params(sim_results, **params)  # params includes 'filename'!
+                subs = params.pop('subscriptions')
+
                 uws = params.pop('uws')[subscriber]
                 uws_vec = [0] * vec_len
                 utils_vec = [0] * vec_len
@@ -201,6 +209,7 @@ class FireStatistics(NetworkExperimentStatistics):
                     exp_delay_vec[sub] = delay
 
                 df['subd'] = subs_vec
+                df['sub'] = subscriber
                 df['utils'] = utils_vec
                 df['max_utils'] = max_utils_vec
                 df['exp_utils'] = exp_utils_vec
@@ -271,7 +280,10 @@ class FireStatistics(NetworkExperimentStatistics):
             # TODO: use this to filter events so we have a warm-up period!
             ret['time_sim_start'] = run_results['start_time']
         else:
-            ret = self._extract_queue_sim_run_params(run_results, filename, **exp_params)
+            # XXX: since each subscriber will have a different simulation run, let's just save the overall results and
+            # then later when we inspect that run's output file we can actually gather the specific params for that subscriber.
+            ret = exp_params
+            ret['sim_results'] = run_results['sim_results']
 
         # then we can get those common across all versions:
 
@@ -405,7 +417,7 @@ if __name__ == '__main__':
 
     ####    ANALYTICAL MODEL  vs.   SIM RESULTS
 
-    final_stats = final_stats[final_stats.ro_tol == 0.1]
+    # final_stats = final_stats[final_stats.ro_tol == 0.1]
     ## error rate affects delivery
     # stats.plot(x='loss', y=['lams', 'rcv_lams', 'exp_rcv'], stats=final_stats, average_over=('run', 'topic', 'prio'))
 
@@ -425,6 +437,9 @@ if __name__ == '__main__':
     # stats.plot(x='prio', y='delay_diff', groupby='nprios', stats=final_stats)
     # stats.plot(x='topic', y=['delay', 'exp_delay'], average_over=('run', 'prio'), groupby='nprios', stats=final_stats)
     # stats.plot(x='topic', y=['delay', 'sim_exp_delay'], stats=final_stats)
+
+    ## example for plotting across specific subscribers
+    # stats.plot(x='sub', y=['delay', 'sim_exp_delay'], average_over=('run', 'topic', 'prio'), stats=final_stats)
 
     final_stats = final_stats.sort_values('topic')
     print final_stats

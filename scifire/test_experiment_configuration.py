@@ -305,7 +305,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         except ValueError as e:
             self.assertFalse(True, "ERROR generating pubs (#ffpubs=%s, #iotpubs=%s)... error: %s" % (ff_num_ads, iot_num_ads, e))
 
-        lambdas = exp.get_simulator_input_dict()['lambdas']
+        lambdas = exp.get_simulator_input_dict().next()['lambdas']
 
         for total_rate, topic_rate in zip(lambdas, exp.pub_rates):
             self.assertEqual(total_rate, 0)
@@ -322,7 +322,7 @@ class TestExperimentConfiguration(unittest.TestCase):
         except ValueError as e:
             self.assertFalse(True, "ERROR generating pubs (#ffpubs=%s, #iotpubs=%s)... error: %s" % (ff_num_ads, iot_num_ads, e))
 
-        lambdas = exp.get_simulator_input_dict()['lambdas']
+        lambdas = exp.get_simulator_input_dict().next()['lambdas']
 
         for total_rate, topic_rate in zip(lambdas, exp.pub_rates):
             self.assertAlmostEqual(total_rate, topic_rate * exp.npublishers)  # some round-off error!
@@ -340,7 +340,7 @@ class TestExperimentConfiguration(unittest.TestCase):
             self.assertFalse(True, "ERROR generating pubs (#ffpubs=%s, #iotpubs=%s)... error: %s" % (
             ff_num_ads, iot_num_ads, e))
 
-        lambdas = exp.get_simulator_input_dict()['lambdas']
+        lambdas = exp.get_simulator_input_dict().next()['lambdas']
 
         for total_rate, topic_rate in zip(lambdas[:exp.ntopics_per_class[0]], exp.pub_rates[:exp.ntopics_per_class[0]]):
             self.assertAlmostEqual(total_rate, topic_rate * exp.num_ffs)  # some round-off error!
