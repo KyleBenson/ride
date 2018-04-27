@@ -162,6 +162,8 @@ class FiredexAlgorithm(object):
         delta_s_out = [qsr/lam for lam, qsr in zip(lam_s_thru, queue_sizes_reqs)]
 
         # Finally, put everything together to return it
+        # XXX: because we switch from per-topic to per-subscription, need to match these up correctly now:
+        delta_b_in = configuration.topics_to_subscriptions(delta_b_in)
         final_delays = [delta_b_in, delta_b_out, delta_s_in, delta_s_out]
         final_delays = zip(*final_delays)
         final_delays = [sum(terms) for terms in final_delays]
