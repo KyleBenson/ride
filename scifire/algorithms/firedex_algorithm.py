@@ -554,6 +554,13 @@ class FiredexAlgorithm(object):
         if policy is None:
             policy = self.drop_policy
 
+        # XXX: to support regeneration of configs to create an almost but not quite saturated queueing system
+        try:
+            if configuration.regen_bad_ros:
+                policy = 'null'
+        except AttributeError:  # not all experiment classes will have this attribute...
+            pass
+
         # This basic policy sets drop rates for each net flow according to its assigned priority level where the
         # drop rate = 1- x^(-prio-1), where x starts at 1.0 and increases slightly until the ro conditions are met
         if policy == 'expon':
@@ -575,5 +582,12 @@ class FiredexAlgorithm(object):
             if iterations_left == 0:
                 raise QueueStabilityError("Max iterations for drop rate policy 'expon' reached!  Check model constraints! "
                                  "Drop rates ended up being: %s" % self.get_drop_rates(configuration))
+        elif policy == 'null':  # set all to 0
+            for net_flow, prio in self.get_net_flow_priorities(configuration).items():
+                if subscribers is not None and configuration.subscriber_for_flow(net_flow) not in subscribers:
+                    continue
+
+                drop_rate = 0
+                self.set_net_flow_drop_rate(net_flow, drop_rate, configuration)
         else:
             raise QueueStabilityError("unrecognized preemptive drop rate policy %s" % policy)

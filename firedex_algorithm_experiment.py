@@ -41,7 +41,11 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         retries_left = 1000
         while not ros_okay and retries_left > 0 and self.regen_bad_ros:
             # ro_tolerance may be used to violate this check slightly, but the queue simulator will not run if it's violated!
-            ros_okay = self.algorithm.ros_okay(self, tolerance=0.0)
+            # XXX: Need to reset in between configurations
+            self.algorithm.force_update()
+            self.algorithm.get_subscription_priorities(self)
+
+            ros_okay = self.algorithm.ros_okay(self)
             if not ros_okay:
                 self.generate_configuration()
                 retries_left -= 1
