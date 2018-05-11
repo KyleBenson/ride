@@ -50,6 +50,48 @@ class TestAlgorithms(unittest.TestCase):
 
             # TODO: what else to verify it worked okay? 'error' not in results?
 
+
+class TestHelpers(unittest.TestCase):
+    """Tests various helper functions in the algorithm class."""
+
+    def test_bandwidth_portions(self):
+
+        ### First, test that even split is correct
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False,
+                                         num_ffs=1,
+                                         topic_class_advertisements_per_ff=(5,5), topic_class_advertisements_per_iot=(5,5),
+                                         topic_class_pub_rates=(1.0, 1.0), topic_class_data_sizes=(100, 100))
+        exp.generate_configuration()
+
+        proportions = exp.algorithm.bandwidth_proportions(exp)
+        self.assertEqual(proportions, [0.5, 0.5])
+
+
+        ### Now try 4 subs
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.5, 0.5),
+                                         draw_subscriptions_from_advertisements=False,
+                                         num_ffs=3, bandwidth=100,  # ensure we don't apply drop rates!
+                                         topic_class_advertisements_per_ff=(5,5), topic_class_advertisements_per_iot=(5,5),
+                                         topic_class_pub_rates=(1.0, 1.0), topic_class_data_sizes=(100, 100))
+        exp.generate_configuration()
+
+        proportions = exp.algorithm.bandwidth_proportions(exp)
+        self.assertEqual(proportions, [0.25]*4)
+
+        ### Finally, try an unequal split by increasing # subs for IC
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(0.5, 0.5),
+                                         draw_subscriptions_from_advertisements=False, ic_sub_rate_factor=2,
+                                         num_ffs=3, bandwidth=100,  # ensure we don't apply drop rates!
+                                         topic_class_advertisements_per_ff=(5,5), topic_class_advertisements_per_iot=(5,5),
+                                         topic_class_pub_rates=(1.0, 1.0), topic_class_data_sizes=(100, 100))
+
+        exp.generate_configuration()
+
+        proportions = exp.algorithm.bandwidth_proportions(exp)
+        self.assertEqual(proportions, [0.2, 0.2, 0.2, 0.4])
+
+
 ###     GREEDY SPLIT
 
 class TestGreedySplit(unittest.TestCase):

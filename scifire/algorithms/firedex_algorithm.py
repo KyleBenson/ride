@@ -253,6 +253,22 @@ class FiredexAlgorithm(object):
     # ENHANCE: consider publisher-to-subscriber error rates in above function
     publication_rates = broker_arrival_rates
 
+    def bandwidth_proportions(self, configuration):
+        """
+        Returns a per-subscriber list of that subscriber's requested proportion of total requested bandwidth.
+        Note this is not related to total available bandwidth but just based on delivery rates to each subscriber
+        (without considering packet errors)!
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :return:
+        """
+        lams_per_req = zip(configuration.subscriptions, self.arrival_rates(configuration).switch_out)
+        total_lams_per_sub = [sum(lam for req, lam in lams_per_req if req.subscriber == sub) for sub in configuration.subscribers]
+        total_bw_requested = sum(total_lams_per_sub)
+        # XXX: avoid divide by 0!
+        bw_props = [(lam/total_bw_requested) if total_bw_requested else 0.0 for lam in total_lams_per_sub]
+        return bw_props
+
     def ros_okay(self, configuration, tolerance=None):
         """
         Verifies if the "ro" condition is satisfied: whether the queues will have bounded sizes and not saturate over time.

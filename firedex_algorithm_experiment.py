@@ -155,10 +155,15 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         lambdas = self.algorithm.broker_arrival_rates(self)
 
         # XXX: since we're generating an input dict for each subscriber, we need to scale the mus to represent shared
-        #   bandwidth between the subscribers.  We slice it up evenly for each.
-        mus = [m/self.nsubscribers for m in self.service_rates]
+        #   bandwidth between the subscribers.  Rather than slicing it evenly, which potentially leads to rho > 1
+        #   for one of the subscribers since they have unequally-sized bandwidth shares, we need to calculate their
+        #   actual proportions of bandwidth requested and slice it by these portions.
+        bw_portions = self.algorithm.bandwidth_proportions(self)
 
-        for subscriber in self.subscribers:
+        for subscriber, bw_prop in zip(self.subscribers, bw_portions):
+
+            mus = [m * bw_prop for m in self.service_rates]
+            # log.info("APPORTIONED MUS for %s: %s" % (subscriber, str(mus)))
 
             subscriptions = self.get_subscription_topics(subscriber)
             priorities = self.algorithm.get_subscription_priorities(self, subscriber)
