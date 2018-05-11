@@ -576,7 +576,7 @@ class FiredexAlgorithm(object):
                     self.set_net_flow_drop_rate(net_flow, drop_rate, configuration)
 
                 ros_met = self.ros_okay(configuration)
-                exp_base += 0.1
+                exp_base += 0.001
                 iterations_left -= 1
 
             if iterations_left == 0:
