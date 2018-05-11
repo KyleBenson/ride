@@ -587,8 +587,8 @@ class FiredexAlgorithm(object):
                 for net_flow, prio in self.get_net_flow_priorities(configuration).items():
                     if subscribers is not None and configuration.subscriber_for_flow(net_flow) not in subscribers:
                         continue
-
-                    drop_rate = 1.0 - exp_base**(-prio-1)
+                    # TEMP change for having 100% success rate for 0 events
+                    drop_rate = 1.0 - exp_base**(-prio)
                     self.set_net_flow_drop_rate(net_flow, drop_rate, configuration)
 
                 ros_met = self.ros_okay(configuration)

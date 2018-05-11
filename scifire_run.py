@@ -29,7 +29,7 @@ debug_level = 'info'  # for the actual experiment
 # debug_level = 'warn'
 verbose = True
 print_cmd = True
-nruns = 1
+nruns = 10
 run_start_num = 0  # change this to add additional runs to experiments e.g. after each 10 runs set to 10, 20, etc.
 using_mininet = False
 # Mininet can't handle multiple runs per process instance (weird OS-level errors occur sometimes after a few runs)
@@ -77,9 +77,9 @@ EXPERIMENTAL_TREATMENTS = {
     # for multiple subscribers
     # 'testing': [{'bandwidth': 5, 'nruns': 1, 'num_ffs': 4, 'testing': False, 'algorithm': dict(algorithm='greedy', ro_tolerance=0.1)}],
 
-    ## For validation experiments:
+    ## Validation 10 subscribers, ro =~ 0.6:
     'validation_prios0.5': [{'topic_class_data_sizes': dsizes[0],
-                    'nruns': 10,
+                    'nruns': nruns,
                     'regen_bad_ros': True,
                     'topic_class_pub_rates': prates,
                     'num_priority_levels': 9,
@@ -97,8 +97,9 @@ EXPERIMENTAL_TREATMENTS = {
                     # 'testing': True,
                     'output_filename': 'results_%d.json' % dsize_idx} for dsize_idx, dsize in enumerate(dsizes)],
 
+    # Validation 10 subscribers, ro =~ 0.9:
     'validation_prios0.9': [{'topic_class_data_sizes': dsizes[0],
-                    'nruns': 10,
+                    'nruns': nruns,
                     'regen_bad_ros': True,
                     'topic_class_pub_rates': prates,
                     'num_priority_levels': 9,
@@ -116,8 +117,85 @@ EXPERIMENTAL_TREATMENTS = {
                     # 'testing': True,
                     'output_filename': 'results_%d.json' % dsize_idx} for dsize_idx, dsize in enumerate(dsizes)],
 
-    'validation_priosprobs': [{'topic_class_data_sizes': dsizes[0],
-                    'nruns': 10,
+    # Validation 10 subscribers, ro =~ 1.3, prioprobs:
+    'validation_prioprobs': [{'topic_class_data_sizes': dsizes[0],
+                    'nruns': nruns,
+                    'topic_class_pub_rates': prates,
+                    'num_priority_levels': 9,
+                    'num_net_flows': 9,
+                    'algorithm': dict(algorithm='greedy', ro_tolerance=0.1),
+                    'num_topics': 200,
+                    'num_iots': 150,
+                    'num_ffs': 9,
+                    'topic_class_advertisements_per_ff': (3, 5),
+                    'topic_class_advertisements_per_iot': (5, 4),
+                    'topic_class_sub_rates': (0.5, 0.7),
+                    # we multiple bw 8 with num of FFs
+                    'bandwidth': 80,
+                    'testing': False,
+                    # 'testing': True,
+                    'output_filename': 'results_%d.json' % dsize_idx} for dsize_idx, dsize in enumerate(dsizes)],
+
+    # Validation no of subscribers = 1, 10, 20, 50, 100, ro =~ 1.3, prioprobs:
+    # 'validation_multisubs_prioprobs': [{'topic_class_data_sizes': dsizes[0],
+    #                 'nruns': nruns,
+    #                 'topic_class_pub_rates': prates,
+    #                 'num_priority_levels': 9,
+    #                 'num_net_flows': 9,
+    #                 'algorithm': dict(algorithm='greedy', ro_tolerance=0.1),
+    #                 'num_topics': 200,
+    #                 'num_iots': 150,
+    #                 'num_ffs': nsubs-1,
+    #                 'topic_class_advertisements_per_ff': (3, 5),
+    #                 'topic_class_advertisements_per_iot': (5, 4),
+    #                 'topic_class_sub_rates': (0.5, 0.7),
+    #                 # we multiple bw 8 with num of FFs
+    #                 'bandwidth': (nsubs)*8,
+    #                 'testing': False,
+    #                 # 'testing': True,
+    #                 'output_filename': 'results_%d.json' % nsubs} for nsubs in [1, 10, 20, 50]],
+
+    # Evaluation 10 subscribers, ro =~ 1.7, buffer, no priorities:
+    'evaluation_buffer_noprios': [{'topic_class_data_sizes': dsizes[0],
+                    'nruns': nruns,
+                    'topic_class_pub_rates': prates,
+                    'num_priority_levels': 1,
+                    'num_net_flows': 1,
+                    'algorithm': dict(algorithm='greedy', ro_tolerance=-1.0),
+                    'num_topics': 200,
+                    'num_iots': 150,
+                    'num_ffs': 9,
+                    'topic_class_advertisements_per_ff': (3, 5),
+                    'topic_class_advertisements_per_iot': (5, 4),
+                    'topic_class_sub_rates': (0.5, 0.7),
+                    # we multiple bw 8 with num of FFs
+                    'bandwidth': 80,
+                    'testing': False,
+                    # 'testing': True,
+                    'output_filename': 'results_%d.json' % dsize_idx} for dsize_idx, dsize in enumerate(dsizes)],
+
+    # Evaluation 10 subscribers, ro =~ 1.7, buffer, with priorities:
+    'evaluation_buffer_prios': [{'topic_class_data_sizes': dsizes[0],
+                    'nruns': nruns,
+                    'topic_class_pub_rates': prates,
+                    'num_priority_levels': 9,
+                    'num_net_flows': 9,
+                    'algorithm': dict(algorithm='greedy', ro_tolerance=-1.0),
+                    'num_topics': 200,
+                    'num_iots': 150,
+                    'num_ffs': 9,
+                    'topic_class_advertisements_per_ff': (3, 5),
+                    'topic_class_advertisements_per_iot': (5, 4),
+                    'topic_class_sub_rates': (0.5, 0.7),
+                    # we multiple bw 8 with num of FFs
+                    'bandwidth': 80,
+                    'testing': False,
+                    # 'testing': True,
+                    'output_filename': 'results_%d.json' % dsize_idx} for dsize_idx, dsize in enumerate(dsizes)],
+
+    # Evaluation 10 subscribers, ro =~ 1.7, buffer, no priority probabilities:
+    'evaluation_buffer_prioprobs': [{'topic_class_data_sizes': dsizes[0],
+                    'nruns': nruns,
                     'topic_class_pub_rates': prates,
                     'num_priority_levels': 9,
                     'num_net_flows': 9,
