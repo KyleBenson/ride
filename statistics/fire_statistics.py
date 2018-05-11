@@ -375,7 +375,7 @@ class FireStatistics(NetworkExperimentStatistics):
 
     # We should also average over topics
     def plot(self, x, y, groupby=None, average_over=('run', 'topic'), stats=None, **kwargs):
-        super(FireStatistics, self).plot(x, y, groupby=groupby, average_over=average_over, stats=stats, **kwargs)
+        return super(FireStatistics, self).plot(x, y, groupby=groupby, average_over=average_over, stats=stats, **kwargs)
 
 
 if __name__ == '__main__':
@@ -388,7 +388,7 @@ if __name__ == '__main__':
     final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
 
     # doing this for now to view columns easier...
-    ignored_cols = ('nffs', 'niots',
+    ignored_cols = ('niots',
                     'bw', 'jitter',
                     # 'treatment',
                     )
@@ -439,13 +439,14 @@ if __name__ == '__main__':
     # stats.plot(x='topic', y=['delay', 'sim_exp_delay'], stats=final_stats)
 
     ## example for plotting across specific subscribers
-    # stats.plot(x='sub', y=['delay', 'sim_exp_delay'], average_over=('run', 'topic', 'prio'), stats=final_stats)
+    # stats.plot(x='sub', y=['delay', 'sim_exp_delay'], average_over=('run', 'topic'), stats=final_stats)
+    # stats.plot(x='prio', y=['delay', 'sim_exp_delay'], average_over=('sub', 'run', 'topic',), stats=final_stats)
 
-    final_stats = final_stats.sort_values('topic')
-    print final_stats
-    final_stats.plot(x='topic', y=['delay', 'sim_exp_delay'])
-    import matplotlib.pyplot as plt
-    plt.show()
+    # final_stats = final_stats.sort_values('topic')
+    # print final_stats
+    # final_stats.plot(x='topic', y=['delay', 'sim_exp_delay'])
+    # import matplotlib.pyplot as plt
+    # plt.show()
     # stats.plot(x='topic', y='delay', stats=final_stats)
     # stats.plot(x='prio', y=['lams', 'delay_diff'], groupby='nprios', stats=final_stats)
 
@@ -456,6 +457,57 @@ if __name__ == '__main__':
     # final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
     # stats.plot(x='prio', y='util_perc', groupby=['nprios', 'algorithm'], stats=final_stats)
     # stats.plot(x='prio', y='utils', groupby=['nprios', 'algorithm'], stats=final_stats)
+
+
+    ################################################################################################################
+    ############################        FINAL PLOTTING FOR PAPER               #####################################
+    ################################################################################################################
+
+    ###### EXAMPLE CONFIGURATIONS for plotting function:
+    # style: list of line styles for columns
+    # logx/logy/loglog
+    # xticks/yticks: values to use for ticks
+    # fontsize: for ticks
+    # yerr/xerr: error bars (see https://pandas.pydata.org/pandas-docs/stable/visualization.html#visualization-errorbars)
+    # colormap: name of colormap to load from matplotlib
+    # secondary_y: boolean or list of columns to plot on secondary y axis
+    # kwargs: additional arguments (see matplotlib docs)
+    #
+    ### matplotlib options to try: https://matplotlib.org/api/_as_gen/matplotlib.pyplot.plot.html
+    # marker/markersize: can't seem to select one for each column... probably need to plot one column at a time for it?
+
+    ### validation
+    # stats.plot(x='sub', y=['delay', 'sim_exp_delay'], average_over=('run', 'topic'), stats=final_stats)
+    # stats.plot(x='prio', y=['delay', 'sim_exp_delay'], average_over=('sub', 'run', 'topic',), stats=final_stats)
+
+    ## XXX: attempt at using matplotlib that we probably won't use....
+    # ax = stats.plot(x='prio', y='sim_exp_delay', marker='o', average_over=('sub', 'run', 'topic',), stats=final_stats, show_plot=False)
+    # stats.plot(ax=ax, x='prio', y='delay', marker='x',
+    #            legend=3, # move around legend by specifying an integer for the location
+    #            average_over=('sub', 'run', 'topic',), stats=final_stats)
+
+    ### firedex approach evaluation
+    # not done...
+
+    ### algorithms comparison
+    # not done...
+
+    ################################################################################################################
+    ############################        COLUMN EXTRACTION FOR MATLAB PLOTTING               ########################
+    ################################################################################################################
+
+    # first, need to average over the columns we want to drop out
+    for col in ('run', 'topic',
+                'sub',
+                ):
+        final_stats = stats.average_over_runs(final_stats, column_to_drop=col)
+
+    # then, print out a list of each column we want as shown here:
+    print "PRIOS:", list(final_stats.prio)
+    print "DELAYS:", list(final_stats.delay)
+    print "RCVS:", list(final_stats.rcv_rate)
+    # TODO: figure this out??? doesn't work probably cuz subs are strings...
+    # print "SUBS:", list(final_stats.sub)
 
     ###   Explicitly save results to file
     # stats.config.output_file = "out.csv"

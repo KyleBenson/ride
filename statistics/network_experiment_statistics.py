@@ -229,7 +229,8 @@ class NetworkExperimentStatistics(ScaleStatistics):
         return df
     average_over_column = average_over_runs
 
-    def plot(self, x, y, groupby=None, average_over=('run',), stats=None, **kwargs):
+    def plot(self, x, y, groupby=None, average_over=('run',), stats=None,
+             show_plot=True, xlabel=None, ylabel=None, **kwargs):
         """
         Plots the given column names of the specified stats DataFrame (self.stats by default)
         :param x:
@@ -238,6 +239,9 @@ class NetworkExperimentStatistics(ScaleStatistics):
         :param average_over: average over all these parameters and drop them first
         :type average_over: iterable
         :param stats:
+        :param show_plot: if False, don't show the plot (so you can add other lines to it first)
+        :param xlabel: use the specified label on x axis instead of the default (name of x column)
+        :param ylabel: use the specified label on y axis instead of the default (name of y column)
         :param kwargs: passed to DataFrame.plot()
         :return:
         """
@@ -271,11 +275,14 @@ class NetworkExperimentStatistics(ScaleStatistics):
                     label = "%s=%s" % (groupby, g)
                 ax = df.plot(x=x, y=y, label=label, ax=ax, **kwargs)
         else:
-            stats.plot(x=x, y=y, **kwargs)
+            ax = stats.plot(x=x, y=y, **kwargs)
 
-        plt.xlabel(x)
-        plt.ylabel(y)
-        plt.show()
+        plt.xlabel(x if xlabel is None else xlabel)
+        plt.ylabel(y if ylabel is None else ylabel)
+        if show_plot:
+            plt.show()
+
+        return ax
 
     def __iadd__(self, other):
         self.stats = pd.concat((self.stats, other.stats), ignore_index=True)
