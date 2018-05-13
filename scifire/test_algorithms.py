@@ -264,5 +264,243 @@ class TestGreedySplit(unittest.TestCase):
                 self.assertEqual(prios[req], 2, "low-utility class topic %d did not have lowest priority 2 but rather %d" % (req, prios[req]))
 
 
+class TestDropPolicies(unittest.TestCase):
+
+    def test_opt_alg_internal(self):
+        """Directly runs the internal algorithm with matrix-based inputs."""
+        import numpy as np
+        import algorithms.opt_firedex_algorithm as opt
+
+        ncopies = 1  # used for testing scalability
+        alphas = np.array([1., 2., 4., 3., 2.] * ncopies)
+        sub_flow_map = np.mat([
+                                 [0, 1],
+                                 [0, 1],
+                                 [0, 1],
+                                 [1, 0],
+                                 [1, 0],
+                                 ] * ncopies)
+        e = 0.01
+
+        ### First, with unsaturated queues
+        lambdas = np.array([1., 2., 2., .25, 1.3])
+        mus = np.array([4., 6., 8., 10., 12.])
+        # print "RO SUM:", sum(l / m for l, m in zip(lambdas, mus))
+
+        drop_rates = opt.do_run_opt_alg(alphas, lambdas, mus, e, sub_flow_map=sub_flow_map, ro_tolerance=0)
+        drop_rates_per_sub = sub_flow_map * drop_rates
+        drop_rates_per_sub = np.squeeze(np.asarray(drop_rates_per_sub.flatten()))
+
+        final_lambdas = np.multiply((1.0 - drop_rates_per_sub), lambdas)
+        # print "final lambdas:", final_lambdas, lambdas
+        # print "final ros sum:", np.sum(final_lambdas / mus)
+        self.assertTrue(np.allclose(final_lambdas, lambdas))
+
+        ### Next, saturated queues
+        lambdas = np.array([1., 2., 2., 2.5, 3.] * ncopies)
+        mus = np.array([1.5, 3., 4., 5., 4.5] * ncopies)
+        old_ro_sum = sum(l / m for l, m in zip(lambdas, mus))
+        self.assertGreater(old_ro_sum, 1.0)
+        # print "RO SUM:", old_ro_sum
+
+        drop_rates = opt.do_run_opt_alg(alphas, lambdas, mus, e, sub_flow_map=sub_flow_map, ro_tolerance=0.01)
+        drop_rates_per_sub = sub_flow_map * drop_rates
+        drop_rates_per_sub = drop_rates_per_sub.flatten()
+
+        final_lambdas = np.multiply((1.0 - drop_rates_per_sub), lambdas)
+        ros_sum = np.sum(final_lambdas / mus)
+        self.assertTrue(0.97 < ros_sum < 1.0)
+        # print "final lambdas:", final_lambdas
+        # print "final ros sum:", ros_sum
+
+
+    # def test_opt_input_format(self):
+    def test_opt_drop_rates(self):
+
+        ### First, check unsaturated case
+        class_util_weights = (2.0, 2.0)
+        nsubs = 1
+        npubs = 10
+        ntopics = 10
+        nprios = nflows = 2
+        ro_tol = 0.0
+        # to saturate, need to have bw/8 (to mbps) < ntopics*npubs*pub_rate*data_size = 3MB/S
+        bw = 25
+        pub_rates = (30.0, 30.0)
+        data_sizes = (1000, 1000)
+
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+            num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs-1, num_iots=npubs, bandwidth=bw,
+            num_topics=ntopics, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+            draw_subscriptions_from_advertisements=False,
+            topic_class_advertisements_per_ff=(0,0), topic_class_advertisements_per_iot=(ntopics/2,ntopics/2),
+            topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+            topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        for dr in drops.values():
+            self.assertEqual(dr, 0.0)
+
+        ### Test for saturated queues, even drop rates
+        bw = 12
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+            num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs-1, num_iots=npubs, bandwidth=bw,
+            num_topics=ntopics, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+            draw_subscriptions_from_advertisements=False,
+            topic_class_advertisements_per_ff=(0,0), topic_class_advertisements_per_iot=(ntopics/2,ntopics/2),
+            topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+            topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        for dr in drops.values():
+            self.assertAlmostEqual(dr, 0.5)
+
+        ### Another test of even drop rates, but in this case due to increase in packet size being
+        #  equaled out by increase in utility weight
+        #   WARNING: this might be a bad test case to keep around long-term if we change e.g. utility function to include delay
+        data_sizes = (500, 1500)
+        class_util_weights = (1.0, 3.0)  # need this to force topic classes into separate priorities
+        bw = 12
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+                                         num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs - 1,
+                                         num_iots=npubs, bandwidth=bw,
+                                         num_topics=ntopics, topic_class_weights=(0.5, 0.5),
+                                         topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False,
+                                         topic_class_advertisements_per_ff=(0, 0),
+                                         topic_class_advertisements_per_iot=(ntopics / 2, ntopics / 2),
+                                         topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+                                         topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        for dr in drops.values():
+            self.assertAlmostEqual(dr, 0.5, 4)
+
+        ### Test uneven drop rates
+        data_sizes = (500, 1500)
+        class_util_weights = (1.0, 4.0)  # need this to force topic classes into separate priorities
+        bw = 12
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+                                         num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs - 1,
+                                         num_iots=npubs, bandwidth=bw,
+                                         num_topics=ntopics, topic_class_weights=(0.5, 0.5),
+                                         topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False,
+                                         topic_class_advertisements_per_ff=(0, 0),
+                                         topic_class_advertisements_per_iot=(ntopics / 2, ntopics / 2),
+                                         topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+                                         topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        self.assertGreater(drops[1], drops[0])
+
+        ### Test uneven drop rates: so much more utility from second topic class that first is totally dropped
+        data_sizes = (500, 1500)
+        class_util_weights = (1.0, 400000.0)  # need this to force topic classes into separate priorities
+        bw = 12
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+                                         num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs - 1,
+                                         num_iots=npubs, bandwidth=bw,
+                                         num_topics=ntopics, topic_class_weights=(0.5, 0.5),
+                                         topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False,
+                                         topic_class_advertisements_per_ff=(0, 0),
+                                         topic_class_advertisements_per_iot=(ntopics / 2, ntopics / 2),
+                                         topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+                                         topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        self.assertAlmostEqual(drops[1], 1.0)
+
+        ### Test for more flows/prios
+        data_sizes = (500, 1500)
+        class_util_weights = (1.0, 4.0)  # need this to force topic classes into separate priorities
+        bw = 36
+        ntopics = 30
+        nflows = nprios = 3
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+                                         num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs - 1,
+                                         num_iots=npubs, bandwidth=bw,
+                                         num_topics=ntopics, topic_class_weights=(0.5, 0.5),
+                                         topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False,
+                                         topic_class_advertisements_per_ff=(0, 0),
+                                         topic_class_advertisements_per_iot=(ntopics / 2, ntopics / 2),
+                                         topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+                                         topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        self.assertTrue(drops[0] < drops[1] < drops[2])
+
+        ### Test for unequal flows/prios
+        nflows = 4
+        nprios = 2
+        ntopics = 14
+        bw = 12
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+                                         num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs - 1,
+                                         num_iots=npubs, bandwidth=bw,
+                                         num_topics=ntopics, topic_class_weights=(0.5, 0.5),
+                                         topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False,
+                                         topic_class_advertisements_per_ff=(0, 0),
+                                         topic_class_advertisements_per_iot=(ntopics / 2, ntopics / 2),
+                                         topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+                                         topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        # since just two topic classes split up, should get about same drop rate within a topic class/priority class
+        # HOWEVER, since the #flows causes an unequal distribution of topic classes into flows, we see a low-utility
+        # topic in flow 1, hence it having a slightly higher drop rate than flow 0 but a much lower drop rate than flow 2
+        self.assertTrue(drops[0] < drops[1])
+        self.assertTrue(drops[1] < drops[2])
+        self.assertEqual(drops[3], drops[2])
+
+        # ENHANCE: need to configure with more topic classes so each flow is different, then can do this:
+        # XXX: compare them pair-wise down the line
+        # for dr1, dr2 in zip()
+        # self.assertTrue(drops[0] < drops[1] < drops[2])
+
+        ### Test for multiple subscribers: use uneven drop rates and compare flows within a subscriber
+        data_sizes = (500, 1500)
+        class_util_weights = (1.0, 4.0)  # need this to force topic classes into separate priorities
+        nflows = nprios = 2
+        bw = 24
+        nsubs = 2
+        ntopics = 10
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='opt'),
+                                         num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs - 1,
+                                         num_iots=npubs, bandwidth=bw,
+                                         num_topics=ntopics, topic_class_weights=(0.5, 0.5),
+                                         topic_class_sub_rates=(1.0, 1.0),
+                                         draw_subscriptions_from_advertisements=False,
+                                         topic_class_advertisements_per_ff=(0, 0),
+                                         topic_class_advertisements_per_iot=(ntopics / 2, ntopics / 2),
+                                         topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+                                         topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        sub0_flows = exp.net_flows_for_subscriber(exp.subscribers[0])
+        sub1_flows = exp.net_flows_for_subscriber(exp.subscribers[1])
+
+        self.assertGreater(drops[sub0_flows[1]], drops[sub0_flows[0]])
+        self.assertGreater(drops[sub1_flows[1]], drops[sub1_flows[0]])
+
+        ### Test not all topics subscribed?
+        # ENHANCE: not sure how to make this deterministic... probably this path doesn't need to be checked?
+
+        # print 'UTILS:', sum(exp.algorithm.estimate_utilities(exp))
+        # print "DROPS:", drops
+        # print exp.algorithm.get_req_flows(exp)
+
+
 if __name__ == '__main__':
     unittest.main()

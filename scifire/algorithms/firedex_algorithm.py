@@ -62,15 +62,13 @@ class FiredexAlgorithm(object):
 
     def service_rates(self, configuration):
         """
-        Returns the expected service rates (MUs) at each queue for all topics given the configuration, which assumes
-        that all the topics are subscribed to i.e. will be passed through the SDN switch queue.
+        Returns the expected service rates (MUs) at each queue for the given configuration.
+        NOTE: rates are per-topic until the point at which a publication is matched to a subscription and
+        forwarded as a notification: then it's per-subscription.
         :param configuration:
         :return:
         :rtype: FiredexAlgorithm.Mus
         """
-
-        # NOTE: rates are per-topic until the point at which a publication is matched to a subscription and
-        # forwarded as a notification: then it's per-subscription
 
         mus_switch_out = [configuration.calculate_service_rate(pkt_size) for pkt_size in configuration.data_sizes_per_topic]
         # ASSUMPTION: packet sizes for a topic are the same across subscriptions' notifications
@@ -159,14 +157,21 @@ class FiredexAlgorithm(object):
         queue_sizes_prios_q = [delta * lam for delta, lam in zip(delta_prios_q, lam_prios)]
 
         # queue size (in the queue) for each req.
-        queue_sizes_reqs_q = [lam / (lam_prios[req_prios[req]]) * queue_sizes_prios_q[req_prios[req]]
-                              for lam, req in zip(lam_s_thru, configuration.subscriptions)]
+        # XXX: need to carefully avoid dividing by 0 if nothing in this priority class!
+        queue_sizes_reqs_q = []
+        for lam, req in zip(lam_s_thru, configuration.subscriptions):
+            denom = (lam_prios[req_prios[req]]) * queue_sizes_prios_q[req_prios[req]]
+            if denom == 0:
+                q = 0
+            else:
+                q = lam / denom
+            queue_sizes_reqs_q.append(q)
 
         # queue size (in the system) for each req.
         queue_sizes_reqs = [qsr + lam/mu for qsr, lam, mu in zip(queue_sizes_reqs_q, lam_s_thru, mu_s_out)]
 
         # applying little's law to find response time of the system
-        delta_s_out = [qsr/lam for lam, qsr in zip(lam_s_thru, queue_sizes_reqs)]
+        delta_s_out = [(qsr/lam) if lam != 0 else 0.0 for lam, qsr in zip(lam_s_thru, queue_sizes_reqs)]
 
         # Finally, put everything together to return it
         # XXX: because we switch from per-topic to per-subscription, need to match these up correctly now:
@@ -299,6 +304,7 @@ class FiredexAlgorithm(object):
                               (lambdas.switch_in, mus.switch_in), (lambdas.switch_thru, mus.switch_out)]
 
         ros = [[lam / mu for lam, mu in zip(topics_lams, topics_mus)] for topics_lams, topics_mus in all_queues_lam_mus]
+        ros = FiredexAlgorithm.Ros(*ros)
         # log.info("ROs: %s" % ros)
         return ros
 
@@ -376,15 +382,24 @@ class FiredexAlgorithm(object):
         """
 
         if not 0.0 <= drop_rate <= 1.0:
-            raise ValueError("requested drop_rate (%f) not in expected range of [0,1]")
+            raise ValueError("requested drop_rate (%f) not in expected range of [0,1]" % drop_rate)
 
         self._drop_rates.setdefault(configuration, dict())[net_flow] = drop_rate
+
+    def zero_drop_rates(self, configuration):
+        """
+        Zeros out all the drop rates entries for the requested configuration.  Useful if a drop rate policy calls an
+        analytical model function that will in turn try to check the drop rates that don't yet exist!
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :return:
+        """
+        for f in configuration.net_flows:
+            self.set_net_flow_drop_rate(f, 0.0, configuration)
 
     def get_drop_rates(self, configuration, subscriber=None):
         """
         Returns the drop rates for the requested subscriber's network flows.
-
-        NOTE: this assumes the algorithm has already been run!
 
         :param configuration:
         :type configuration: FiredexConfiguration
@@ -392,6 +407,9 @@ class FiredexAlgorithm(object):
         :return: mapping of network flows to drop rates
         :rtype: dict
         """
+
+        if self._update_needed(configuration):
+            self.__run_algorithm(configuration)
 
         try:
             if subscriber is None:
@@ -598,6 +616,9 @@ class FiredexAlgorithm(object):
             if iterations_left == 0:
                 raise QueueStabilityError("Max iterations for drop rate policy 'expon' reached!  Check model constraints! "
                                  "Drop rates ended up being: %s" % self.get_drop_rates(configuration))
+
+        # TODO: linear policy? similar to above (based on priority) but linear increase in drop rates rather than exp
+
         elif policy == 'null':  # set all to 0
             for net_flow, prio in self.get_net_flow_priorities(configuration).items():
                 if subscribers is not None and configuration.subscriber_for_flow(net_flow) not in subscribers:
@@ -605,5 +626,14 @@ class FiredexAlgorithm(object):
 
                 drop_rate = 0
                 self.set_net_flow_drop_rate(net_flow, drop_rate, configuration)
+
+        elif policy == 'opt':
+            import opt_firedex_algorithm as opt
+            sub_flow_map = self.get_subscription_net_flows(configuration, subscribers)
+            res = opt.run_opt_alg(configuration, self, sub_flow_map)
+
+            for flow, rate in res.items():
+                self.set_net_flow_drop_rate(flow, rate, configuration)
+
         else:
             raise QueueStabilityError("unrecognized preemptive drop rate policy %s" % policy)
