@@ -77,7 +77,35 @@ EXPERIMENTAL_TREATMENTS = {
     # for multiple subscribers
     # 'testing': [{'bandwidth': 5, 'nruns': 1, 'num_ffs': 4, 'testing': False, 'algorithm': dict(algorithm='greedy', ro_tolerance=0.1)}],
 
-    ## Validation 10 subscribers, ro =~ 0.6:
+    # 'drop_policy': [{'topic_class_data_sizes': dsizes[0],
+    #                 'nruns': nruns,
+    #                 'topic_class_pub_rates': prates,
+    #                 'num_priority_levels': 9,
+    #                 'num_net_flows': 9,
+    #                 'algorithm': dict(algorithm='greedy', drop_policy=policy, ro_tolerance=0.05),
+    #                 'num_topics': 200,
+    #                 'num_iots': 150,
+    #                 'num_ffs': 9,
+    #                 'topic_class_advertisements_per_ff': (3, 5),
+    #                 'topic_class_advertisements_per_iot': (5, 4),
+    #                 'topic_class_sub_rates': (0.5, 0.7),
+    #                 'topic_class_utility_weights': util_w,
+    #                 # we multiple bw 8 with num of FFs
+    #                 'bandwidth': 80,
+    #                 # 'testing': False,
+    #                 'testing': True,  # just using analytical model for these exps!
+    #                 'output_filename': 'results_%s_u%d.json' % (policy, 2**ui)} for policy in ('expon', 'opt')
+    #                 for ui, util_w in enumerate([({'dist': 'expon', 'args': [0.5], 'lbound': 0.01, 'ubound': 2.0},
+    #                                               {'dist': 'expon', 'args': [1.0], 'lbound': 0.1, 'ubound': 4.0}),
+    #                                              ({'dist': 'expon', 'args': [0.5], 'lbound': 0.01, 'ubound': 2.0},
+    #                                               {'dist': 'expon', 'args': [2.0], 'lbound': 0.2, 'ubound': 8.0}),
+    #                                              ({'dist': 'expon', 'args': [0.5], 'lbound': 0.01, 'ubound': 2.0},
+    #                                               {'dist': 'expon', 'args': [4.0], 'lbound': 0.4, 'ubound': 16.0}),
+    #                                              ({'dist': 'expon', 'args': [0.5], 'lbound': 0.01, 'ubound': 2.0},
+    #                                               {'dist': 'expon', 'args': [8.0], 'lbound': 0.8, 'ubound': 32.0}),
+    #                                              ])],
+
+    # Validation 10 subscribers, ro =~ 0.6:
     'validation_prios0.5': [{'topic_class_data_sizes': dsizes[0],
                     'nruns': nruns,
                     'regen_bad_ros': True,
