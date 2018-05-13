@@ -31,6 +31,8 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         self.regen_bad_ros = regen_bad_ros
         self.testing = testing
 
+        self.record_parameter("experiment_type", "sim" if not testing else "analysis")
+
     def run_experiment(self):
         """Run the algorithm on our current scenario and feed the configuration to a queuing network simulator
         to determine its performance under these 'ideal' network settings."""
@@ -114,7 +116,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
 
         log.debug("Sim config: %s" % str(cfg))
         if self.testing:
-            ret_code = 2
+            ret_code = 0
         else:
             log.info("starting external queuing simulator...")
             ret_code = subprocess.call(cmd, shell=True)
@@ -124,9 +126,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
 
         result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname)
 
-        # save some extra parameters if an error occurs
-        if ret_code:
-            result['ro_sums'] = [sum(ros) for ros in self.algorithm.get_ros(self)]
+        result['ro_sums'] = [sum(ros) for ros in self.algorithm.get_ros(self)]
 
         return result
 

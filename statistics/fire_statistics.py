@@ -156,65 +156,10 @@ class FireStatistics(NetworkExperimentStatistics):
             def CsvParser(results_str, **params):
                 df = pd.read_csv(filename, names=('delay', 'rcv_rate', 'sim_exp_delay'))
 
-                # to track subscriptions to topics, create a bit vector and add that as a column
-                # similar for utilities, expected values, etc.
-                # need to create a vector for all topics from a subscriptions-only vector
-                # ENHANCE: just call to FdxConfig.topics_to_subscriptions??? really basic logic though...
-                # ENHANCE: generalize all this in case we add some more fields later?
-
-                vec_len = params['ntopics']
-                subs_vec = [0] * vec_len
-                # for utilities, we will calculate the actual and max possible utility given the weights, lambdas, delays, etc.
-
                 # XXX: since these are all in dict format, need to index by this output file's subscriber first:
                 subscriber = parse("sim_output_{:w}.csv", os.path.split(filename)[-1])[0]
-                sim_results = params['sim_results'][subscriber]
-                # NOTE: this will overwrite the 'mus' with the per-subscriber (i.e. bandwidth-sliced) ones!
-                #   Unclear that's actually what we want...
-                params = self._extract_queue_sim_run_params(sim_results, **params)  # params includes 'filename'!
-                subs = params.pop('subscriptions')
 
-                uws = params.pop('uws')[subscriber]
-                uws_vec = [0] * vec_len
-                utils_vec = [0] * vec_len
-                max_utils_vec = [0] * vec_len
-                exp_utils = params.pop('exp_utils')[subscriber]
-                exp_utils_vec = [0] * vec_len
-                exp_rcv = params.pop('exp_rcv')[subscriber]
-                exp_rcv_vec = [0] * vec_len
-                exp_delay = params.pop('exp_delay')[subscriber]
-                exp_delay_vec = [0] * vec_len
-
-                for sub in subs:
-                    # XXX: since topics are strings in the dicts but ints in the 'subscriptions' brought in for queue sim,
-                    #   we need to convert for here and then get the fields we want:
-                    sub = str(sub)
-
-                    uw = uws[sub]
-                    exp_util = exp_utils[sub]
-                    rcv = exp_rcv[sub]
-                    delay = exp_delay[sub]
-
-                    # XXX: back to int for list indexing
-                    sub = int(sub)
-
-                    subs_vec[sub] = 1
-                    uws_vec[sub] = uw
-                    # max rcv rate is the rate events are published:
-                    max_rcv = params['lams'][sub]
-                    utils_vec[sub] = calculate_utility(rcv, max_rcv, delay, uw)
-                    max_utils_vec[sub] = calculate_utility(max_rcv, max_rcv, delay, uw)
-                    exp_utils_vec[sub] = exp_util
-                    exp_rcv_vec[sub] = rcv
-                    exp_delay_vec[sub] = delay
-
-                df['subd'] = subs_vec
-                df['sub'] = subscriber
-                df['utils'] = utils_vec
-                df['max_utils'] = max_utils_vec
-                df['exp_utils'] = exp_utils_vec
-                df['exp_rcv'] = exp_rcv_vec
-                df['exp_delay'] = exp_delay_vec
+                params = self.extract_run_results_analysis(subscriber, **params)
 
                 # store all the parameters as columns
                 for k, v in params.items():
@@ -268,32 +213,56 @@ class FireStatistics(NetworkExperimentStatistics):
 
     def extract_run_params(self, run_results, filename, **exp_params):
         exp_params = super(FireStatistics, self).extract_run_params(run_results, filename, **exp_params)
+        ret = exp_params
 
-        # First, get some params specific to the different sim versions
-        if self.is_mininet(**exp_params):
-            # TODO: anything else here?
-            # def _extract_mininet_run_params(self, run_results, filename, **exp_params):
-            ret = exp_params
-            ret['prio'] = run_results.pop('priorities')
-            ret['drop'] = run_results.pop('drop_rates')
-
-            # TODO: use this to filter events so we have a warm-up period!
-            ret['time_sim_start'] = run_results['start_time']
-        else:
-            # XXX: since each subscriber will have a different simulation run, let's just save the overall results and
-            # then later when we inspect that run's output file we can actually gather the specific params for that subscriber.
-            ret = exp_params
-            ret['sim_results'] = run_results['sim_results']
-
-        # then we can get those common across all versions:
+        # first get those common across all versions:
 
         # incorporate our analytical model
-        ret['exp_delay'] = run_results['exp_total_delay']
+        # TODO: also get the total_delay? for now we don't include prop. delay (latency) since sim doesn't....
+        ret['exp_delay'] = run_results['exp_delay']
         ret['exp_rcv'] = run_results['exp_delivery']
 
         # for calculating/plotting utility, record utility functions (also assigned per-row based on topic for subscriptions)
         ret['uws'] = run_results['utility_weights']
         ret['exp_utils'] = run_results['exp_utilities']
+
+        # Then, get some params specific to the different sim versions
+        if self.is_mininet(**exp_params):
+            # TODO: anything else here?
+            # def _extract_mininet_run_params(self, run_results, filename, **exp_params):
+            ret['prio'] = run_results.pop('priorities')
+            ret['drop'] = run_results.pop('drop_rates')
+
+            # TODO: use this to filter events so we have a warm-up period!
+            ret['time_sim_start'] = run_results['start_time']
+
+        elif exp_params.get('exp_type', 'sim') == 'sim':
+            # XXX: since each subscriber will have a different simulation run, let's just save the overall results and
+            # then later when we inspect that run's output file we can actually gather the specific params for that subscriber.
+            ret['sim_results'] = run_results['sim_results']
+
+        # Since analysis-only version has no output files, we need to extract all the relevant information NOW:
+        elif exp_params['exp_type'] == 'analysis':
+            ret['sim_results'] = run_results['sim_results']
+            dfs = []
+            for subscriber in ret['sim_results'].keys():
+                # XXX: is expecting a filename arg...
+                run_stats = self.extract_run_results_analysis(subscriber, filename=None, **ret)
+                df = pd.DataFrame(run_stats)
+
+                # XXX: need to set the index to be topic ID so each new parser we bring in will match up the topics
+                df = df.reset_index().rename(columns=dict(index='topic'))
+
+                # seems as though the utils are already there? this is just analytical model anyway so exp_utils is fine...
+                # now to actually calculate the utilities from the util weights we got above:
+                # df['utils'] = calculate_utility(df.rcv_lams, df.lams, df.delay, df.utils)
+                dfs.append(df)
+
+            # XXX: since we have no actual output file to parse, we have to manually DIRECTLY store the stats...
+            if self.stats is None:
+                self.stats = self.merge_all(*dfs)
+            else:
+                self.stats = self.merge_all(self.stats, *dfs)
 
         return ret
 
@@ -315,6 +284,70 @@ class FireStatistics(NetworkExperimentStatistics):
         exp_params['prio_prob'] = [prio_probs[p] for p in prios]
 
         return exp_params
+
+    def extract_run_results_analysis(self, subscriber, **params):
+        """
+        Extracts the configuration info (e.g. subscriptions) and analytical model results for a particular run.
+        :param subscriber:
+        :param params:
+        :return:
+        """
+
+        # to track subscriptions to topics, create a bit vector and add that as a column
+        # similar for utilities, expected values, etc.
+        # need to create a vector for all topics from a subscriptions-only vector
+        # ENHANCE: just call to FdxConfig.topics_to_subscriptions??? really basic logic though...
+        # ENHANCE: generalize all this in case we add some more fields later?
+        vec_len = params['ntopics']
+        subs_vec = [0] * vec_len
+        # for utilities, we will calculate the actual and max possible utility given the weights, lambdas, delays, etc.
+        sim_results = params.pop('sim_results')[subscriber]
+        # NOTE: this will overwrite the 'mus' with the per-subscriber (i.e. bandwidth-sliced) ones!
+        #   Unclear that's actually what we want...
+        params = self._extract_queue_sim_run_params(sim_results, **params)  # params includes 'filename'!
+        subs = params.pop('subscriptions')
+        uws = params.pop('uws')[subscriber]
+        uws_vec = [0] * vec_len
+        utils_vec = [0] * vec_len
+        max_utils_vec = [0] * vec_len
+        exp_utils = params.pop('exp_utils')[subscriber]
+        exp_utils_vec = [0] * vec_len
+        exp_rcv = params.pop('exp_rcv')[subscriber]
+        exp_rcv_vec = [0] * vec_len
+        exp_delay = params.pop('exp_delay')[subscriber]
+        exp_delay_vec = [0] * vec_len
+        for sub in subs:
+            # XXX: since topics are strings in the dicts but ints in the 'subscriptions' brought in for queue sim,
+            #   we need to convert for here and then get the fields we want:
+            sub = str(sub)
+
+            uw = uws[sub]
+            exp_util = exp_utils[sub]
+            rcv = exp_rcv[sub]
+            delay = exp_delay[sub]
+
+            # XXX: back to int for list indexing
+            sub = int(sub)
+
+            subs_vec[sub] = 1
+            uws_vec[sub] = uw
+            # max rcv rate is the rate events are published:
+            max_rcv = params['lams'][sub]
+            utils_vec[sub] = calculate_utility(rcv, max_rcv, delay, uw)
+            max_utils_vec[sub] = calculate_utility(max_rcv, max_rcv, delay, uw)
+            exp_utils_vec[sub] = exp_util
+            exp_rcv_vec[sub] = rcv
+            exp_delay_vec[sub] = delay
+
+        params['subd'] = subs_vec
+        params['sub'] = subscriber
+        params['utils'] = utils_vec
+        params['max_utils'] = max_utils_vec
+        params['exp_utils'] = exp_utils_vec
+        params['exp_rcv'] = exp_rcv_vec
+        params['exp_delay'] = exp_delay_vec
+
+        return params
 
     def collate_outputs_results(self, *results):
         """
@@ -393,7 +426,8 @@ if __name__ == '__main__':
                     # 'treatment',
                     )
     for col in ignored_cols:
-        del final_stats[col]
+        if col in final_stats:
+            del final_stats[col]
 
     # print "STATS:\n", final_stats
 
@@ -452,10 +486,26 @@ if __name__ == '__main__':
 
     #### Plotting utilities
     ##     Show that we achieve more of max possible utility for higher priority subscription groups:
-    # May be more helpful to plot utility as a percent achieved of max possible
-    # TODO: may be even better to just sum up utilities instead of averaging! still want to scale by max though...
-    # final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
-    # stats.plot(x='prio', y='util_perc', groupby=['nprios', 'algorithm'], stats=final_stats)
+
+    # To properly organize the treatment column, it may be helpful to apply a function over it that changes the string.
+    # In this case, we want to get rid of everything except the very last bit that captures the utility weight dist used:
+    final_stats['treatment'] = final_stats['treatment'].apply(lambda t: int(t.split('_')[-1][1:]))
+
+    # need to sum utility, not average over it! also more helpful to plot utility as a percent achieved of max possible
+    final_stats = final_stats.groupby(['treatment', 'algorithm', 'run']).sum().reset_index()
+    final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
+
+    # XXX: somehow one of the configs resulted in super high delay despite ro < .95.... investigate further later.
+    # ff3 = final_stats.query('sub == "ff3" & treatment == 8 & run == 4')
+    # final_stats.drop(ff3.index, inplace=True)
+
+    # XXX: then average over runs (not sure why but this wasn't working via plot call...
+    final_stats = final_stats.groupby(['treatment', 'algorithm']).mean().reset_index()
+
+    # stats.plot(x='treatment', y='utils', groupby='algorithm', average_over=(), stats=final_stats)
+    # stats.plot(x='treatment', y='exp_delay', groupby='algorithm', average_over=(), stats=final_stats)
+    stats.plot(x='treatment', y='util_perc', groupby='algorithm', average_over=(), stats=final_stats)
+    # stats.plot(x='treatment', y='util_perc', groupby='algorithm', average_over=('topic', 'run', 'prio', 'sub'), stats=final_stats)
     # stats.plot(x='prio', y='utils', groupby=['nprios', 'algorithm'], stats=final_stats)
 
 
@@ -497,15 +547,15 @@ if __name__ == '__main__':
     ################################################################################################################
 
     # first, need to average over the columns we want to drop out
-    for col in ('run', 'topic',
-                'sub',
-                ):
-        final_stats = stats.average_over_runs(final_stats, column_to_drop=col)
+    # for col in ('run', 'topic',
+    #             'sub',
+    #             ):
+    #     final_stats = stats.average_over_runs(final_stats, column_to_drop=col)
 
     # then, print out a list of each column we want as shown here:
-    print "PRIOS:", list(final_stats.prio)
-    print "DELAYS:", list(final_stats.delay)
-    print "RCVS:", list(final_stats.rcv_rate)
+    # print "PRIOS:", list(final_stats.prio)
+    # print "DELAYS:", list(final_stats.delay)
+    # print "RCVS:", list(final_stats.rcv_rate)
     # TODO: figure this out??? doesn't work probably cuz subs are strings...
     # print "SUBS:", list(final_stats.sub)
 

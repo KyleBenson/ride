@@ -111,6 +111,7 @@ class NetworkExperimentStatistics(ScaleStatistics):
         """
 
         treatment = self.get_treatment_str(filename, **exp_params)
+        exp_params['treatment'] = treatment
 
         # The outputs_dir is specified relative to the results file we're currently processing
         this_path = os.path.dirname(filename)
@@ -121,7 +122,7 @@ class NetworkExperimentStatistics(ScaleStatistics):
         for d, r in dirs_to_parse:
             try:
                 this_run_params = self.extract_run_params(r, filename, **exp_params)
-                o = self.parse_outputs_dir(d, treatment=treatment, **this_run_params)
+                o = self.parse_outputs_dir(d, **this_run_params)
                 if self.is_results_good(o):
                     stats.append(o)
             except BaseException as e:
@@ -258,8 +259,6 @@ class NetworkExperimentStatistics(ScaleStatistics):
         if not isinstance(y, basestring):
             for _y in y:
                 average_over.discard(_y)
-
-        print "STATS BEFORE AVG:", stats
 
         for col in average_over:
             stats = self.average_over_column(stats, column_to_drop=col)
