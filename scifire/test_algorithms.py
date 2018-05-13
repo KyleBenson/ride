@@ -501,6 +501,90 @@ class TestDropPolicies(unittest.TestCase):
         # print "DROPS:", drops
         # print exp.algorithm.get_req_flows(exp)
 
+    def test_linear_drop_rates(self):
+        ### First, check unsaturated case
+        class_util_weights = (2.0, 2.0)
+        nsubs = 1
+        npubs = 10
+        ntopics = 10
+        nprios = nflows = 2
+        ro_tol = 0.0
+        # to saturate, need to have bw/8 (to mbps) < ntopics*npubs*pub_rate*data_size = 3MB/S
+        bw = 25
+        pub_rates = (30.0, 30.0)
+        data_sizes = (1000, 1000)
+
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='linear'),
+            num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs-1, num_iots=npubs, bandwidth=bw,
+            num_topics=ntopics, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+            draw_subscriptions_from_advertisements=False,
+            topic_class_advertisements_per_ff=(0,0), topic_class_advertisements_per_iot=(ntopics/2,ntopics/2),
+            topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+            topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        for dr in drops.values():
+            self.assertEqual(dr, 0.0)
+
+        ### Test for saturated queues
+        # Note that we can only drop HALF of the traffic at most since prio0 is always drop rate 0!
+        bw = 12.1  # needs to be just over half BW...
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='linear'),
+            num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs-1, num_iots=npubs, bandwidth=bw,
+            num_topics=ntopics, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+            draw_subscriptions_from_advertisements=False,
+            topic_class_advertisements_per_ff=(0,0), topic_class_advertisements_per_iot=(ntopics/2,ntopics/2),
+            topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+            topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        self.assertEqual(drops[0], 0.0)
+        self.assertGreater(drops[1], 0.95)
+
+    def test_flat_drop_rates(self):
+        ### First, check unsaturated case
+        class_util_weights = (2.0, 2.0)
+        nsubs = 1
+        npubs = 10
+        ntopics = 10
+        nprios = nflows = 2
+        ro_tol = 0.0
+        # to saturate, need to have bw/8 (to mbps) < ntopics*npubs*pub_rate*data_size = 3MB/S
+        bw = 25
+        pub_rates = (30.0, 30.0)
+        data_sizes = (1000, 1000)
+
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='flat'),
+            num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs-1, num_iots=npubs, bandwidth=bw,
+            num_topics=ntopics, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+            draw_subscriptions_from_advertisements=False,
+            topic_class_advertisements_per_ff=(0,0), topic_class_advertisements_per_iot=(ntopics/2,ntopics/2),
+            topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+            topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        for dr in drops.values():
+            self.assertEqual(dr, 0.0)
+
+        ### Test for saturated queues
+        # we expect to drop half of packets if we set bw to half that required
+        bw = 12
+        exp = FiredexAlgorithmExperiment(algorithm=dict(algorithm='greedy', ro_tolerance=ro_tol, drop_policy='flat'),
+            num_priority_levels=nprios, num_net_flows=nflows, num_ffs=nsubs-1, num_iots=npubs, bandwidth=bw,
+            num_topics=ntopics, topic_class_weights=(0.5, 0.5), topic_class_sub_rates=(1.0, 1.0),
+            draw_subscriptions_from_advertisements=False,
+            topic_class_advertisements_per_ff=(0,0), topic_class_advertisements_per_iot=(ntopics/2,ntopics/2),
+            topic_class_pub_rates=pub_rates, topic_class_data_sizes=data_sizes,
+            topic_class_utility_weights=class_util_weights)
+        exp.generate_configuration()
+        drops = exp.algorithm.get_drop_rates(exp)
+
+        for dr in drops.values():
+            self.assertAlmostEqual(dr, 0.5, 3)
+
 
 if __name__ == '__main__':
     unittest.main()

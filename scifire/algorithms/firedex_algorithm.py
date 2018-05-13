@@ -617,7 +617,50 @@ class FiredexAlgorithm(object):
                 raise QueueStabilityError("Max iterations for drop rate policy 'expon' reached!  Check model constraints! "
                                  "Drop rates ended up being: %s" % self.get_drop_rates(configuration))
 
-        # TODO: linear policy? similar to above (based on priority) but linear increase in drop rates rather than exp
+        # This basic policy sets drop rates for each net flow according to its assigned priority level where the
+        # drop rate = x*prio (maintaining a max of 1.0),
+        # where x starts at 0 and increases slightly until the ro conditions are met
+        elif policy == 'linear':
+            x = 0.0
+            ros_met = False
+            while not ros_met:
+
+                for net_flow, prio in self.get_net_flow_priorities(configuration).items():
+                    if subscribers is not None and configuration.subscriber_for_flow(net_flow) not in subscribers:
+                        continue
+                    drop_rate = x * prio
+                    if drop_rate > 1.0:
+                        drop_rate = 1.0
+                    self.set_net_flow_drop_rate(net_flow, drop_rate, configuration)
+
+                # XXX: since we're using floats, we can't just check x <= 1.0 since last attempt may be e.g. 1.000008
+                if x >= 1.0:
+                    break
+
+                ros_met = self.ros_okay(configuration)
+                x += 0.001
+
+            if not ros_met:
+                raise QueueStabilityError("Max iterations for drop rate policy 'linear' reached!  Check model constraints! "
+                                 "Drop rates ended up being: %s" % self.get_drop_rates(configuration))
+
+        # This naive comparison policy sets drop rates the same across all net flows.  It incrementally increases the
+        # drop rate until the ro conditions are met
+        elif policy == 'flat' or policy == 'const':
+            drop_rate = 0.0
+            ros_met = False
+            while not ros_met and drop_rate <= 1.0:
+                for net_flow, prio in self.get_net_flow_priorities(configuration).items():
+                    if subscribers is not None and configuration.subscriber_for_flow(net_flow) not in subscribers:
+                        continue
+                    self.set_net_flow_drop_rate(net_flow, drop_rate, configuration)
+
+                ros_met = self.ros_okay(configuration)
+                drop_rate += 0.0001
+
+            if drop_rate > 1.0:
+                raise QueueStabilityError("Max iterations for drop rate policy 'flat' reached!  Check model constraints! "
+                                 "Drop rates ended up being: %s" % self.get_drop_rates(configuration))
 
         elif policy == 'null':  # set all to 0
             for net_flow, prio in self.get_net_flow_priorities(configuration).items():

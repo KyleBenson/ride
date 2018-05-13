@@ -94,7 +94,7 @@ EXPERIMENTAL_TREATMENTS = {
     #                 'bandwidth': 80,
     #                 # 'testing': False,
     #                 'testing': True,  # just using analytical model for these exps!
-    #                 'output_filename': 'results_%s_u%d.json' % (policy, 2**ui)} for policy in ('expon', 'opt')
+    #                 'output_filename': 'results_%s_u%d.json' % (policy, 2**ui)} for policy in ('expon', 'opt', 'linear', 'flat')
     #                 for ui, util_w in enumerate([({'dist': 'expon', 'args': [0.5], 'lbound': 0.01, 'ubound': 2.0},
     #                                               {'dist': 'expon', 'args': [1.0], 'lbound': 0.1, 'ubound': 4.0}),
     #                                              ({'dist': 'expon', 'args': [0.5], 'lbound': 0.01, 'ubound': 2.0},
