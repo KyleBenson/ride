@@ -412,7 +412,10 @@ class FireStatistics(NetworkExperimentStatistics):
 
 
 if __name__ == '__main__':
-    stats = FireStatistics.main()
+    args = None
+    # specify your cmd line arguments here if you don't want to keep opening the IDE run config to change each time:
+    # args = ['-f', 'out.csv']
+    stats = FireStatistics.main(args)
 
     # now you can do something with the stats to e.g. get your own custom experiment results
     final_stats = stats.stats
