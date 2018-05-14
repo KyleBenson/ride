@@ -48,7 +48,7 @@ DEFAULT_TOPIC_CLASS_UTILITY_WEIGHTS = ({'dist': 'expon', 'args': [0.5], 'lbound'
 
 # We only really consider service rates for SDN switch outbound queue (i.e. due to bandwidth constraint).
 # ENHANCE: consider actual service rates for the other queues
-DEFAULT_MU = 64000.0
+DEFAULT_MU = 664000.0
 
 # todo: make a list of different topics and probably assign them different priorities/utilities?
 IOT_DEV_TOPIC = 'sensor_data'
