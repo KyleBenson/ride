@@ -78,6 +78,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
             log.error("Algorithm failed ro condition check: %s" % e)
             try:
                 ret['ros'] = self.algorithm.get_ros(self)
+                ret['ro_sums'] = [sum(ros) for ros in self.algorithm.get_ros(self)]
                 # try to save the assigned drop rates for inspection
                 ret['drop_rates'] = self.algorithm.get_drop_rates(self)
             except QueueStabilityError:
@@ -86,6 +87,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
 
         result = self.get_analytical_model_results()
         result['sim_results'] = sim_results
+        result['ro_sums'] = [sum(ros) for ros in self.algorithm.get_ros(self)]
         return result
 
     def run_queuing_simulator(self, cfg):
@@ -125,8 +127,6 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         os.remove(cfg_filename)
 
         result = dict(return_code=ret_code, sim_config=cfg, output_file=sim_out_fname)
-
-        result['ro_sums'] = [sum(ros) for ros in self.algorithm.get_ros(self)]
 
         return result
 
