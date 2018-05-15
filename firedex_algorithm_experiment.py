@@ -14,22 +14,27 @@ from scifire.firedex_configuration import QueueStabilityError
 import logging
 log = logging.getLogger(__name__)
 
+PUB_SUB_SIM_VERSION = 9
+
 
 class FiredexAlgorithmExperiment(FiredexExperiment):
     """
     Simulation-based experiments that run in our Java-based queuing network simulation.
     """
 
-    def __init__(self, regen_bad_ros=False, testing=False, **kwargs):
+    def __init__(self, regen_bad_ros=False, testing=False, use_buffers=False, **kwargs):
         """
         :param regen_bad_ros: regenerate the configuration if the ro condition is not met (default=False)
         :param testing: when explicitly set to True, don't run external simulator; used for just viewing random configs
+        :param use_buffers: when set to True, run queueing simulator even when sum(ro_values) > 1
+               and just drop excess packets according to buffer size limits
         :param kwargs: passed to super constructor
         """
         super(FiredexAlgorithmExperiment, self).__init__(**kwargs)
 
         self.regen_bad_ros = regen_bad_ros
         self.testing = testing
+        self.use_buffers = use_buffers
 
         self.record_parameter("experiment_type", "sim" if not testing else "analysis")
 
@@ -111,7 +116,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
         sim_jar_file = os.path.join('scifire', 'queue_simulator', 'pubsub-prio.jar')
         if not os.path.exists(sim_jar_file):
             log.error("cannot find the simulation JAR file! Make sure you download/compile it and put it at %s" % sim_jar_file)
-        cmd = "java -cp %s pubsubpriorities.PubsubV8Sim %s %s" % (sim_jar_file, cfg_filename, sim_out_fname)
+        cmd = "java -cp %s pubsubpriorities.PubsubV%dSim %s %s" % (sim_jar_file, PUB_SUB_SIM_VERSION, cfg_filename, sim_out_fname)
 
         # redirect to log files so if we run multiple sims in parallel via run.py they don't overlap; also can view it later now
         cmd = self.redirect_output_to_log(cmd, "sim_stdout_%s.log" % subscriber)
@@ -146,6 +151,7 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
             "subscriptions": [0, 2, 3, 5, 8],    # for topics this subscriber subscribes to
             "priorities": [0, 0, 1, 2, ...],     # one for EACH topic even if not subscribed
             "prio_probs": [1.0, 0.9, 0.8, 0.7],  # rate of events let through for each priority class
+            "buffer_use": "False",                 # run simulator with finite buffers i.e. run even if ro_sum > 1
           }
         """
 
@@ -212,7 +218,9 @@ class FiredexAlgorithmExperiment(FiredexExperiment):
                 prio_probs.append(0.0)  # drop all traffic of this prio, which shouldn't actually be ANY!
 
             cfg =  dict(mus=mus, lambdas=lambdas, subscriptions=subscriptions, subscriber=subscriber,
-                        priorities=priorities, error_rate=float(self.error_rate), prio_probs=prio_probs)
+                        priorities=priorities, error_rate=float(self.error_rate), prio_probs=prio_probs,
+                        # ENHANCE: actually do this as a boolean instead of a string?
+                        buffer_use="True" if self.use_buffers else "False")
             yield cfg
 
     @classmethod
