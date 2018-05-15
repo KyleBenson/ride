@@ -191,6 +191,72 @@ class TestGreedySplit(unittest.TestCase):
         # NOTE: we just changed the experiment implementation to ensure this never happens by building Null alg instead...
         # self.assertEqual(len(alg._even_split_groups(range(3, 6), 0)), 1, "does no groups mean no prioritization?")
 
+    def test_naive_info_metric(self):
+        """
+        Tests the naive version of the info metric that doesn't account for bit rate of a subscription.  Hence, the
+        high utility topic classes with very high data size should actually get lower priority.
+        """
+
+        ## First ensure that the info/byte version works properly for this configuration
+
+        class_util_weights = (2.0, 3.0, 4.0)
+        # subscribe to all topics since these tests aren't well-defined for non-subscribed topics
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.3, 0.4, 0.3),
+                                         topic_class_sub_rates=(1.0,),
+                                         draw_subscriptions_from_advertisements=False,
+                                         num_priority_classes=3, num_net_flows=3,
+                                         topic_class_advertisements_per_ff=(3, 3, 4),
+                                         topic_class_advertisements_per_iot=(3, 3, 4),
+                                         topic_class_pub_rates=(1.0, 1.0, 1.0),
+                                         topic_class_data_sizes=(100, 110, 300),
+                                         topic_class_utility_weights=class_util_weights,
+                                         algorithm=dict(algorithm='greedy-split', metric='info-per-byte'))
+        exp.generate_configuration()
+
+        prios = {sub.topic: p for sub, p in exp.algorithm.get_subscription_priorities(exp).items()}
+
+        for req in prios.keys():
+            if req in range(7, 10):
+                self.assertEqual(prios[req], 2,
+                                 "higher-utility higher-bit-rate class topic %d did not have lowest priority 2 but rather %d" % (
+                                 req, prios[req]))
+        for req in prios.keys():
+            if req in range(3, 7):
+                self.assertEqual(prios[req], 0,
+                                 "medium-utility med-bit-rate class topic %d did not have highest priority 0 but rather %d" % (
+                                 req, prios[req]))
+        for req in prios.keys():
+            if req in range(3):
+                self.assertEqual(prios[req], 1,
+                                 "low-utility lower-bit-rate class topic %d did not have med priority 1 but rather %d" % (
+                                 req, prios[req]))
+
+        ## Now actually test out the naive version
+
+        class_util_weights = (2.0, 3.0, 4.0)
+        # subscribe to all topics since these tests aren't well-defined for non-subscribed topics
+        exp = FiredexAlgorithmExperiment(num_topics=10, topic_class_weights=(0.3, 0.3, 0.4), topic_class_sub_rates=(1.0,),
+                                         draw_subscriptions_from_advertisements=False,
+                                         num_priority_classes=3, num_net_flows=3,
+                                         topic_class_advertisements_per_ff=(3,3,4), topic_class_advertisements_per_iot=(3,3,4),
+                                         topic_class_pub_rates=(1.0, 1.0, 1.0),
+                                         topic_class_data_sizes=(100, 110, 300),
+                                         topic_class_utility_weights=class_util_weights,
+                                         algorithm=dict(algorithm='greedy-split', metric='info'))
+        exp.generate_configuration()
+
+        prios = {sub.topic: p for sub, p in exp.algorithm.get_subscription_priorities(exp).items()}
+
+        for req in prios.keys():
+            if req in range(6, 10):
+                self.assertEqual(prios[req], 0, "higher-utility class topic %d did not have highest priority 0 but rather %d" % (req, prios[req]))
+        for req in prios.keys():
+            if req in range(3, 6):
+                self.assertEqual(prios[req], 1, "medium-utility class topic %d did not have highest priority 1 but rather %d" % (req, prios[req]))
+        for req in prios.keys():
+            if req in range(3):
+                self.assertEqual(prios[req], 2, "low-utility class topic %d did not have highest priority 2 but rather %d" % (req, prios[req]))
+
     def test_greedy_split(self):
         class_util_weights = (2.0, 3.0, 4.0)
         # subscribe to all topics since these tests aren't well-defined for non-subscribed topics
@@ -203,7 +269,7 @@ class TestGreedySplit(unittest.TestCase):
                                          algorithm='greedy-split')
         exp.generate_configuration()
 
-        prios = exp.algorithm.get_subscription_priorities(exp)
+        prios = {sub.topic: p for sub, p in exp.algorithm.get_subscription_priorities(exp).items()}
 
         for req in prios.keys():
             if req in range(6, 10):
@@ -227,7 +293,8 @@ class TestGreedySplit(unittest.TestCase):
                                          algorithm='greedy-split')
         exp.generate_configuration()
 
-        prios = exp.algorithm.get_subscription_priorities(exp)
+        prios = {sub.topic: p for sub, p in exp.algorithm.get_subscription_priorities(exp).items()}
+
         for req in prios.keys():
             if req in range(6, 10):
                 self.assertEqual(prios[req], 0, "higher-utility class topic %d did not have highest priority 0 but rather %d" % (req, prios[req]))
@@ -252,7 +319,8 @@ class TestGreedySplit(unittest.TestCase):
                                          algorithm='greedy-split')
         exp.generate_configuration()
 
-        prios = exp.algorithm.get_subscription_priorities(exp)
+        prios = {sub.topic: p for sub, p in exp.algorithm.get_subscription_priorities(exp).items()}
+
         for req in prios.keys():
             if req in range(12, 20):
                 self.assertEqual(prios[req], 0, "higher-utility classes topic %d did not have highest priority 0 but rather %d" % (req, prios[req]))

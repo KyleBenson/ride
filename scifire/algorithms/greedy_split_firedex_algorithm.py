@@ -8,9 +8,32 @@ log = logging.getLogger(__name__)
 
 class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
     """
-    Algorithm implementation that assigns priorities by sorting subscription according to their "info/byte" metric,
-    which is max utility / (pub rate * pub size).
+    Algorithm implementation that assigns priorities by sorting subscription according to a metric that represents
+    the information value captured by fully optimizing that subscription:
+      - "info/byte" metric (default) = max utility / (pub rate * pub size)
+      - "info" metric (naive comparison) = max utility
     """
+
+    def __init__(self, metric='info-per-byte', **kwargs):
+        super(GreedySplitFiredexAlgorithm, self).__init__(**kwargs)
+        self.metric = metric
+
+    def info_metric(self, subscription, configuration):
+        """
+        Calculate a metric representing the 'capturable information' of a subscription i.e. its max utility
+        :param subscription:
+        :type subscription: FiredexConfiguration.Subscription
+        :param configuration:
+        :type configuration: FiredexConfiguration
+        :return:
+        """
+
+        pub_rate = self.publication_rates(configuration)[subscription.topic]
+        # XXX: use 0 delay, which in the future we may assume is impossible hence making an epsilon value
+        delay = 0.000001
+        weight = subscription.utility_weight
+        max_util = self.calculate_utility(pub_rate, pub_rate, delay, weight)
+        return max_util
 
     def info_per_byte(self, subscription, configuration):
         """
@@ -29,10 +52,7 @@ class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
         #   maybe instead calculate incremental additional info/byte according to some decision?
 
         pub_rate = self.publication_rates(configuration)[subscription.topic]
-        # XXX: use 0 delay, which in the future we may assume is impossible hence making an epsilon value
-        delay = 0.000001
-        weight = subscription.utility_weight
-        max_util = self.calculate_utility(pub_rate, pub_rate, delay, weight)
+        max_util = self.info_metric(subscription, configuration)
 
         pub_size = configuration.data_sizes[subscription.topic]
         info_per_byte = max_util / (pub_rate * pub_size)
@@ -50,7 +70,8 @@ class GreedySplitFiredexAlgorithm(FiredexAlgorithm):
         """
 
         subs = configuration.get_subscriptions(subscriber)
-        ipbs = sorted(((self.info_per_byte(sub, configuration), sub) for sub in subs), reverse=True)
+        metric_to_use = self.info_metric if self.metric in ('info', 'naive') else self.info_per_byte
+        ipbs = sorted(((metric_to_use(sub, configuration), sub) for sub in subs), reverse=True)
         return [sub for ipb, sub in ipbs]
 
     def _even_split_groups(self, items, ngroups):
