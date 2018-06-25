@@ -76,7 +76,14 @@ EXPERIMENTAL_TREATMENTS = {
 
     # for multiple subscribers
     # 'testing': [{'bandwidth': 5, 'nruns': 1, 'num_ffs': 4, 'testing': False, 'algorithm': dict(algorithm='greedy', ro_tolerance=0.1)}],
+    # 'testing': [{'bandwidth': 1, 'nruns': 1, 'testing': True, 'algorithm': dict(algorithm='random', ro_tolerance=0.6)}],
 
+    # 'testing': [{'bandwidth': 1, 'num_ffs': 2, 'nruns': 1,
+    #              # 'ic_sub_rate_factor':2, 'topic_class_sub_rates': (0.5, 0.5),  # for BW slicing
+    #              'testing': True,
+    #              # 'testing': False,
+    #              'algorithm': dict(algorithm='greedy', ro_tolerance=0.1)}],
+    #
     # 'drop_policy': [{'topic_class_data_sizes': dsizes[0],
     #                 'nruns': nruns,
     #                 'topic_class_pub_rates': prates,
@@ -105,7 +112,50 @@ EXPERIMENTAL_TREATMENTS = {
     #                                               {'dist': 'expon', 'args': [8.0], 'lbound': 0.8, 'ubound': 32.0}),
     #                                              ])],
 
-    # Validation 10 subscribers, ro =~ 0.6:
+    # 10 subscribers, ro =~ 0.6:
+    # 'prio_algs': [{'topic_class_data_sizes': dsizes[0],
+    #                 'nruns': nruns,
+    #                 'topic_class_pub_rates': prates,
+    #                 'num_priority_levels': 9,
+    #                 'num_net_flows': 9,
+    #                 'algorithm': alg,
+    #                 'use_buffers': True,  # rather than drop rates, let buffers do the dropping
+    #                 'num_topics': 200,
+    #                 'num_iots': 150,
+    #                 'num_ffs': 9,
+    #                 'topic_class_advertisements_per_ff': (3, 5),
+    #                 'topic_class_advertisements_per_iot': (5, 4),
+    #                 'topic_class_sub_rates': (0.5, 0.7),
+    #                 # we multiple bw 8 with num of FFs
+    #                 'bandwidth': 80,
+    #                 'testing': False,
+    #                 # 'testing': True,  # just using analytical model for these exps!
+    #                 'output_filename': 'results_%s.json' % name} for name, alg in zip(('greedy', 'greedy-naive', 'rand'),
+    #                                             (dict(algorithm='greedy', metric='info-per-byte', ro_tolerance=-1.0),
+    #                                              dict(algorithm='greedy', metric='naive', ro_tolerance=-1.0),
+    #                                              dict(algorithm='random', ro_tolerance=-1.0),))],
+
+    ## RO TOLERANCE comparison with just 1 subscriber (to speed up sims)
+    'ro_tolerance': [{'topic_class_data_sizes': dsizes[0],
+                    'nruns': nruns,
+                    'topic_class_pub_rates': prates,
+                    'num_priority_levels': 9,
+                    'num_net_flows': 9,
+                    'algorithm': dict(algorithm='greedy', ro_tolerance=ro_tol),
+                    'num_topics': 200,
+                    'num_iots': 150,
+                    'num_ffs': 0,
+                    'topic_class_advertisements_per_ff': (3, 5),
+                    'topic_class_advertisements_per_iot': (5, 4),
+                    'topic_class_sub_rates': (0.5, 0.7),
+                    # we multiple bw 8 with num of FFs
+                    'bandwidth': 8,
+                    'testing': False,
+                    # 'testing': True,  # just using analytical model for these exps!
+                    # 0.1 already covered by other exps
+                    'output_filename': 'results_%f.json' % ro_tol} for ro_tol in (0.01, 0.05, .2, .001, .15, .4)],
+
+    # # Validation 10 subscribers, ro =~ 0.6:
     # 'validation_prios0.5': [{'topic_class_data_sizes': dsizes[0],
     #                 'nruns': nruns,
     #                 'regen_bad_ros': True,
