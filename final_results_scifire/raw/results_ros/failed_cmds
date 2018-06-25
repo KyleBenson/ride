@@ -1,0 +1,1 @@
+[[{'algorithm': 'random', 'testing': False, 'output_filename': 'results/testing/results_False-testing.json', 'bandwidth': 0.1, 'debug': 'info', 'nruns': 1}]]
