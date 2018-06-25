@@ -219,7 +219,7 @@ class FireStatistics(NetworkExperimentStatistics):
 
         # incorporate our analytical model
         # TODO: also get the total_delay? for now we don't include prop. delay (latency) since sim doesn't....
-        ret['exp_delay'] = run_results['exp_delay']
+        ret['exp_delay'] = run_results['exp_total_delay']
         ret['exp_rcv'] = run_results['exp_delivery']
 
         # for calculating/plotting utility, record utility functions (also assigned per-row based on topic for subscriptions)
@@ -342,6 +342,7 @@ class FireStatistics(NetworkExperimentStatistics):
         params['subd'] = subs_vec
         params['sub'] = subscriber
         params['utils'] = utils_vec
+        params['uws'] = uws_vec
         params['max_utils'] = max_utils_vec
         params['exp_utils'] = exp_utils_vec
         params['exp_rcv'] = exp_rcv_vec
@@ -414,11 +415,25 @@ class FireStatistics(NetworkExperimentStatistics):
 if __name__ == '__main__':
     args = None
     # specify your cmd line arguments here if you don't want to keep opening the IDE run config to change each time:
-    # args = ['-f', 'out.csv']
+    # args = ['-f', 'out.csv', '--raise-errors']
+    # args = ['-d', 'results/validation_multisubs_prioprobs', '--raise-errors']
+    # args = ['-f', 'results/validation_multisubs_prioprobs/results_100.json', '--raise-errors']
+    # args = ['-f', 'drops.csv', '--raise-errors']
+    # args = ['-f', 'ros.csv', '--raise-errors']
+    # args = ['-f', "prio_algs2.csv", '--raise-errors']
+    # args = ['-f', "final_results_scifire/prio_algs.csv", '--raise-errors']
+    # args = ['-f', "final_results_scifire/drops_final.csv", '--raise-errors']
+    # args = ['-f', "results/evaluation_buffer_noprios/results_0.json", "prio_algs.csv", '--raise-errors']
+    # args = ['-d', 'results/drop_policy', '--raise-errors']
+    # args = ['-d', 'results/prio_algs', '--raise-errors']
+    # args = ['-d', 'results/ro_tolerance', '--raise-errors']
+
+    if args is not None:
+        args.append('--debug')
     stats = FireStatistics.main(args)
 
     # now you can do something with the stats to e.g. get your own custom experiment results
-    final_stats = stats.stats
+    final_stats = stats.stats # type: pd.DataFrame
 
     # drop topics with no subscription OR advertisement (i.e. pub rate is 0)
     final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
@@ -492,22 +507,27 @@ if __name__ == '__main__':
 
     # To properly organize the treatment column, it may be helpful to apply a function over it that changes the string.
     # In this case, we want to get rid of everything except the very last bit that captures the utility weight dist used:
-    final_stats['treatment'] = final_stats['treatment'].apply(lambda t: int(t.split('_')[-1][1:]))
-
-    # need to sum utility, not average over it! also more helpful to plot utility as a percent achieved of max possible
-    final_stats = final_stats.groupby(['treatment', 'algorithm', 'run']).sum().reset_index()
-    final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
+    # final_stats['treatment'] = final_stats['treatment'].apply(lambda t: int(t.split('_')[-1][1:]))
 
     # XXX: somehow one of the configs resulted in super high delay despite ro < .95.... investigate further later.
     # ff3 = final_stats.query('sub == "ff3" & treatment == 8 & run == 4')
     # final_stats.drop(ff3.index, inplace=True)
-
-    # XXX: then average over runs (not sure why but this wasn't working via plot call...
-    final_stats = final_stats.groupby(['treatment', 'algorithm']).mean().reset_index()
+    #
+    # # need to subtract prop delay since we don't consider it currently...
+    # final_stats.exp_delay -= 0.1
+    #
+    # # need to sum utility, not average over it! also more helpful to plot utility as a percent achieved of max possible
+    # util_stats = final_stats.groupby(['treatment', 'algorithm', 'run'])
+    # final_stats = util_stats.mean().reset_index()
+    # final_stats[['utils', 'max_utils']] = util_stats['utils', 'max_utils'].sum().reset_index()[['utils', 'max_utils']]
+    # final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
+    #
+    # # XXX: then average over runs (not sure why but this wasn't working via plot call...
+    # final_stats = final_stats.groupby(['treatment', 'algorithm']).mean().reset_index()
 
     # stats.plot(x='treatment', y='utils', groupby='algorithm', average_over=(), stats=final_stats)
     # stats.plot(x='treatment', y='exp_delay', groupby='algorithm', average_over=(), stats=final_stats)
-    stats.plot(x='treatment', y='util_perc', groupby='algorithm', average_over=(), stats=final_stats)
+    # stats.plot(x='treatment', y='util_perc', groupby='algorithm', average_over=(), stats=final_stats)
     # stats.plot(x='treatment', y='util_perc', groupby='algorithm', average_over=('topic', 'run', 'prio', 'sub'), stats=final_stats)
     # stats.plot(x='prio', y='utils', groupby=['nprios', 'algorithm'], stats=final_stats)
 
@@ -539,11 +559,70 @@ if __name__ == '__main__':
     #            legend=3, # move around legend by specifying an integer for the location
     #            average_over=('sub', 'run', 'topic',), stats=final_stats)
 
+    # # varying #subscribers
+    # # XXX: nffs == 0 implies just the IC subscriber, so add 1:
+    # final_stats.nffs += 1
+
+    # not sure why we can't just average over run and topic in the plot...
+    # final_stats = final_stats.groupby(['nffs', 'prio']).mean().reset_index()
+    # other_stats = pd.read_csv('subs_final.csv')
+    # final_stats = final_stats.append(other_stats)
+    #
+    # final_stats = final_stats.sort_values(['nffs'])
+    # final_stats = final_stats.groupby(['nffs', 'prio']).apply(lambda x: x)
+    # print final_stats
+    # stats.plot(x='nffs', y=['delay', 'sim_exp_delay'], groupby=None, average_over=('prio',), stats=final_stats)
+    # stats.plot(x='rcv_rate', y=['delay', 'sim_exp_delay'], average_over=('run', 'topic'), stats=final_stats)
+
+    ####   varying ro_tolerance
+    # final_stats = final_stats[final_stats.prio > 7]
+
+    # final_stats = final_stats.groupby(('ro_tol',)).mean().reset_index()
+    # print final_stats
+    #
+    # stats.plot('ro_tol', y=['delay', 'sim_exp_delay'], average_over=('run', 'topic', 'sub', 'prio'), stats=final_stats)
+    # stats.plot('ro_tol', y=['rcv_lams', 'exp_rcv'], average_over=('run', 'topic', 'sub', 'prio'), stats=final_stats)
+
     ### firedex approach evaluation
     # not done...
 
     ### algorithms comparison
-    # not done...
+    # plan: plot utility vs. priority level
+    # xaxis = 'sub'
+    #
+    # # cut off ro-tolerance from algorithm name
+    # # final_stats['algorithm'] = final_stats['algorithm'].apply(lambda t: t.split('--')[0])
+    #
+    # # need to sum utility, not average over it! also more helpful to plot utility as a percent achieved of max possible
+    # util_stats = final_stats.groupby(['algorithm', 'run', xaxis])
+    # final_stats = util_stats.mean().reset_index()
+    # final_stats[['utils', 'max_utils']] = util_stats['utils', 'max_utils'].sum().reset_index()[['utils', 'max_utils']]
+    # final_stats['util_perc'] = final_stats.utils / final_stats.max_utils
+    #
+    # # XXX: then average over runs (not sure why but this wasn't working via plot call...
+    # final_stats = final_stats.groupby(['algorithm', xaxis]).mean().reset_index()
+    #
+    # # stats.plot(xaxis, 'util_perc', average_over=(), groupby='algorithm', stats=final_stats)
+    #
+    # print final_stats
+    # print final_stats[final_stats.prio_prob < 1.0]  # ensure no drops applied!
+
+    # ##### calculate percentage improvements
+    # improv_stats = final_stats.groupby('algorithm').mean().reset_index()
+    # no_prios_rate = improv_stats.query('algorithm == "no-prios"').util_perc.iloc[0]
+    # naive_rate = improv_stats.query('algorithm == "greedy-naive"').util_perc.iloc[0]
+    # best_rate = improv_stats.query('algorithm == "greedy-info-per-byte"').util_perc.iloc[0]
+    # print "% improvement over no-prio:", (best_rate - no_prios_rate)/no_prios_rate
+    # print "% improvement over naive:", (best_rate - naive_rate)/naive_rate
+    # print "prios rate:", best_rate
+    # print "no-prios rate:", no_prios_rate
+
+    # ## % improved of drops+prios over just prios
+    # prios_rate = 0.620462464956
+    # no_prios_rate = 0.456403054336
+    # drops_rate = final_stats.query('algorithm == "greedy-opt-0.05" & treatment == 1').util_perc.iloc[0]
+    # print "% improvement over prios-only:", (drops_rate - prios_rate)/prios_rate
+    # print "% improvement over no-prios:", (drops_rate - no_prios_rate)/no_prios_rate
 
     ################################################################################################################
     ############################        COLUMN EXTRACTION FOR MATLAB PLOTTING               ########################
@@ -563,7 +642,11 @@ if __name__ == '__main__':
     # print "SUBS:", list(final_stats.sub)
 
     ###   Explicitly save results to file
-    # stats.config.output_file = "out.csv"
+    # stats.config.output_file = "subs_final.csv"
+    # stats.config.output_file = "subs100.csv"
+    # stats.config.output_file = "ros_final.csv"
+    # stats.config.output_file = "drops_final.csv"
+    # stats.config.output_file = "prio_algs.csv"
 
     if stats.config.output_file:
         stats.output_stats(stats=final_stats)
