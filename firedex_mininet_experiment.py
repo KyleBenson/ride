@@ -324,6 +324,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                                         # + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
 
             # SUBSCRIBERS run a subscribing VirtualSensor and an Application for saving received events
+            broker_dpid = self.get_host_dpid(self.bms)
             if host in self.subscribers:
                 # NOTE: scale expects topics to be strings!
                 subs = [str(t) for t in self.get_subscription_topics(host)]
@@ -342,7 +343,39 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                 # XXX: let destination port be the default one
                 real_flows = [(None, COAP_CLIENT_BASE_SRC_PORT + i, broker_ip, None) for i in range(self.num_net_flows)]
 
-                # TODO: install SDN flow rules for drop_rates/priorities
+                # install static SDN flow rules for drop_rates/priorities:
+                # TODO: install regular static routing for publishers too?
+
+                host_dpid = self.get_host_dpid(host)
+                broker_sub_route = self.topology_adapter.get_path(broker_dpid, host_dpid)
+                sub_broker_route = self.topology_adapter.get_path(host_dpid, broker_dpid)
+                for net_flow in real_flows:
+                    src_port = net_flow[1]
+                    # MAYBE: also do dst_port? matches = dict(udp_src=src_port, udp_dst=dst_port)
+                    sub_broker_frules = self.topology_adapter.build_flow_rules_from_path(sub_broker_route, add_matches=dict(udp_src=src_port))  # MAYBE: , priority=STATIC_PATH_FLOW_RULE_PRIORITY
+                    broker_sub_frules = self.topology_adapter.build_flow_rules_from_path(broker_sub_route, add_matches=dict(udp_dst=src_port))
+
+                    # TODO: how to add priority/drop rate treatment here?  make a group or just do drop_rate (only on broker-to-sub!) before we apply priority?
+                    # NOTE: this will be non-trivial it seems... added ability to do use_queues=q_id if build rules but how to handle adding additional actions???  maybe we should try hacking directly in a simple mn topo...
+
+
+                    flow_rules = sub_broker_frules + broker_sub_frules
+                    if not self.topology_adapter.install_flow_rules(flow_rules):
+                        log.error("problem installing batch of flow rules for subscriber %s: %s" % (host, flow_rules))
+
+                #
+                # # NOTE: need to do the other direction to ensure responses come along same path!
+                # route.reverse()
+                # matches = dict(udp_dst=src_port, udp_src=dst_port)
+                # frules.extend(self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches, priority=STATIC_PATH_FLOW_RULE_PRIORITY))
+                #
+                # # log.debug("installing probe flow rules for DataPath (port=%d)\nroute: %s\nrules: %s" %
+                # #           (src_port, route, frules))
+                # if not self.topology_adapter.install_flow_rules(frules):
+                #     log.error("problem installing batch of flow rules for RideC probes via gateway %s: %s" % (gw, frules))
+                #
+
+
                 # TODO: make sure that the two types of flows match up as expected!
                 #    else might assign wrong priority to them... should probably be okay since everything sequential
 
