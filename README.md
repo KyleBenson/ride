@@ -34,6 +34,14 @@ We used the [mininet](http://mininet.org/) framework for experimenting with Ride
 4. Adapts the network configuration according to dynamics: failures, loss rates, etc.
 5. Outputs results for consumption by a parsing script.
 
+### Running experiments
+
+See [run.py](run.py) for a script that defines multiple configurations and automatically runs each of them.  It parallelizes the experiments (runs multiple instances to make use of multi-core systems) if not using Mininet.
+
+To directly define and run a single experiment via command line, see the `[mininet|networkx]_smart_campus_network_experiment.py` files.  Run one of them with the `-h` flag for a list of configurable options.
+
+Alternatively, you can also manage these configurations through the `config` module (e.g. config.py or defaults.py).
+
 ### Smart campus network topology generator
 
 See the [campus_topo_gen.py](campus_topo_gen.py) script for how we generate random campus network topologies according to the following hierarchical structure, which we base off real-world campus networks:
