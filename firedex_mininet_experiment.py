@@ -89,17 +89,18 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         super(FiredexMininetExperiment, self).setup_topology()
 
         # We use special 'coded addresses' to help debugging/understanding what's going on in log files
+        # WARNING: need to have the mac addresses start with 'aa' or something similar so that the OS doesn't reject them!
         base_subnet = '10.128.%s/9'  # see note in config.py about why we use this... don't forget subnet mask!
         icp_subnet = base_subnet % '1.%d'
         ff_subnet = base_subnet % '10.%d'
-        fire_mac = 'ff:00:00:00:%s:%s'
+        fire_mac = 'aa:ff:00:00:%s:%s'
         ff_mac = fire_mac % ('ff', "%.2x")
         bldg_subnet = base_subnet % '2.%d'
         iot_subnet = base_subnet % '20.%d'
-        bldg_mac = 'bb:00:00:00:%s:%s'
+        bldg_mac = 'aa:bb:00:00:%s:%s'
         iot_mac = bldg_mac % ('dd', '%.2x')
         eoc_subnet = base_subnet % '3.%d'
-        eoc_mac = 'ee:0c:00:00:00:%.2x'
+        eoc_mac = 'aa:ee:0c:00:00:%.2x'
 
         # 1. create all our special switches for the network itself
         self.bldg = self.add_switch('bldg', dpid=':'.join(['bb']*8))
