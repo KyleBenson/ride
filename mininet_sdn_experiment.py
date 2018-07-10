@@ -215,6 +215,13 @@ class MininetSdnExperiment(NetworkExperiment):
         if isinstance(to_link, basestring):
             to_link = self.net.get(to_link)
 
+        # XXX: HACK to ensure hosts get an actual MAC address we previously assigned them.
+        extra_params = dict()
+        if isinstance(from_link, Host):
+            extra_params['addr1'] = from_link.params['mac'].upper()
+        if isinstance(to_link, Host):
+            extra_params['addr2'] = to_link.params['mac'].upper()
+
         if use_tc:
             bw = bandwidth if bandwidth is not None else self.bandwidth
             delay = '%fms' % (latency if latency is not None else self.latency)
@@ -228,10 +235,10 @@ class MininetSdnExperiment(NetworkExperiment):
 
             # For configuration options, see mininet.link.TCIntf.config()
             l = self.net.addLink(from_link, to_link, cls=TCLink,
-                                 bw=bw, delay=delay, jitter=jitter, loss=loss)
+                                 bw=bw, delay=delay, jitter=jitter, loss=loss, **extra_params)
         else:
             log.debug("adding link from %s to %s without TC" % (from_link, to_link))
-            l = self.net.addLink(from_link, to_link)
+            l = self.net.addLink(from_link, to_link, **extra_params)
         self.links.append(l)
         return l
 
