@@ -14,6 +14,8 @@ using some clever SDN mechanisms.'''
 import logging
 log = logging.getLogger(__name__)
 
+import requests
+import json
 import time
 import os
 import random
@@ -104,8 +106,8 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
 
         # 1. create all our special switches for the network itself
         self.bldg = self.add_switch('bldg', dpid=':'.join(['bb']*8))
-        self.inet = self.add_switch('inet', dpid='11:ee:77:00:00:00:00:00')
-        self.prioq_dummy_sw = self.add_switch('prioq', dpid=':'.join(['dd'] * 8))
+        #self.inet = self.add_switch('inet', dpid='11:ee:77:00:00:00:00:00')
+        #self.prioq_dummy_sw = self.add_switch('prioq', dpid=':'.join(['dd'] * 8))
         # TODO: icp_switch?
 
         # 2. create special host nodes
@@ -133,16 +135,17 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
 
         # NOTE: we apply default channel characteristics to inet links only
         # TODO: set up some for other links?  internal building topo should have some at least...
-        inet_connected_nodes = [self.prioq_dummy_sw, self.icp_sw]
-        if self.with_eoc:
-            inet_connected_nodes.append(self.eoc_sw)
-
-        for peer in inet_connected_nodes:
-            self.add_link(self.inet, peer)
-            # QUESTION: should we save these links so that we can e.g. explicitly vary their b/w during the sim?
+        self.prioq_dummy_sw = self.bms_sw
+        # inet_connected_nodes = [self.icp_sw]
+        # if self.with_eoc:
+        #     inet_connected_nodes.append(self.eoc_sw)
+        #
+        # for peer in inet_connected_nodes:
+        #     self.add_link(self.inet, peer)
+        #     # QUESTION: should we save these links so that we can e.g. explicitly vary their b/w during the sim?
 
         # Connect special hosts in the building
-        bldg_connected_nodes = [self.bms_sw, self.prioq_dummy_sw]
+        bldg_connected_nodes = [self.bms_sw]
         if self.with_black_box:
             bldg_connected_nodes.append(self.black_box)
 
@@ -157,8 +160,9 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         # For now, we'll just add all FFs and IoT devs directly to the bldg
         # TODO: setup wifi network and/or hierarchical switches
         # TODO: set channel characteristics
-        for h in self.ffs + self.iots:
-            self.add_link(self.bldg, h, use_tc=False)
+        bldg_hosts = self.ffs + self.iots + [self.icp_sw]
+        for h in bldg_hosts:
+            self.add_link(self.bldg, h)
 
         # 5. add NAT so that any SdnTopology apps will be able to contact the SDN controller's REST API
 
@@ -283,6 +287,8 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
         outputs_dir, logs_dir = self.build_outputs_logs_dirs()
         #####
 
+        system_state = [ ]
+
         # Building IoT devices all publish their periodic event data to the BMS broker.
         broker_ip = self.bms.IP()
         for host in self.all_hosts:
@@ -325,7 +331,6 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                                         # + make_scale_config_entry(class_path="log_event_sink.LogEventSink", name="LogSink")
 
             # SUBSCRIBERS run a subscribing VirtualSensor and an Application for saving received events
-            broker_dpid = self.get_host_dpid(self.bms)
             if host in self.subscribers:
                 # NOTE: scale expects topics to be strings!
                 subs = [str(t) for t in self.get_subscription_topics(host)]
@@ -340,42 +345,12 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                 min_sim_flow = min(*req_flow_map.values())
                 topic_flow_map = {req.topic: (f - min_sim_flow) for req, f in req_flow_map.items()}
 
-                log.warning("TOPIC FLOW MAP: %s" % str(topic_flow_map))
                 # XXX: let destination port be the default one
                 real_flows = [(None, COAP_CLIENT_BASE_SRC_PORT + i, broker_ip, None) for i in range(self.num_net_flows)]
 
-                # install static SDN flow rules for drop_rates/priorities:
-                # TODO: install regular static routing for publishers too?
-
-                host_dpid = self.get_host_dpid(host)
-                broker_sub_route = self.topology_adapter.get_path(broker_dpid, host_dpid)
-                sub_broker_route = self.topology_adapter.get_path(host_dpid, broker_dpid)
-                for net_flow in real_flows:
-                    src_port = net_flow[1]
-                    # MAYBE: also do dst_port? matches = dict(udp_src=src_port, udp_dst=dst_port)
-                    sub_broker_frules = self.topology_adapter.build_flow_rules_from_path(sub_broker_route, add_matches=dict(udp_src=src_port))  # MAYBE: , priority=STATIC_PATH_FLOW_RULE_PRIORITY
-                    broker_sub_frules = self.topology_adapter.build_flow_rules_from_path(broker_sub_route, add_matches=dict(udp_dst=src_port))
-
-                    # TODO: how to add priority/drop rate treatment here?  make a group or just do drop_rate (only on broker-to-sub!) before we apply priority?
-                    # NOTE: this will be non-trivial it seems... added ability to do use_queues=q_id if build rules but how to handle adding additional actions???  maybe we should try hacking directly in a simple mn topo...
-
-
-                    flow_rules = sub_broker_frules + broker_sub_frules
-                    if not self.topology_adapter.install_flow_rules(flow_rules):
-                        log.error("problem installing batch of flow rules for subscriber %s: %s" % (host, flow_rules))
-
-                #
-                # # NOTE: need to do the other direction to ensure responses come along same path!
-                # route.reverse()
-                # matches = dict(udp_dst=src_port, udp_src=dst_port)
-                # frules.extend(self.topology_adapter.build_flow_rules_from_path(route, add_matches=matches, priority=STATIC_PATH_FLOW_RULE_PRIORITY))
-                #
-                # # log.debug("installing probe flow rules for DataPath (port=%d)\nroute: %s\nrules: %s" %
-                # #           (src_port, route, frules))
-                # if not self.topology_adapter.install_flow_rules(frules):
-                #     log.error("problem installing batch of flow rules for RideC probes via gateway %s: %s" % (gw, frules))
-                #
-
+                for i in range(real_flows.__len__()):
+                    real_flow = real_flows[i]
+                    system_state.append( { "ip": host.params["ip"][:-2], "port": real_flow[1], "priority": flow_prio_map[i], "drop_rate": drop_rates[i] } )
 
                 # TODO: make sure that the two types of flows match up as expected!
                 #    else might assign wrong priority to them... should probably be okay since everything sequential
@@ -398,6 +373,12 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
 
             cmd = self.make_host_cmd(host_cfg, hostname)
             self.run_proc(cmd, host, hostname)
+
+        url = "http://127.0.0.1:8080/api/flow/push-configuration/"
+        data = json.dumps(system_state)
+        response = requests.post(url, data=data)
+        content = response.json()
+        #print(content)
 
 
 FiredexMininetExperiment.__doc__ = CLASS_DESCRIPTION
