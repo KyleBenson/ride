@@ -14,7 +14,7 @@ class OnosSdnTopology(SdnTopology):
         rest_api = OnosRestApi(ip, port, username=username, password=password)
         super(OnosSdnTopology, self).__init__(rest_api)
 
-        self.build_topology()
+        # self.build_topology()
 
     # Topology management helper functions
 

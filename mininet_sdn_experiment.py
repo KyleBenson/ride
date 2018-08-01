@@ -146,7 +146,7 @@ class MininetSdnExperiment(NetworkExperiment):
                                          )
 
     def add_switch(self, switch, dpid):
-        s = self.net.addSwitch(switch, dpid=dpid, cls=OVSKernelSwitch)
+        s = self.net.addSwitch(switch, protocols="OpenFlow13", dpid=dpid, cls=OVSKernelSwitch)
         log.debug("adding switch %s at DPID %s" % (switch, s.dpid))
         self.switches.append(s)
         return s
@@ -523,7 +523,8 @@ class MininetSdnExperiment(NetworkExperiment):
         n_sdn_switches = 0
         n_sdn_hosts = 0
         ntries = 1
-        while n_sdn_hosts < expected_nhosts or n_sdn_links < expected_nlinks or n_sdn_switches < expected_nswitches:
+
+        while self.topology_adapter_type is not None and (n_sdn_hosts < expected_nhosts or n_sdn_links < expected_nlinks or n_sdn_switches < expected_nswitches):
             self.setup_topology_manager()
 
             n_sdn_hosts = len(self.topology_adapter.get_hosts())

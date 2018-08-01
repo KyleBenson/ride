@@ -33,7 +33,7 @@ ALL_PAIRS = False
 # Since we're using the scale client for background traffic, we need to specify an interval between SensedEvents
 # ENHANCE: base this on the traffic_generator_bandwidth parameter
 IOT_CONGESTION_INTERVAL = 0.1
-DEFAULT_TOPOLOGY_ADAPTER = 'onos'
+DEFAULT_TOPOLOGY_ADAPTER = None
 SHORTEST_PATH_DISTANCE_METRIC = 'latency'
 
 # Enumerate all of the parameters varied by the various experiments mostly for the purpose of grouping results in
