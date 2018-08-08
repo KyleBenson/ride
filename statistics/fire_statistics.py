@@ -416,6 +416,7 @@ if __name__ == '__main__':
     args = None
     # specify your cmd line arguments here if you don't want to keep opening the IDE run config to change each time:
     # args = ['-f', 'out.csv', '--raise-errors']
+    args = ['-f', 'results/results.json', '--raise-errors']
     # args = ['-d', 'results/validation_multisubs_prioprobs', '--raise-errors']
     # args = ['-f', 'results/validation_multisubs_prioprobs/results_100.json', '--raise-errors']
     # args = ['-f', 'drops.csv', '--raise-errors']
@@ -436,7 +437,10 @@ if __name__ == '__main__':
     final_stats = stats.stats # type: pd.DataFrame
 
     # drop topics with no subscription OR advertisement (i.e. pub rate is 0)
-    final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
+    try:
+        final_stats = final_stats[(final_stats.subd != 0) & (final_stats.lams != 0)]
+    except AttributeError:
+        log.debug("Mininet version currently doesn't have the 'subd' column...")
 
     # doing this for now to view columns easier...
     ignored_cols = ('niots',
@@ -448,8 +452,15 @@ if __name__ == '__main__':
             del final_stats[col]
 
     # print "STATS:\n", final_stats
+    # print list(final_stats)  # just column names
 
     # TODO: calculate_utilities()
+
+    # TODO: move this out of this scripting area and up to above somewhere?
+    final_stats = stats.calc_latencies(final_stats)
+    final_stats['delay'] = final_stats['latency']
+    stats.plot(x='prio', y='delay', stats=final_stats)
+    stats.config.output_file = "results/results.csv"
 
     ####   SIMULATION RESULTS
 
