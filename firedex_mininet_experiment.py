@@ -361,7 +361,7 @@ class FiredexMininetExperiment(MininetSdnExperiment, FiredexExperiment):
                                                           start_delay=random.uniform(15, 20),
                                     class_path="scifire.scale.firedex_coap_subscriber.FiredexCoapSubscriber")
 
-                app_configs += make_scale_config_entry(name="EventStore", subscriptions=subs,
+                app_configs += make_scale_config_entry(name="EventStore", subscriptions=subs, remote_only=True,
                                         class_path="event_file_logging_application.EventFileLoggingApplication",
                                         output_file=os.path.join(outputs_dir, 'subscriber_%s' % hostname))
 
